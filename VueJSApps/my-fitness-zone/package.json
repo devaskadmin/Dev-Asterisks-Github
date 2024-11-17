@@ -8,11 +8,21 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "@adminjs/express": "^6.1.0",
+    "@adminjs/sequelize": "^4.1.1",
+    "axios": "^1.7.7",
     "bootstrap": "^5.3.3",
     "bootstrap-icons": "^1.11.3",
+    "chart.js": "^4.4.6",
     "core-js": "^3.8.3",
     "express": "^4.21.1",
-    "vue": "^3.2.13"
+    "pg": "^8.13.1",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.5",
+    "vue": "^3.2.13",
+    "vue-chartjs": "^5.3.2",
+    "vue-router": "^4.4.5",
+    "vue3-circle-progress": "^1.0.7"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",
