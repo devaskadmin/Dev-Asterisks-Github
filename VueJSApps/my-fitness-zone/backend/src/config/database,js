@@ -1,0 +1,55 @@
+const { Pool } = require('pg');
+require('dotenv').config();
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+});
+
+pool.on('connect', () => {
+    console.log('Connected to the PostgreSQL database.');
+});
+
+module.exports = pool;
+
+
+const AdminJS = require('@adminjs/adminjs');
+const AdminJSExpress = require('@adminjs/express');
+const { Sequelize, DataTypes } = require('sequelize');
+
+// Initialize Sequelize for PostgreSQL
+const sequelize = new Sequelize('your_db_name', 'your_user', 'your_password', {
+  host: 'localhost',
+  dialect: 'postgres',
+});
+
+// Define a sample model (optional, replace with your models)
+const User = sequelize.define('User', {
+  username: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+});
+
+// Sync the database
+sequelize.sync();
+
+// Configure AdminJS
+const adminJs = new AdminJS({
+  databases: [sequelize],
+  rootPath: '/admin',
+});
+
+// Create an Express app with AdminJS
+const app = require('express')();
+const adminRouter = AdminJSExpress.buildRouter(adminJs);
+app.use(adminJs.options.rootPath, adminRouter);
+
+// Start the server
+const PORT = 5000;
+app.listen(PORT, () => {
+  console.log(`AdminJS is running on http://localhost:${PORT}/admin`);
+});
