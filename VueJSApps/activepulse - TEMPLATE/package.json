@@ -1,6 +1,6 @@
 {
-  "name": "activepulse",
-  "version": "1.0.0",
+  "name": "digiboard-vue",
+  "version": "0.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -43,12 +43,5 @@
     "@vitejs/plugin-vue": "^4.4.0",
     "sass": "^1.69.5",
     "vite": "^4.4.11"
-  },
-  "description": "activepulse",
-  "main": "babel.config.js",
-  "keywords": [
-    "gym"
-  ],
-  "author": "",
-  "license": "ISC"
+  }
 }

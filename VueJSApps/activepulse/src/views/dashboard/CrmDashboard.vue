@@ -16,10 +16,8 @@ onMounted(() => {
 </script>
 
 <template>
-      
   <div class="dashboard-breadcrumb mb-25">
     <h2>{{ $t('dashboard.crm_dashboard') }}</h2>
-
     <DateRangePicker />
   </div>
   <CrmStatsComponent />
