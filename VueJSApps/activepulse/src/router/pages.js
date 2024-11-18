@@ -14,12 +14,6 @@ export const pagesRoutes = [
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
-        path: '/mytraining',
-        component: () => import('@/views/dashboard/mytraining.vue'),
-        name: 'mytraining',
-        meta: { layout: 'AppLayout', isPartials: true },
-    },
-    {
         path: '/hrm-dashboard',
         component: () => import('@/views/dashboard/HrmDashboard.vue'),
         name: 'hrm_dashboard',

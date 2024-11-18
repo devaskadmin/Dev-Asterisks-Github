@@ -2,21 +2,6 @@ import {ref} from "vue";
 
 export const sidebarMenus = ref([
     {
-        menu_name: 'Main Menu',
-        menus: [
-            {
-                name: 'home',
-                link_name: 'dashboard_index',
-                icon: 'fa-light fa-cart-shopping-fast'
-            },
-            {
-                name: 'mytraining',
-                link_name: 'mytraining',
-                icon: 'fa-light fa-user-headset'
-            }
-        ]
-    },
-    {
         menu_name: 'sidebar.dashboard',
         menus: [
             {
