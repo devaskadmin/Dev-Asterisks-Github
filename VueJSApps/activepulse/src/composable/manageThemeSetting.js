@@ -1,6 +1,9 @@
 import {ref} from 'vue';
 const defaultTheme =  import.meta.env.VITE_DEFAULT_THEME;
 
+//Adjust Theme settings
+
+
 export const currentActiveTheme = ref(localStorage.getItem('currentActiveTheme') || defaultTheme);
 
 export const changeCurrentTheme = (theme) => {
