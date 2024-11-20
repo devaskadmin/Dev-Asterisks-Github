@@ -1,4 +1,4 @@
-import HomeView from '@/views/dashboard/eCommerceDashboard.vue'
+import HomeView from '@/views/dashboard/Home.vue'
 
 export const pagesRoutes = [
     {

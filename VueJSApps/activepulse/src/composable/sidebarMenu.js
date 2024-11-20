@@ -23,10 +23,10 @@ export const sidebarMenus = ref([
                     },
                     {
                         name: 'Login',
-                        link_name: 'login_3'
+                        link_name: 'login'
                     },
                     {
-                        name: 'Registration 01',
+                        name: 'Site Registration',
                         link_name: 'registration'
                     },                    
                     {
