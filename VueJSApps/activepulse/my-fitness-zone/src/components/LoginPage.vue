@@ -38,7 +38,7 @@
               </form>
               <p v-if="loginError" class="text-danger">{{ loginError }}</p>
           
-              <p>DevLogin: demo - password</p>
+              <p>DevLogin: Demo@demo.com - password</p>
             </div>
 
             <!-- Register Form -->
