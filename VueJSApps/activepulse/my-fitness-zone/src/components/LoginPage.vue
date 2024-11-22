@@ -32,9 +32,13 @@
                   Don't have an account?
                   <a href="#" @click="toggleRegister">Sign up here</a>
                 </p>
+                
                 <p><a href="#">Forgot your password?</a></p>
+                
               </form>
               <p v-if="loginError" class="text-danger">{{ loginError }}</p>
+          
+              <p>DevLogin: demo - password</p>
             </div>
 
             <!-- Register Form -->
