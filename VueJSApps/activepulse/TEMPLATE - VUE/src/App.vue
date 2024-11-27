@@ -271,7 +271,8 @@ provide('app:layout', layout.value)
     
     <!-- main content start -->
     <component :is="layout">
-      <RouterView/>
+      <RouterView />
+
     </component>
     <FooterComponent v-if="isPartials"/>
 

@@ -1,99 +1,24 @@
 <script setup>
-
+const pendingGoals = [
+  { goal: "Run 5km", due: "Nov 26", status: "In Progress" },
+  { goal: "Bench Press 100kg", due: "Dec 1", status: "Pending" },
+  { goal: "Yoga Flexibility Test", due: "Dec 5", status: "Completed" },
+];
 </script>
 
 <template>
-  <div class="col-lg-6">
-    <div class="panel">
-      <div class="panel-header">
-        <h5>Pending Works</h5>
-      </div>
-      <div class="panel-body p-0">
-        <table class="table table-hover pending-task-table" tabindex="1">
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Database tools</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-primary px-2">Processing</span>
-                                    </span>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Technologycal tools</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-success px-2">Completed</span>
-                                    </span>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Transaction</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-danger px-2">On hold</span>
-                                    </span>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Training tools</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-primary px-2">Processing</span>
-                                    </span>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Private chat module</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-success px-2">Completed</span>
-                                    </span>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="task-box">
-                <span>Appointment booking with</span>
-                <span>Jul 25, 2017 for Alimul Alrazy</span>
-              </div>
-            </td>
-            <td>
-                                    <span class="d-block text-end">
-                                        <span class="badge bg-primary px-2">Processing</span>
-                                    </span>
-            </td>
-          </tr>
-        </table>
-      </div>
+  <div class="panel">
+    <div class="panel-header">
+      <h5>Pending Goals</h5>
+    </div>
+    <div class="panel-body">
+      <ul>
+        <li v-for="(goal, index) in pendingGoals" :key="index">
+          <strong>{{ goal.goal }}</strong> - Due: {{ goal.due }} (Status: {{ goal.status }})
+        </li>
+      </ul>
     </div>
   </div>
 </template>
 
-<style scoped>
-
-</style>
+<style scoped></style>

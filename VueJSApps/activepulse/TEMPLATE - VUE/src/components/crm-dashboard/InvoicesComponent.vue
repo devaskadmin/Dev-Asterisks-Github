@@ -1,46 +1,43 @@
 <script setup>
-
+const nutritionLogs = [
+  { date: "Nov 23", meal: "Breakfast", details: "Oatmeal, Banana, Coffee", calories: "320 kcal" },
+  { date: "Nov 23", meal: "Lunch", details: "Grilled Chicken Salad, Water", calories: "450 kcal" },
+  { date: "Nov 23", meal: "Snack", details: "Protein Bar, Green Tea", calories: "200 kcal" },
+  { date: "Nov 23", meal: "Dinner", details: "Salmon, Quinoa, Steamed Vegetables", calories: "500 kcal" },
+];
 </script>
 
 <template>
-  <div class="col-xl-8 col-lg-7">
-    <div class="panel">
-      <div class="panel-header">
-        <h5>Invoices</h5>
-        <router-link class="btn btn-sm btn-primary" :to="{name: 'invoices' }">View All</router-link>
+  <div class="panel">
+    <div class="panel-header">
+      <h5>Nutrition Log</h5>
+      <div class="btn-box">
+        <a href="#" class="btn btn-sm btn-primary">Add Meal</a>
       </div>
-      <div class="panel-body p-0">
-        <div class="table-responsive">
-          <table class="table invoice-table table-hover">
-            <thead>
+    </div>
+    <div class="panel-body">
+      <div class="table-responsive">
+        <table class="table table-hover table-nutrition">
+          <thead>
             <tr>
-              <th>Invoice ID</th>
-              <th>Client</th>
-              <th>Due Date</th>
-              <th>Total</th>
-              <th>Status</th>
+              <th>Date</th>
+              <th>Meal</th>
+              <th>Details</th>
+              <th>Calories</th>
             </tr>
-            </thead>
-            <tbody>
-            <tr  v-for="i in 6" :key="'invoice_'+i">
-              <td>#INV-000{{ i }}</td>
-              <td>Hazel Nutt</td>
-              <td>9 Aug 2018</td>
-              <td>$240</td>
-              <td>
-                <span class="d-block text-end">
-                    <span class="badge bg-primary px-2">Partially Paid</span>
-                </span>
-              </td>
+          </thead>
+          <tbody>
+            <tr v-for="(log, index) in nutritionLogs" :key="index">
+              <td>{{ log.date }}</td>
+              <td>{{ log.meal }}</td>
+              <td>{{ log.details }}</td>
+              <td>{{ log.calories }}</td>
             </tr>
-            </tbody>
-          </table>
-        </div>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-
-</style>
+<style scoped></style>

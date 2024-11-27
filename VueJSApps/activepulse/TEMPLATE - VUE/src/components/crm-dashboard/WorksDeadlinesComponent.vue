@@ -1,42 +1,62 @@
 <script setup>
+import { ref } from "vue";
 
+const uploadedFiles = ref([]);
+const handleFileUpload = (event) => {
+  const files = event.target.files;
+  for (let i = 0; i < files.length; i++) {
+    uploadedFiles.value.push({
+      name: files[i].name,
+      size: (files[i].size / 1024).toFixed(2) + " KB",
+      type: files[i].type,
+    });
+  }
+};
 </script>
 
 <template>
-  <div class="col-xl-8 col-lg-6">
-    <div class="panel">
-      <div class="panel-header">
-        <h5>Works Deadlines</h5>
-        <a class="btn btn-sm btn-primary" href="#">View All</a>
+  <div class="panel">
+    <div class="panel-header">
+      <h5>Upload Pictures</h5>
+      <div class="btn-box">
+        <label for="file-upload" class="btn btn-sm btn-primary">Upload</label>
+        <input
+          type="file"
+          id="file-upload"
+          accept="image/*"
+          multiple
+          @change="handleFileUpload"
+          style="display: none"
+        />
       </div>
-      <div class="panel-body p-0">
-        <div class="table-responsive">
-          <table class="table deadline-table table-hover">
-            <thead>
-            <tr>
-              <th>Name</th>
-              <th>Last Contacted</th>
-              <th>Sales Representative</th>
-              <th>Status</th>
-              <th>Deal Value</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr v-for="i in 6" :key="'work_deadline_'+i">
-              <td>Absternet LLC</td>
-              <td>Sep 20, 2021</td>
-              <td>Donald Risher</td>
-              <td><span class="badge bg-primary-subtle px-2 rounded">Deal Won</span></td>
-              <td>125K</td>
-            </tr>
-            </tbody>
-          </table>
-        </div>
+    </div>
+    <div class="panel-body">
+      <div v-if="uploadedFiles.length === 0" class="text-muted">
+        No pictures uploaded yet.
       </div>
+      <ul v-else class="list-group">
+        <li v-for="(file, index) in uploadedFiles" :key="index" class="list-group-item">
+          <strong>{{ file.name }}</strong> - {{ file.size }} - {{ file.type }}
+        </li>
+      </ul>
     </div>
   </div>
 </template>
 
 <style scoped>
+.panel {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 20px;
+}
 
+.list-group-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  margin-bottom: 5px;
+}
 </style>
