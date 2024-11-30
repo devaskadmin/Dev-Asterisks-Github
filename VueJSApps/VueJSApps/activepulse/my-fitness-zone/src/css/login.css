@@ -1,0 +1,73 @@
+p {
+   line-height: 1rem;
+}
+
+.card {
+   padding: 20px;
+}
+
+.form-group {
+   input {
+       margin-bottom: 20px;
+   }
+}
+
+.login-page {
+   align-items: center;
+   display: flex;
+   height: 100vh;
+}
+
+.wallpaper-login {
+   background-image: url('../img/login.jpg');
+   background-size: cover;
+   height: 100%;
+   position: absolute;
+   width: 100%;
+}
+
+.wallpaper-register {
+   background-image: url('../img/sunrise.jpg');
+   background-size: cover;
+   height: 100%;
+   position: absolute;
+   width: 100%;
+   z-index: -1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+   transition: opacity 0.5s;
+}
+
+.fade-enter,
+.fade-leave-to {
+   opacity: 0;
+}
+
+h1 {
+   margin-bottom: 1.5rem;
+}
+
+.error {
+   animation-name: errorShake;
+   animation-duration: 0.3s;
+}
+
+@keyframes errorShake {
+   0% {
+       transform: translateX(-25px);
+   }
+   25% {
+       transform: translateX(25px);
+   }
+   50% {
+       transform: translateX(-25px);
+   }
+   75% {
+       transform: translateX(25px);
+   }
+   100% {
+       transform: translateX(0);
+   }
+}
