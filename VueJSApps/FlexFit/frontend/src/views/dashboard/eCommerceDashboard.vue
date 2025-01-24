@@ -1,12 +1,12 @@
 <script setup>
 import {onMounted, ref} from "vue";
 
-import EcommarceStatsComponent from "@/components/ecommerce-dashboard/EcommarceStatsComponent.vue";
-import SalesAnalyticsChartComponent from "@/components/ecommerce-dashboard/SalesAnalyticsChartComponent.vue";
-import SocialMediaVisitorComponent from "@/components/ecommerce-dashboard/SocialMediaVisitorComponent.vue";
-import NewCustomersComponent from "@/components/ecommerce-dashboard/NewCustomersComponent.vue";
-import RecentOrdersComponent from "@/components/ecommerce-dashboard/RecentOrdersComponent.vue";
-import DateRangePicker from "@/components/DateRangePicker.vue";
+import EcommarceStatsComponent from "@/components/template/ecommerce-dashboard/EcommarceStatsComponent.vue";
+import SalesAnalyticsChartComponent from "@/components/template/ecommerce-dashboard/SalesAnalyticsChartComponent.vue";
+import SocialMediaVisitorComponent from "@/components/template/ecommerce-dashboard/SocialMediaVisitorComponent.vue";
+import NewCustomersComponent from "@/components/template/ecommerce-dashboard/NewCustomersComponent.vue";
+import RecentOrdersComponent from "@/components/template/ecommerce-dashboard/RecentOrdersComponent.vue";
+import DateRangePicker from "@/components/template/DateRangePicker.vue";
 
 onMounted(() => {
 

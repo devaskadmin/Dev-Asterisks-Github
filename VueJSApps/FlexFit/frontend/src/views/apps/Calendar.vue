@@ -8,10 +8,10 @@ import interactionPlugin, {Draggable } from '@fullcalendar/interaction'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import {onMounted, onUpdated, ref} from "vue";
 import l from "moment";
-import EventModalComponent from "@/components/modals/EventModalComponent.vue";
-import EventDeleteModal from "@/components/modals/EventDeleteModal.vue";
-import ModalWindow from "@/components/ModalWindow.vue";
-import {initCalendar} from "@/composable/dashboardManage";
+import EventModalComponent from "@/components/template/modals/EventModalComponent.vue";
+import EventDeleteModal from "@/components/template/modals/EventDeleteModal.vue";
+import ModalWindow from "@/components/template/ModalWindow.vue";
+import {initCalendar} from "@/composable/template/dashboardManage";
 const e = new Date(l.now());
 
 const currentEvents = ref([]);

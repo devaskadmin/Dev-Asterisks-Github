@@ -1,8 +1,8 @@
 <script setup>
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import TextEditorComponent from "@/components/TextEditorComponent.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import TextEditorComponent from "@/components/template/TextEditorComponent.vue";
 import {onMounted, ref} from "vue";
-import DropzoneComponent from "@/components/form/DropzoneComponent.vue";
+import DropzoneComponent from "@/components/template/form/DropzoneComponent.vue";
 
 const description = ref('');
 

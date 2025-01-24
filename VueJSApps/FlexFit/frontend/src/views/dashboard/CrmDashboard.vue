@@ -1,15 +1,15 @@
 <script setup>
 import {onMounted, ref} from "vue";
-import CrmStatsComponent from "@/components/crm-dashboard/CrmStatsComponent.vue";
-import BalanceOverviewChartComponent from "@/components/crm-dashboard/BalanceOverviewChartComponent.vue";
-import RecentProjectsComponent from "@/components/crm-dashboard/RecentProjectsComponent.vue";
-import UpcomingActivitiesComponent from "@/components/crm-dashboard/UpcomingActivitiesComponent.vue";
-import PendingWorksComponent from "@/components/crm-dashboard/PendingWorksComponent.vue";
-import InvoicesComponent from "@/components/crm-dashboard/InvoicesComponent.vue";
-import MyTasksComponent from "@/components/crm-dashboard/MyTasksComponent.vue";
-import CrmNoticeBoardComponent from "@/components/crm-dashboard/CrmNoticeBoardComponent.vue";
-import WorksDeadlinesComponent from "@/components/crm-dashboard/WorksDeadlinesComponent.vue";
-import DateRangePicker from "@/components/DateRangePicker.vue";
+import CrmStatsComponent from "@/components/template/crm-dashboard/CrmStatsComponent.vue";
+import BalanceOverviewChartComponent from "@/components/template/crm-dashboard/BalanceOverviewChartComponent.vue";
+import RecentProjectsComponent from "@/components/template/crm-dashboard/RecentProjectsComponent.vue";
+import UpcomingActivitiesComponent from "@/components/template/crm-dashboard/UpcomingActivitiesComponent.vue";
+import PendingWorksComponent from "@/components/template/crm-dashboard/PendingWorksComponent.vue";
+import InvoicesComponent from "@/components/template/crm-dashboard/InvoicesComponent.vue";
+import MyTasksComponent from "@/components/template/crm-dashboard/MyTasksComponent.vue";
+import CrmNoticeBoardComponent from "@/components/template/crm-dashboard/CrmNoticeBoardComponent.vue";
+import WorksDeadlinesComponent from "@/components/template/crm-dashboard/WorksDeadlinesComponent.vue";
+import DateRangePicker from "@/components/template/DateRangePicker.vue";
 
 onMounted(() => {
 })

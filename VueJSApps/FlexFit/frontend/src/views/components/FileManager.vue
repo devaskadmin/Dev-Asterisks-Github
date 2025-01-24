@@ -1,13 +1,13 @@
 <script setup>
 import {ref} from "vue";
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import FileList from "@/components/filemanager/FileList.vue";
-import FileManagerSidebar from "@/components/filemanager/Sidebar.vue";
-import FileManagerSettings from "@/components/filemanager/Settings.vue";
-import ModalWindow from "@/components/ModalWindow.vue";
-import UploadFileModalComponent from "@/components/modals/UploadFileModalComponent.vue";
-import CreateFolderModalComponent from "@/components/modals/CreateFolderModalComponent.vue";
-import FileDetailsModalComponent from "@/components/modals/FileDetailsModalComponent.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import FileList from "@/components/template/filemanager/FileList.vue";
+import FileManagerSidebar from "@/components/template/filemanager/Sidebar.vue";
+import FileManagerSettings from "@/components/template/filemanager/Settings.vue";
+import ModalWindow from "@/components/template/ModalWindow.vue";
+import UploadFileModalComponent from "@/components/template/modals/UploadFileModalComponent.vue";
+import CreateFolderModalComponent from "@/components/template/modals/CreateFolderModalComponent.vue";
+import FileDetailsModalComponent from "@/components/template/modals/FileDetailsModalComponent.vue";
 
 const allFiles =  ref([
   {

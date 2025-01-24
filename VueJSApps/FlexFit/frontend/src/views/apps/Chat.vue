@@ -1,8 +1,8 @@
 <script setup>
 import {onMounted, ref} from "vue";
-import ModalWindow from "@/components/ModalWindow.vue";
-import VoiceCallModal from "@/components/modals/VoiceCallModal.vue";
-import VideoCallModal from "@/components/modals/VideoCallModal.vue";
+import ModalWindow from "@/components/template/ModalWindow.vue";
+import VoiceCallModal from "@/components/template/modals/VoiceCallModal.vue";
+import VideoCallModal from "@/components/template/modals/VideoCallModal.vue";
 import { Carousel, Slide, Navigation } from 'vue3-carousel'
 import {OverlayScrollbars} from "overlayscrollbars";
 import 'vue3-carousel/dist/carousel.css'

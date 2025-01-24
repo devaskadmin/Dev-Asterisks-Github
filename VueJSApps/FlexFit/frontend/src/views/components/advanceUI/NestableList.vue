@@ -2,9 +2,9 @@
 import {computed, onMounted, ref} from "vue";
 import draggable from 'vuedraggable';
 import {list, listThree, folderTeamData} from "@/composable/nestableList";
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import FolderComponent from "@/components/dragable/FolderComponent.vue";
-import TeamComponent from "@/components/dragable/TeamComponent.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import FolderComponent from "@/components/template/dragable/FolderComponent.vue";
+import TeamComponent from "@/components/template/dragable/TeamComponent.vue";
 
 const dragOptions = ref({
   group: 'people',

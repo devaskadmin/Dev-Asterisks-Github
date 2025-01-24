@@ -35,23 +35,23 @@ const {radialBarChartSeries, radialBarChartOptions} = useRadialBarChartData();
 const {radarChartSeries, radarChartOptions} = useRadarChartData();
 const {polarAreaChartSeries, polarAreaChartOptions} = usePolarAreaChartData();
 
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import BoxplotCharts from "@/components/charts/BoxplotCharts.vue";
-import CandlestickCharts from "@/components/charts/CandlestickCharts.vue";
-import TimelineCharts from "@/components/charts/TimelineCharts.vue";
-import MixedCharts from "@/components/charts/MixedCharts.vue";
-import BarCharts from "@/components/charts/BarCharts.vue";
-import ColumnCharts from "@/components/charts/ColumnCharts.vue";
-import AreaCharts from "@/components/charts/AreaCharts.vue";
-import LineCharts from "@/components/charts/LineCharts.vue";
-import BubbleCharts from "@/components/charts/BubbleCharts.vue";
-import ScatterCharts from "@/components/charts/ScatterCharts.vue";
-import HeatmapCharts from "@/components/charts/HeatmapCharts.vue";
-import TreemapCharts from "@/components/charts/TreemapCharts.vue";
-import PieCharts from "@/components/charts/PieCharts.vue";
-import RadialBarCharts from "@/components/charts/RadialBarCharts.vue";
-import RadarCharts from "@/components/charts/RadarCharts.vue";
-import PolarAreaCharts from "@/components/charts/PolarAreaCharts.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import BoxplotCharts from "@/components/template/charts/BoxplotCharts.vue";
+import CandlestickCharts from "@/components/template/charts/CandlestickCharts.vue";
+import TimelineCharts from "@/components/template/charts/TimelineCharts.vue";
+import MixedCharts from "@/components/template/charts/MixedCharts.vue";
+import BarCharts from "@/components/template/charts/BarCharts.vue";
+import ColumnCharts from "@/components/template/charts/ColumnCharts.vue";
+import AreaCharts from "@/components/template/charts/AreaCharts.vue";
+import LineCharts from "@/components/template/charts/LineCharts.vue";
+import BubbleCharts from "@/components/template/charts/BubbleCharts.vue";
+import ScatterCharts from "@/components/template/charts/ScatterCharts.vue";
+import HeatmapCharts from "@/components/template/charts/HeatmapCharts.vue";
+import TreemapCharts from "@/components/template/charts/TreemapCharts.vue";
+import PieCharts from "@/components/template/charts/PieCharts.vue";
+import RadialBarCharts from "@/components/template/charts/RadialBarCharts.vue";
+import RadarCharts from "@/components/template/charts/RadarCharts.vue";
+import PolarAreaCharts from "@/components/template/charts/PolarAreaCharts.vue";
 
 </script>
 

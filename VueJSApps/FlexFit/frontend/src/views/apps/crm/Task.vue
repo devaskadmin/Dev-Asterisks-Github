@@ -1,21 +1,21 @@
 <script setup>
 import {onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
-import ModalWindow from "@/components/ModalWindow.vue";
-import AddTaskModal from "@/components/modals/AddTaskModal.vue";
-import EditTaskModal from "@/components/modals/EditTaskModal.vue";
-import ViewTaskModal from "@/components/modals/ViewTaskModal.vue";
+import ModalWindow from "@/components/template/ModalWindow.vue";
+import AddTaskModal from "@/components/template/modals/AddTaskModal.vue";
+import EditTaskModal from "@/components/template/modals/EditTaskModal.vue";
+import ViewTaskModal from "@/components/template/modals/ViewTaskModal.vue";
 
 const router = useRouter();
 
-import TaskTableAction from "@/components/DatatableAction/TaskTableAction.vue";
-import StatusTableAction from "@/components/DatatableAction/TaskStatusTableAction.vue";
-import TaskTablePriorityAction from "@/components/DatatableAction/TaskTablePriorityAction.vue";
-import TaskTableAssignToAction from "@/components/DatatableAction/TaskTableAssignToAction.vue";
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import TableFilterOption from "@/components/task/TaskTableFilterOption.vue";
-import TaskTableHeaderComponent from "@/components/task/TaskTableHeaderComponent.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
+import TaskTableAction from "@/components/template/DatatableAction/TaskTableAction.vue";
+import StatusTableAction from "@/components/template/DatatableAction/TaskStatusTableAction.vue";
+import TaskTablePriorityAction from "@/components/template/DatatableAction/TaskTablePriorityAction.vue";
+import TaskTableAssignToAction from "@/components/template/DatatableAction/TaskTableAssignToAction.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import TableFilterOption from "@/components/template/task/TaskTableFilterOption.vue";
+import TaskTableHeaderComponent from "@/components/template/task/TaskTableHeaderComponent.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
 
 const taskActionComponent = shallowRef(TaskTableAction);
 const taskStatusComponent = shallowRef(StatusTableAction);

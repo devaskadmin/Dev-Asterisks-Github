@@ -1,6 +1,6 @@
 <script setup>
 import {ref} from "vue";
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
 
 import flatPickr from 'vue-flatpickr-component';
 

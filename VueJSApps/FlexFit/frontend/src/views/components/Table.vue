@@ -1,17 +1,17 @@
 <script setup>
 import {onMounted, ref} from "vue";
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import DefaultTableComponent from "@/components/tables/DefaultTableComponent.vue";
-import StripedRowsTableComponent from "@/components/tables/StripedRowsTableComponent.vue";
-import StripedColumnsTableComponent from "@/components/tables/StripedColumnsTableComponent.vue";
-import ColorsTableComponent from "@/components/tables/ColorsTableComponent.vue";
-import HoverableTableComponent from "@/components/tables/HoverableTableComponent.vue";
-import BorderedTableComponent from "@/components/tables/BorderedTableComponent.vue";
-import BorderColorTableComponent from "@/components/tables/BorderColorTableComponent.vue";
-import WithoutBordersTableComponent from "@/components/tables/WithoutBordersTableComponent.vue";
-import DefaultDataTableComponent from "@/components/tables/DefaultDataTableComponent.vue";
-import DataTableBodyScrollComponent from "@/components/tables/DataTableBodyScrollComponent.vue";
-import CustomizedDataTableComponent from "@/components/tables/CustomizedDataTableComponent.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import DefaultTableComponent from "@/components/template/tables/DefaultTableComponent.vue";
+import StripedRowsTableComponent from "@/components/template/tables/StripedRowsTableComponent.vue";
+import StripedColumnsTableComponent from "@/components/template/tables/StripedColumnsTableComponent.vue";
+import ColorsTableComponent from "@/components/template/tables/ColorsTableComponent.vue";
+import HoverableTableComponent from "@/components/template/tables/HoverableTableComponent.vue";
+import BorderedTableComponent from "@/components/template/tables/BorderedTableComponent.vue";
+import BorderColorTableComponent from "@/components/template/tables/BorderColorTableComponent.vue";
+import WithoutBordersTableComponent from "@/components/template/tables/WithoutBordersTableComponent.vue";
+import DefaultDataTableComponent from "@/components/template/tables/DefaultDataTableComponent.vue";
+import DataTableBodyScrollComponent from "@/components/template/tables/DataTableBodyScrollComponent.vue";
+import CustomizedDataTableComponent from "@/components/template/tables/CustomizedDataTableComponent.vue";
 
 onMounted(() => {
 })

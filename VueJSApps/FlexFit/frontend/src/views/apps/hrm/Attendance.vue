@@ -2,11 +2,11 @@
 import {onMounted, shallowRef, ref} from "vue";
 import {useRouter} from "vue-router";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import AttendanceTableAction from "@/components/DatatableAction/AttendanceTableAction.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import AttendanceTableHeaderComponent from "@/components/attendance/AttendanceTableHeaderComponent.vue";
-import TableFilterOption from "@/components/attendance/AttendanceTableFilterOption.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import AttendanceTableAction from "@/components/template/DatatableAction/AttendanceTableAction.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import AttendanceTableHeaderComponent from "@/components/template/attendance/AttendanceTableHeaderComponent.vue";
+import TableFilterOption from "@/components/template/attendance/AttendanceTableFilterOption.vue";
 
 const attendanceActionComponent = shallowRef(AttendanceTableAction);
 

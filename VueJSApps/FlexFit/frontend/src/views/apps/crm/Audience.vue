@@ -1,10 +1,10 @@
 <script setup>
 import {onMounted, ref} from "vue";
 
-import TableFilterOption from "@/components/datatable/TableFilterOption.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import CompanyTableHeaderComponent from "@/components/audience/CompanyTableHeaderComponent.vue";
+import TableFilterOption from "@/components/template/datatable/TableFilterOption.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import CompanyTableHeaderComponent from "@/components/template/audience/CompanyTableHeaderComponent.vue";
 
 const table = ref(null);
 const selectedItems = ref([]);

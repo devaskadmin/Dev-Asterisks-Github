@@ -1,14 +1,14 @@
 <script setup>
 import {onMounted, onUnmounted, shallowRef, ref} from "vue";
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import TableFilterOption from "@/components/datatable/TableFilterOption.vue";
-import CategoryTableAction from "@/components/DatatableAction/CategoryTableAction.vue";
-import CategoryInfoComponent from "@/components/CategoryInfoComponent.vue";
-import CategoryTableFilterOption from "@/components/category/CategoryTableFilterOption.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import CategoryTableHeaderComponent from "@/components/category/CategoryTableHeaderComponent.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import TableFilterOption from "@/components/template/datatable/TableFilterOption.vue";
+import CategoryTableAction from "@/components/template/DatatableAction/CategoryTableAction.vue";
+import CategoryInfoComponent from "@/components/template/CategoryInfoComponent.vue";
+import CategoryTableFilterOption from "@/components/template/category/CategoryTableFilterOption.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import CategoryTableHeaderComponent from "@/components/template/category/CategoryTableHeaderComponent.vue";
 
 const categoryActionComponent = shallowRef(CategoryTableAction);
 const categoryInfoComponent = shallowRef(CategoryInfoComponent);

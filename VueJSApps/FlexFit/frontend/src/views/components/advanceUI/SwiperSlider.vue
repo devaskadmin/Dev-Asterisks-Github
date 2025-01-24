@@ -18,9 +18,9 @@ import 'swiper/css/effect-fade';
 import 'swiper/css/effect-flip';
 import 'swiper/css/effect-creative';
 import 'swiper/css/effect-coverflow';
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import VerticalSwiper from "@/components/slider/VerticalSwiper.vue";
-import MousewheelSwiper from "@/components/slider/MousewheelSwiper.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import VerticalSwiper from "@/components/template/slider/VerticalSwiper.vue";
+import MousewheelSwiper from "@/components/template/slider/MousewheelSwiper.vue";
 
 const modules = [Pagination, Navigation];
 const modulesScrollbar = [Scrollbar];

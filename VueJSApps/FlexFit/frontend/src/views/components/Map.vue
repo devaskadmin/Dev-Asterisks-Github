@@ -1,6 +1,6 @@
 <script setup>
 
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
 </script>
 
 <template>

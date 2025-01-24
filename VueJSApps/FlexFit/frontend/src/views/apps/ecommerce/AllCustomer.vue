@@ -3,10 +3,10 @@ import {onMounted, onUnmounted, ref} from "vue";
 
 import {useRouter} from "vue-router";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import AllCustomerTableHeaderComponent from "@/components/customer/AllCustomerTableHeaderComponent.vue";
-import CustomerTableFilterOption from "@/components/customer/CustomerTableFilterOption.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import AllCustomerTableHeaderComponent from "@/components/template/customer/AllCustomerTableHeaderComponent.vue";
+import CustomerTableFilterOption from "@/components/template/customer/CustomerTableFilterOption.vue";
 
 const router = useRouter();
 const table = ref(null);

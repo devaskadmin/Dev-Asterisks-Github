@@ -2,11 +2,11 @@
 import {onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import TableAction from "@/components/DatatableAction/AllEmployeeTableAction.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import AllEmployeeTableHeaderComponent from "@/components/employee/AllEmployeeTableHeaderComponent.vue";
-import TableFilterOption from "@/components/employee/TableFilterOption.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import TableAction from "@/components/template/DatatableAction/AllEmployeeTableAction.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import AllEmployeeTableHeaderComponent from "@/components/template/employee/AllEmployeeTableHeaderComponent.vue";
+import TableFilterOption from "@/components/template/employee/TableFilterOption.vue";
 
 const actionComponent = shallowRef(TableAction);
 

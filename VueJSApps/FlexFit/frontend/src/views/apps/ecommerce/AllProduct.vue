@@ -2,14 +2,14 @@
 import {onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import TableFilterOption from "@/components/datatable/TableFilterOption.vue";
-import ProductTableAction from "@/components/DatatableAction/ProductTableAction.vue";
-import ProductInfoComponent from "@/components/product/ProductInfoComponent.vue";
-import ProductRatingComponent from "@/components/product/ProductRatingComponent.vue";
-import ProductTableFilterOption from "@/components/product/ProductTableFilterOption.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import ProductTableHeaderComponent from "@/components/product/ProductTableHeaderComponent.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import TableFilterOption from "@/components/template/datatable/TableFilterOption.vue";
+import ProductTableAction from "@/components/template/DatatableAction/ProductTableAction.vue";
+import ProductInfoComponent from "@/components/template/product/ProductInfoComponent.vue";
+import ProductRatingComponent from "@/components/template/product/ProductRatingComponent.vue";
+import ProductTableFilterOption from "@/components/template/product/ProductTableFilterOption.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import ProductTableHeaderComponent from "@/components/template/product/ProductTableHeaderComponent.vue";
 
 const productActionComponent = shallowRef(ProductTableAction);
 const productInfoComponent = shallowRef(ProductInfoComponent);

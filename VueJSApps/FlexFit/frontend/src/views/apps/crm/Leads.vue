@@ -2,11 +2,11 @@
 import { onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
 
-import TableFilterOption from "@/components/datatable/TableFilterOption.vue";
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import LeadsTableAction from "@/components/DatatableAction/LeadsTableAction.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import LeadsTableHeaderComponent from "@/components/leads/LeadsTableHeaderComponent.vue";
+import TableFilterOption from "@/components/template/datatable/TableFilterOption.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import LeadsTableAction from "@/components/template/DatatableAction/LeadsTableAction.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import LeadsTableHeaderComponent from "@/components/template/leads/LeadsTableHeaderComponent.vue";
 
 const actionColumnComponent = shallowRef(LeadsTableAction);
 

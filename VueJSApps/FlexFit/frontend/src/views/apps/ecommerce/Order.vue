@@ -2,11 +2,11 @@
 import {onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
 
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import OrderTableAction from "@/components/DatatableAction/OrderTableAction.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
-import OrderTableHeaderComponent from "@/components/order/OrderTableHeaderComponent.vue";
-import OrderTableFilterOption from "@/components/order/OrderTableFilterOption.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import OrderTableAction from "@/components/template/DatatableAction/OrderTableAction.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
+import OrderTableHeaderComponent from "@/components/template/order/OrderTableHeaderComponent.vue";
+import OrderTableFilterOption from "@/components/template/order/OrderTableFilterOption.vue";
 
 const orderActionComponent = shallowRef(OrderTableAction);
 

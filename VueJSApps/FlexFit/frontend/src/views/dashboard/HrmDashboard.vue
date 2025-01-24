@@ -1,12 +1,12 @@
 <script setup>
 import {onMounted, ref} from "vue";
-import AudienceOverviewChartComponent from "@/components/hrm-dashboard/AudienceOverviewChartComponent.vue";
-import AttendanceTableComponent from "@/components/hrm-dashboard/AttendanceTableComponent.vue";
-import UpcomingInterviewsComponent from "@/components/hrm-dashboard/UpcomingInterviewsComponent.vue";
-import NoticeBoardComponent from "@/components/hrm-dashboard/NoticeBoardComponent.vue";
-import RecentActivityComponent from "@/components/hrm-dashboard/RecentActivityComponent.vue";
-import HrmStatsComponent from "@/components/hrm-dashboard/HrmStatsComponent.vue";
-import DateRangePicker from "@/components/DateRangePicker.vue";
+import AudienceOverviewChartComponent from "@/components/template/hrm-dashboard/AudienceOverviewChartComponent.vue";
+import AttendanceTableComponent from "@/components/template/hrm-dashboard/AttendanceTableComponent.vue";
+import UpcomingInterviewsComponent from "@/components/template/hrm-dashboard/UpcomingInterviewsComponent.vue";
+import NoticeBoardComponent from "@/components/template/hrm-dashboard/NoticeBoardComponent.vue";
+import RecentActivityComponent from "@/components/template/hrm-dashboard/RecentActivityComponent.vue";
+import HrmStatsComponent from "@/components/template/hrm-dashboard/HrmStatsComponent.vue";
+import DateRangePicker from "@/components/template/DateRangePicker.vue";
 
 onMounted(() => {
 })

@@ -1,6 +1,6 @@
 <script setup>
-import DashboardBreadcrumb from "@/components/DashboardBreadcrumb.vue";
-import TextEditorComponent from "@/components/TextEditorComponent.vue";
+import DashboardBreadcrumb from "@/components/template/DashboardBreadcrumb.vue";
+import TextEditorComponent from "@/components/template/TextEditorComponent.vue";
 import {computed, onMounted, ref, watch, watchEffect} from "vue";
 import flatPickr from 'vue-flatpickr-component';
 import 'flatpickr/dist/flatpickr.css';

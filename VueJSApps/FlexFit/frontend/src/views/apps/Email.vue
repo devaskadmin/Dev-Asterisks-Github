@@ -1,18 +1,18 @@
 <script setup>
 import {onMounted, ref, shallowRef} from "vue";
-import ModalWrapper from "@/components/ModalWrapper.vue";
-import NewMessage from "@/components/modals/NewMessage.vue";
-import InboxModal from "@/components/modals/InboxModal.vue";
-import EmailTableComponent from "@/components/email/EmailTableComponent.vue";
-import EmailTableFilterComponent from "@/components/email/EmailTableFilterComponent.vue";
-import ModalWindow from "@/components/ModalWindow.vue";
-import ComposeNewMailComponent from "@/components/modals/ComposeNewMailComponent.vue";
-import AddNewLabelModalComponent from "@/components/modals/AddNewLabelModalComponent.vue";
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
+import ModalWrapper from "@/components/template/ModalWrapper.vue";
+import NewMessage from "@/components/template/modals/NewMessage.vue";
+import InboxModal from "@/components/template/modals/InboxModal.vue";
+import EmailTableComponent from "@/components/template/email/EmailTableComponent.vue";
+import EmailTableFilterComponent from "@/components/template/email/EmailTableFilterComponent.vue";
+import ModalWindow from "@/components/template/ModalWindow.vue";
+import ComposeNewMailComponent from "@/components/template/modals/ComposeNewMailComponent.vue";
+import AddNewLabelModalComponent from "@/components/template/modals/AddNewLabelModalComponent.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
 
-import EmailTableAction from "@/components/email/EmailTableAction.vue";
-import EmailTableHeaderComponent from "@/components/email/EmailTableHeaderComponent.vue";
-import MailDetailsComponent from "@/components/email/MailDetailsComponent.vue";
+import EmailTableAction from "@/components/template/email/EmailTableAction.vue";
+import EmailTableHeaderComponent from "@/components/template/email/EmailTableHeaderComponent.vue";
+import MailDetailsComponent from "@/components/template/email/MailDetailsComponent.vue";
 
 const emailActionComponent = shallowRef(EmailTableAction);
 

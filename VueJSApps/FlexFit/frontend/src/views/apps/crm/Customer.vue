@@ -1,11 +1,11 @@
 <script setup>
 import {onMounted, ref, shallowRef} from "vue";
 import {useRouter} from "vue-router";
-import TableFilterOption from "@/components/datatable/TableFilterOption.vue";
-import CustomerTableAction from "@/components/DatatableAction/CustomerTableAction.vue";
-import DigiDataTable from "@/components/datatable/DigiDataTable.vue";
-import CustomerTableHeaderComponent from "@/components/customer/CustomerTableHeaderComponent.vue";
-import PagePanelHeader from "@/components/PagePanelHeader.vue";
+import TableFilterOption from "@/components/template/datatable/TableFilterOption.vue";
+import CustomerTableAction from "@/components/template/DatatableAction/CustomerTableAction.vue";
+import DigiDataTable from "@/components/template/datatable/DigiDataTable.vue";
+import CustomerTableHeaderComponent from "@/components/template/customer/CustomerTableHeaderComponent.vue";
+import PagePanelHeader from "@/components/template/PagePanelHeader.vue";
 
 const customerActionComponent = shallowRef(CustomerTableAction);
 
