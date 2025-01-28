@@ -22,7 +22,7 @@ export const sidebarMenus = ref([
         ]
     },
     {
-        menu_name: 'Apps',
+        menu_name: '',
         menus: [
             {
                 name: 'CRM',

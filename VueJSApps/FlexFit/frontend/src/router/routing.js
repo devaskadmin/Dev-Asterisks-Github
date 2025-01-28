@@ -1,61 +1,61 @@
 
 //Default Home Page
-import HomeView from '@/views/dashboard/eCommerceDashboard.vue'
+import HomeView from '@/views/template/dashboard/eCommerceDashboard.vue'
 
 
 //Guest Routes
 const guestRoutes = [
     {
         path: '/login',
-        component: () => import('@/views/pages/authentication/Login.vue'),
+        component: () => import('@/views/template/pages/authentication/Login.vue'),
         name: 'login',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/login-2',
-        component: () => import('@/views/pages/authentication/Login-2.vue'),
+        component: () => import('@/views/template/pages/authentication/Login-2.vue'),
         name: 'login_2',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/login-3',
-        component: () => import('@/views/pages/authentication/Login-3.vue'),
+        component: () => import('@/views/template/pages/authentication/Login-3.vue'),
         name: 'login_3',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/registration',
-        component: () => import('@/views/pages/authentication/Registration.vue'),
+        component: () => import('@/views/template/pages/authentication/Registration.vue'),
         name: 'registration',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/registration-2',
-        component: () => import('@/views/pages/authentication/Registration-2.vue'),
+        component: () => import('@/views/template/pages/authentication/Registration-2.vue'),
         name: 'registration_2',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/reset-password',
-        component: () => import('@/views/pages/authentication/ResetPassword.vue'),
+        component: () => import('@/views/template/pages/authentication/ResetPassword.vue'),
         name: 'reset_password',
         meta: { layout: 'GuestLayout' },
     },
     {
         path: '/update-password',
-        component: () => import('@/views/pages/authentication/UpdatePassword.vue'),
+        component: () => import('@/views/template/pages/authentication/UpdatePassword.vue'),
         name: 'update_password',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/login-status',
-        component: () => import('@/views/pages/authentication/LoginStatus.vue'),
+        component: () => import('@/views/template/pages/authentication/LoginStatus.vue'),
         name: 'login_status',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/account-deactivated',
-        component: () => import('@/views/pages/authentication/AccountDeactivated.vue'),
+        component: () => import('@/views/template/pages/authentication/AccountDeactivated.vue'),
         name: 'account_deactivated',
         meta: {
             layout: 'GuestLayout'
@@ -63,85 +63,85 @@ const guestRoutes = [
     },
     {
         path: '/welcome',
-        component: () => import('@/views/pages/authentication/Welcome.vue'),
+        component: () => import('@/views/template/pages/authentication/Welcome.vue'),
         name: 'welcome',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/email-verify',
-        component: () => import('@/views/pages/authentication/EmailVerify.vue'),
+        component: () => import('@/views/template/pages/authentication/EmailVerify.vue'),
         name: 'email_verify',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/two-factor',
-        component: () => import('@/views/pages/authentication/TwoFactor.vue'),
+        component: () => import('@/views/template/pages/authentication/TwoFactor.vue'),
         name: 'two_factor',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/multi-step-signup',
-        component: () => import('@/views/pages/authentication/MultiStepSignup.vue'),
+        component: () => import('@/views/template/pages/authentication/MultiStepSignup.vue'),
         name: 'multi_step_signup',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/coming-soon',
-        component: () => import('@/views/pages/additional/ComingSoon.vue'),
+        component: () => import('@/views/template/pages/additional/ComingSoon.vue'),
         name: 'coming_soon',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/coming-soon-2',
-        component: () => import('@/views/pages/additional/ComingSoon2.vue'),
+        component: () => import('@/views/template/pages/additional/ComingSoon2.vue'),
         name: 'coming_soon_2',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/pricing-table',
-        component: () => import('@/views/pages/additional/PricingTable.vue'),
+        component: () => import('@/views/template/pages/additional/PricingTable.vue'),
         name: 'pricing_table',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/pricing-table-2',
-        component: () => import('@/views/pages/additional/PricingTable2.vue'),
+        component: () => import('@/views/template/pages/additional/PricingTable2.vue'),
         name: 'pricing_table_2',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/under-construction',
-        component: () => import('@/views/pages/additional/UnderConstruction.vue'),
+        component: () => import('@/views/template/pages/additional/UnderConstruction.vue'),
         name: 'under_construction',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/card-declined',
-        component: () => import('@/views/pages/authentication/CardDeclined.vue'),
+        component: () => import('@/views/template/pages/authentication/CardDeclined.vue'),
         name: 'card_declined',
         meta: {layout: 'BlankLayout'}
     },
     {
         path: '/promotion',
-        component: () => import('@/views/pages/authentication/Promotion.vue'),
+        component: () => import('@/views/template/pages/authentication/Promotion.vue'),
         name: 'promotion',
         meta: {layout: 'BlankLayout'}
     },
     {
         path: '/subscription-confirm',
-        component: () => import('@/views/pages/authentication/SubscriptionConfirm.vue'),
+        component: () => import('@/views/template/pages/authentication/SubscriptionConfirm.vue'),
         name: 'subscription_confirm',
         meta: {layout: 'BlankLayout'}
     },
     {
         path: '/welcome-mail',
-        component: () => import('@/views/pages/authentication/WelcomeMail.vue'),
+        component: () => import('@/views/template/pages/authentication/WelcomeMail.vue'),
         name: 'welcome_mail',
         meta: {layout: 'BlankLayout'}
     },
     {
         path: '/reset-password-mail',
-        component: () => import('@/views/pages/authentication/ResetPasswordMail.vue'),
+        component: () => import('@/views/template/pages/authentication/ResetPasswordMail.vue'),
         name: 'reset_password_mail',
         meta: {layout: 'BlankLayout'}
     },
@@ -151,43 +151,43 @@ const guestRoutes = [
 const errorPageRoutes = [
     {
         path: '/error-400',
-        component: () => import('@/views/pages/error/Error400.vue'),
+        component: () => import('@/views/template/pages/error/Error400.vue'),
         name: 'error_400',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-403',
-        component: () => import('@/views/pages/error/Error403.vue'),
+        component: () => import('@/views/template/pages/error/Error403.vue'),
         name: 'error_403',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-404',
-        component: () => import('@/views/pages/error/Error404.vue'),
+        component: () => import('@/views/template/pages/error/Error404.vue'),
         name: 'error_404',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-408',
-        component: () => import('@/views/pages/error/Error408.vue'),
+        component: () => import('@/views/template/pages/error/Error408.vue'),
         name: 'error_408',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-500',
-        component: () => import('@/views/pages/error/Error500.vue'),
+        component: () => import('@/views/template/pages/error/Error500.vue'),
         name: 'error_500',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-503',
-        component: () => import('@/views/pages/error/Error503.vue'),
+        component: () => import('@/views/template/pages/error/Error503.vue'),
         name: 'error_503',
         meta: {layout: 'GuestLayout'}
     },
     {
         path: '/error-504',
-        component: () => import('@/views/pages/error/Error504.vue'),
+        component: () => import('@/views/template/pages/error/Error504.vue'),
         name: 'error_504',
         meta: {layout: 'GuestLayout'}
     },
@@ -202,200 +202,206 @@ export const pagesRoutes = [
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
+        path: '/',
+        component: HomeView,
+        name: 'log_workout',
+        meta: { layout: 'AppLayout', isPartials: true },
+    },
+    {
         path: '/crm-dashboard',
-        component: () => import('@/views/dashboard/CrmDashboard.vue'),
+        component: () => import('@/views/template/dashboard/CrmDashboard.vue'),
         name: 'crm_dashboard',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/hrm-dashboard',
-        component: () => import('@/views/dashboard/HrmDashboard.vue'),
+        component: () => import('@/views/templates/dashboard/HrmDashboard.vue'),
         name: 'hrm_dashboard',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/audience',
-        component: () => import('@/views/apps/crm/Audience.vue'),
+        component: () => import('@/views/template/apps/crm/Audience.vue'),
         name: 'crm_audience',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/company',
-        component: () => import('@/views/apps/crm/Company.vue'),
+        component: () => import('@/views/template/apps/crm/Company.vue'),
         name: 'crm_company',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/task',
-        component: () => import('@/views/apps/crm/Task.vue'),
+        component: () => import('@/views/template/apps/crm/Task.vue'),
         name: 'crm_task',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/leads',
-        component: () => import('@/views/apps/crm/Leads.vue'),
+        component: () => import('@/views/template/apps/crm/Leads.vue'),
         name: 'crm_leads',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/customer',
-        component: () => import('@/views/apps/crm/Customer.vue'),
+        component: () => import('@/views/template/apps/crm/Customer.vue'),
         name: 'crm_customer',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/add-employee',
-        component: () => import('@/views/apps/hrm/AddEmployee.vue'),
+        component: () => import('@/views/template/apps/hrm/AddEmployee.vue'),
         name: 'hrm_add_employee',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/all-employee',
-        component: () => import('@/views/apps/hrm/AllEmployee.vue'),
+        component: () => import('@/views/template/apps/hrm/AllEmployee.vue'),
         name: 'hrm_all_employee',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/attendance',
-        component: () => import('@/views/apps/hrm/Attendance.vue'),
+        component: () => import('@/views/template/apps/hrm/Attendance.vue'),
         name: 'hrm_attendance',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/all-customer',
-        component: () => import('@/views/apps/ecommerce/AllCustomer.vue'),
+        component: () => import('@/views/template/apps/ecommerce/AllCustomer.vue'),
         name: 'all_customer',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/add-product',
-        component: () => import('@/views/apps/ecommerce/AddProduct.vue'),
+        component: () => import('@/views/template/apps/ecommerce/AddProduct.vue'),
         name: 'add_product',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/all-product',
-        component: () => import('@/views/apps/ecommerce/AllProduct.vue'),
+        component: () => import('@/views/template/apps/ecommerce/AllProduct.vue'),
         name: 'all_product',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/category',
-        component: () => import('@/views/apps/ecommerce/Category.vue'),
+        component: () => import('@/views/template/apps/ecommerce/Category.vue'),
         name: 'category',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/order',
-        component: () => import('@/views/apps/ecommerce/Order.vue'),
+        component: () => import('@/views/template/apps/ecommerce/Order.vue'),
         name: 'order',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/calendar',
-        component: () => import('@/views/apps/Calendar.vue'),
+        component: () => import('@/views/template/apps/Calendar.vue'),
         name: 'calendar',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/chat',
-        component: () => import('@/views/apps/Chat.vue'),
+        component: () => import('@/views/template/apps/Chat.vue'),
         name: 'chat',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/email',
-        component: () => import('@/views/apps/Email.vue'),
+        component: () => import('@/views/template/apps/Email.vue'),
         name: 'email',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/invoices',
-        component: () => import('@/views/apps/Invoices.vue'),
+        component: () => import('@/views/template/apps/Invoices.vue'),
         name: 'invoices',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/contact',
-        component: () => import('@/views/apps/Contact.vue'),
+        component: () => import('@/views/template/apps/Contact.vue'),
         name: 'contact',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/view-profile',
-        component: () => import('@/views/pages/user/ViewProfile.vue'),
+        component: () => import('@/views/template/pages/user/ViewProfile.vue'),
         name: 'view_profile',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/edit-profile',
-        component: () => import('@/views/pages/user/EditProfile.vue'),
+        component: () => import('@/views/template/pages/user/EditProfile.vue'),
         name: 'edit_profile',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/sweet-alert',
-        component: () => import('@/views/components/advanceUI/SweetAlert.vue'),
+        component: () => import('@/views/template/components/advanceUI/SweetAlert.vue'),
         name: 'sweet_alert',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/nestable-list',
-        component: () => import('@/views/components/advanceUI/NestableList.vue'),
+        component: () => import('@/views/template/components/advanceUI/NestableList.vue'),
         name: 'nestable_list',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/animation',
-        component: () => import('@/views/components/advanceUI/Animation.vue'),
+        component: () => import('@/views/template/components/advanceUI/Animation.vue'),
         name: 'animation',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/swiper-slider',
-        component: () => import('@/views/components/advanceUI/SwiperSlider.vue'),
+        component: () => import('@/views/template/components/advanceUI/SwiperSlider.vue'),
         name: 'swiper_slider',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/form',
-        component: () => import('@/views/components/Form.vue'),
+        component: () => import('@/views/template/components/Form.vue'),
         name: 'form',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/table',
-        component: () => import('@/views/components/Table.vue'),
+        component: () => import('@/views/template/components/Table.vue'),
         name: 'table',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/charts',
-        component: () => import('@/views/components/Charts.vue'),
+        component: () => import('@/views/template/components/Charts.vue'),
         name: 'charts',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/icon',
-        component: () => import('@/views/components/Icon.vue'),
+        component: () => import('@/views/template/components/Icon.vue'),
         name: 'icon',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/map',
-        component: () => import('@/views/components/Map.vue'),
+        component: () => import('@/views/template/components/Map.vue'),
         name: 'map',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/file-manager',
-        component: () => import('@/views/components/FileManager.vue'),
+        component: () => import('@/views/template/components/FileManager.vue'),
         name: 'file_manager',
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
         path: '/utility',
-        component: () => import('@/views/pages/Utility.vue'),
+        component: () => import('@/views/template/pages/Utility.vue'),
         name: 'utility',
         meta: { layout: 'AppLayout', isPartials: true },
     },

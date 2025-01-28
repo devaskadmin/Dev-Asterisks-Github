@@ -7,7 +7,7 @@ currentYear.value = new Date().getFullYear();
 
 <template>
   <div class="footer">
-    <p>Copyright© {{ currentYear}} All Rights Reserved By <span class="text-primary">Digiboard</span></p>
+    <p>Copyright© {{ currentYear}} All Rights Reserved By <span class="text-primary">FlexFit</span></p>
   </div>
 </template>
 
