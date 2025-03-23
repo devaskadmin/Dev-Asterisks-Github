@@ -121,6 +121,10 @@ app.post('/api/logout', (req, res) => {
     res.json({ message: "Logged out successfully" });
   });
 });
+<<<<<<< HEAD
+=======
+
+>>>>>>> main
 
 
 
