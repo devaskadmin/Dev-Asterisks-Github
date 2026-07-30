@@ -1137,6 +1137,12 @@ onUnmounted(() => {
   }
 }
 
+@media (max-width: 600px) {
+  .wa-dashboard {
+    padding-bottom: calc(120px + var(--wa-mobile-bottom-nav-clearance, 0px));
+  }
+}
+
 @media (max-width: 430px) {
   .wa-greeting h1 {
     font-size: 24px;

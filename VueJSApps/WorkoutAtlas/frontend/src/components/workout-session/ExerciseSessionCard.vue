@@ -86,10 +86,11 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
         </span>
         <button
           type="button"
-          class="sec-select-btn"
-          :class="{ 'sec-select-btn--active': isExpanded }"
+          class="sec-select-btn exercise-collapse-btn"
+          :class="{ 'sec-select-btn--active': isExpanded, 'is-collapsed': !isExpanded }"
           :title="isExpanded ? 'Collapse exercise' : 'Select exercise'"
           :aria-label="isExpanded ? 'Collapse exercise' : 'Select exercise'"
+          :aria-expanded="isExpanded ? 'true' : 'false'"
           @click.stop="emit('select', exercise.id)"
         >
           <i :class="isExpanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
@@ -491,11 +492,29 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
 }
 
 .sec-header-actions {
-  display: flex;
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.sec-header-actions .sec-type-chip {
+  justify-self: start;
+}
+
+.sec-header-actions .sec-sets-summary {
+  justify-self: center;
+}
+
+.sec-header-actions .sec-select-btn,
+.sec-header-actions .exercise-collapse-btn {
+  justify-self: end;
 }
 
 .sec-sets-summary {
@@ -542,6 +561,55 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
 .sec-select-btn--active {
   background: #dbeafe;
   border-color: #2563eb;
+}
+
+.exercise-collapse-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  color: #60a5fa;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.exercise-collapse-btn:hover {
+  background: rgba(30, 64, 175, 0.26);
+  border-color: rgba(96, 165, 250, 0.62);
+  color: #93c5fd;
+}
+
+.exercise-collapse-btn:active {
+  transform: translateY(0);
+  background: rgba(37, 99, 235, 0.3);
+}
+
+.exercise-collapse-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24);
+}
+
+.exercise-collapse-btn.sec-select-btn--active {
+  border-color: rgba(96, 165, 250, 0.68);
+  background: rgba(30, 64, 175, 0.36);
+  color: #bfdbfe;
+}
+
+.exercise-collapse-btn i {
+  transition: transform 0.22s ease;
+}
+
+.exercise-collapse-btn.is-collapsed i {
+  transform: rotate(180deg);
 }
 
 .sr-only {
@@ -1037,6 +1105,53 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     padding: 10px 12px;
     gap: 10px;
     border-radius: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-body,
+  .cardio-table-wrap,
+  .cardio-3col-table,
+  .strength-table--mobile,
+  .sec-footer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-header {
+    margin: 0;
+    padding: 2px 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-identity {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .sec-meta {
+    min-width: 0;
+  }
+
+  .sec-meta h5,
+  .sec-meta p {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .sec-header-actions {
+    flex: 0 0 auto;
+    display: inline-grid;
+    grid-template-columns: auto auto auto;
+    justify-content: initial;
+    min-width: 0;
   }
 
   .strength-table--desktop {
@@ -1058,6 +1173,9 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     border-radius: 10px;
     background: transparent;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .strength-mobile-row--done {
@@ -1103,12 +1221,13 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   .sec-meta p    { font-size: 0.7rem; }
   .sec-type-chip { font-size: 0.62rem; padding: 2px 6px; }
   .sec-sets-summary { font-size: 0.68rem; }
-  .sec-select-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    font-size: 0.8rem;
-    border-radius: 999px;
+  .sec-select-btn,
+  .exercise-collapse-btn {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    font-size: 12px;
+    border-radius: 7px;
   }
 
   /* §5 Cardio set layout — 2-column grid (Duration|Calories / Distance|Speed) */
@@ -1131,6 +1250,8 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     padding: 6px 8px;
     border-bottom: none;
     background: transparent !important;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   /* Hide set number column (redundant in 2-col layout) */
@@ -1149,10 +1270,17 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     display: flex;
     align-items: center;
     gap: 6px;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
   }
 
   .c3-inline-actions {
     gap: 5px;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   .c3-icon-btn {
@@ -1168,6 +1296,9 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     padding: 0 8px;
     font-size: 0.82rem;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     text-align: left;
   }
 
@@ -1175,41 +1306,95 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   .c3-row-done {
     grid-column: 1 / -1;
     flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    align-items: stretch;
+    justify-content: flex-start;
     gap: 6px;
     padding: 7px 8px;
     border-top: 0 !important;
     background: transparent !important;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+  }
+
+  .c3-info-action,
+  .c3-done-cell {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    justify-content: stretch;
   }
 
   .c3-rm-btn {
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    white-space: normal;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 10px;
+    white-space: nowrap;
     border-radius: 9px;
     border: 1px solid #fca5a5;
     background: #fff5f5;
     color: #dc2626;
+    justify-content: center;
   }
   .c3-complete-btn {
-    width: 40px;
-    height: 40px;
-    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 10px;
     white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
     border-radius: 9px;
+    justify-content: center;
   }
 
   .c3-btn-label {
-    display: none;
+    display: inline;
   }
 
   /* Footer: compress */
-  .sec-footer { gap: 6px; flex-wrap: wrap; }
-  .add-set-btn   { font-size: 0.72rem; padding: 5px 10px; }
+  .sec-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .sec-footer > * {
+    min-width: 0;
+  }
+
+  .add-set-btn,
+  .c3-finish-btn {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
+  .add-set-btn { font-size: 0.72rem; padding: 5px 10px; }
   .c3-finish-btn { font-size: 0.76rem; padding: 6px 12px; }
+
   .sec-summary   { font-size: 0.7rem; }
+
+  .sec-summary,
+  .sec-prefill-note {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* ─── v0.81.6 Mobile 480px — further compression ──────────────── */
@@ -1217,12 +1402,14 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   .session-exercise-card { padding: 8px 10px; gap: 8px; }
   .sec-thumb, .sec-thumb-placeholder { width: 36px; height: 36px; }
   .sec-meta h5 { font-size: 0.8rem; }
-  .sec-select-btn { width: 40px; min-width: 40px; height: 40px; }
+  .sec-select-btn,
+  .exercise-collapse-btn { width: 30px; min-width: 30px; height: 30px; }
   .set-input { min-height: 34px; height: 34px; font-size: 0.78rem; }
   .c3-icon-btn { width: 28px; height: 28px; border-radius: 6px; }
-  .c3-rm-btn,
-  .c3-complete-btn,
-  .strength-mobile-row .c3-icon-btn { width: 38px; height: 38px; }
+  .strength-mobile-row .c3-icon-btn {
+    width: 38px;
+    height: 38px;
+  }
 
   /* Cardio table info labels smaller */
   .c3-col-info { font-size: 0.65rem; }
@@ -1234,10 +1421,11 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     gap: 4px;
   }
 
-  .sec-select-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
+  .sec-select-btn,
+  .exercise-collapse-btn {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
   }
 
   .strength-mobile-row .c3-icon-btn,
@@ -1245,6 +1433,13 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   .c3-complete-btn {
     width: 36px;
     height: 36px;
+  }
+
+  .c3-rm-btn,
+  .c3-complete-btn {
+    width: 100%;
+    min-height: 34px;
+    height: auto;
   }
 
   .strength-mobile-field .set-input {

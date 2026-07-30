@@ -581,7 +581,8 @@ onUnmounted(() => {
     min-height: 64px;
     padding: 10px 10px;
     align-items: center;
-    overflow: clip;
+    overflow-x: clip;
+    overflow-y: visible;
     box-sizing: border-box;
   }
 
@@ -697,6 +698,12 @@ onUnmounted(() => {
 
   .user-profile {
     margin-left: 1px;
+  }
+}
+
+@media (max-width: 600px) {
+  .hamburger-btn {
+    display: none;
   }
 }
 

@@ -3288,6 +3288,12 @@ watch(
   }
 }
 
+@media (max-width: 600px) {
+  .workout-builder-page {
+    padding-bottom: calc(100px + var(--wa-mobile-bottom-nav-clearance, 0px));
+  }
+}
+
 @media (max-width: 480px) {
   .workout-builder-canvas {
     gap: 6px;

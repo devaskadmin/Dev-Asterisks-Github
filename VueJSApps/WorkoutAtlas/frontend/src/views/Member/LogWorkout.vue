@@ -194,14 +194,24 @@ const groups = computed(() => {
 
 const allExercises = computed(() => expandedPlanData.value?.exercises || []);
 
+const buildExerciseNameSummary = (exercises = []) =>
+  (Array.isArray(exercises) ? exercises : [])
+    .map((exercise) => String(exercise?.name || exercise?.exerciseName || '').trim())
+    .filter(Boolean)
+    .join(' • ');
+
 const exercisesByGroup = computed(() =>
   groups.value
-    .map((group) => ({
-      name: group,
-      exercises: allExercises.value.filter(
+    .map((group) => {
+      const groupExercises = allExercises.value.filter(
         (ex) => (ex.scheduleGroup || groups.value[0]) === group,
-      ),
-    }))
+      );
+      return {
+        name: group,
+        exercises: groupExercises,
+        exerciseNameSummary: buildExerciseNameSummary(groupExercises),
+      };
+    })
     .filter((g) => g.exercises.length > 0),
 );
 
@@ -1295,16 +1305,14 @@ onMounted(async () => {
                     </div>
                   </div>
 
-                  <!-- Exercise preview -->
-                  <ul class="wl-day-card__exercises">
-                    <li v-for="ex in group.exercises" :key="ex.id" class="wl-day-card__ex-row">
-                      <span class="wl-ex-name">{{ ex.name }}</span>
-                      <span class="wl-ex-detail">
-                        <template v-if="isCardio(ex)">{{ ex.duration || '—' }} min</template>
-                        <template v-else>{{ ex.sets || '—' }} × {{ ex.reps || '—' }}<template v-if="ex.weight"> @ {{ ex.weight }} lb</template></template>
-                      </span>
-                    </li>
-                  </ul>
+                  <!-- Exercise preview summary -->
+                  <p
+                    class="wl-day-card__ex-summary"
+                    :title="group.exerciseNameSummary || undefined"
+                    :aria-label="group.exerciseNameSummary ? `Exercises: ${group.exerciseNameSummary}` : 'No exercises listed'"
+                  >
+                    {{ group.exerciseNameSummary || 'No exercises listed' }}
+                  </p>
 
                   <!-- Action -->
                   <div class="wl-day-card__footer">
@@ -1683,7 +1691,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.wl-page { padding-bottom: 100px; }
+.wl-page {
+  --mobile-bottom-nav-height: 0px;
+  --wl-bottom-bar-height: 92px;
+  padding-bottom: 100px;
+}
 
 /* ── Hero ──────────────────────────────────────────────────────────────── */
 .builder-hero__content {
@@ -2034,17 +2046,16 @@ onMounted(async () => {
 .wl-day-card__meta span { display: flex; align-items: center; gap: 4px; }
 .wl-day-card__meta i    { color: #3b82f6; }
 
-.wl-day-card__exercises {
-  list-style: none; padding: 0; margin: 0;
-  display: grid; gap: 5px;
-  border-top: 1px solid var(--border-color, #f3f4f6); padding-top: 10px;
+.wl-day-card__ex-summary {
+  margin: 0;
+  border-top: 1px solid var(--border-color, #f3f4f6);
+  padding-top: 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-color-secondary, #6b7280);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.wl-day-card__ex-row {
-  display: flex; justify-content: space-between;
-  align-items: center; gap: 8px; font-size: 0.83rem;
-}
-.wl-ex-name   { color: var(--text-color, #111827); font-weight: 600; }
-.wl-ex-detail { color: var(--text-color-secondary, #6b7280); white-space: nowrap; }
 
 .wl-day-card__footer { display: flex; justify-content: flex-end; gap: 10px; }
 
@@ -2563,7 +2574,7 @@ onMounted(async () => {
 .wl-page .wl-day-order-toggle,
 .wl-page .wl-plan__meta,
 .wl-page .wl-day-card__meta,
-.wl-page .wl-ex-detail,
+.wl-page .wl-day-card__ex-summary,
 .wl-page .wl-progress-label,
 .wl-page .wl-history-session__meta,
 .wl-page .wl-hist-set-num,
@@ -2617,7 +2628,7 @@ onMounted(async () => {
   color: color-mix(in srgb, var(--wl-accent) 78%, #ffffff 22%);
 }
 
-.wl-page .wl-day-card__exercises,
+.wl-page .wl-day-card__ex-summary,
 .wl-page .wl-plan__body,
 .wl-page .wl-history-session__header,
 .wl-page .wl-modal__header,
@@ -2790,6 +2801,55 @@ onMounted(async () => {
   color: var(--wl-accent);
 }
 
+.wl-page :deep(.exercise-collapse-btn) {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  color: #60a5fa;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.wl-page :deep(.exercise-collapse-btn:hover) {
+  background: rgba(30, 64, 175, 0.26);
+  border-color: rgba(96, 165, 250, 0.62);
+  color: #93c5fd;
+}
+
+.wl-page :deep(.exercise-collapse-btn:active) {
+  transform: translateY(0);
+  background: rgba(37, 99, 235, 0.3);
+}
+
+.wl-page :deep(.exercise-collapse-btn:focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24);
+}
+
+.wl-page :deep(.exercise-collapse-btn.sec-select-btn--active) {
+  border-color: rgba(96, 165, 250, 0.68);
+  background: rgba(30, 64, 175, 0.36);
+  color: #bfdbfe;
+}
+
+.wl-page :deep(.exercise-collapse-btn i) {
+  transition: transform 0.22s ease;
+}
+
+.wl-page :deep(.exercise-collapse-btn.is-collapsed i) {
+  transform: rotate(180deg);
+}
+
 .wl-page :deep(.set-input::placeholder) {
   color: var(--wl-text-muted);
 }
@@ -2829,13 +2889,61 @@ onMounted(async () => {
 
 /* ── v0.84.68.5 Mobile — Workout Log Compact Rework ──────────────────────── */
 @media (max-width: 768px) {
+  :global(body.wa-mobile-nav-active) .wl-page {
+    --mobile-bottom-nav-height: calc(
+      var(--wa-mobile-bottom-nav-height, 0px) +
+      var(--wa-mobile-bottom-nav-gap, 0px)
+    );
+  }
+
   .wl-page {
-    padding-bottom: calc(120px + var(--wa-mobile-bottom-nav-clearance, calc(92px + env(safe-area-inset-bottom))));
+    --wl-bottom-bar-offset: calc(var(--mobile-bottom-nav-height, 0px) + env(safe-area-inset-bottom));
+    --wl-bottom-bar-total-height: calc(var(--wl-bottom-bar-height, 92px) + var(--wl-bottom-bar-offset));
+    padding-bottom: var(--wl-bottom-bar-total-height);
     overflow-x: clip;
   }
 
   .wl-bottom-bar {
-    bottom: var(--wa-mobile-bottom-nav-clearance, calc(92px + env(safe-area-inset-bottom)));
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    bottom: calc(var(--mobile-bottom-nav-height, 0px) + env(safe-area-inset-bottom));
+    z-index: 60;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 6px max(10px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: clip;
+  }
+
+  .wl-bottom-bar__inner {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+  }
+
+  .wl-bottom-bar__label {
+    font-size: 0.68rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wl-bottom-bar__actions {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 6px;
   }
 
   /* Global density */
@@ -3048,9 +3156,15 @@ onMounted(async () => {
   .wl-day-card__title h4 { font-size: 0.78rem; }
   .wl-in-progress-chip   { padding: 1px 7px; font-size: 0.56rem; }
   .wl-day-card__meta     { font-size: 0.6rem; gap: 4px; }
-  .wl-day-card__exercises { gap: 2px; padding-top: 5px; }
-  .wl-day-card__ex-row   { font-size: 0.62rem; padding: 1px 0; }
-  .wl-ex-detail          { font-size: 0.58rem; }
+  .wl-day-card__ex-summary {
+    padding-top: 5px;
+    font-size: 0.62rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
   .wl-day-card__footer   { gap: 6px; }
 
   /* Preview / Start / Resume buttons: compact */
@@ -3100,16 +3214,22 @@ onMounted(async () => {
   .wl-hist-delete-btn { padding: 2px 7px; font-size: 0.58rem; gap: 3px; }
   .wl-hist-sets-table--cardio { overflow-x: auto; }
 
-  /* Bottom bar: compact */
-  .wl-bottom-bar { padding: 6px 10px; }
-  .wl-bottom-bar__label { font-size: 0.68rem; }
+  /* Bottom bar: compact buttons */
   .wl-btn-complete,
   .wl-btn-end {
-    padding: 6px 10px;
-    min-height: 34px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 5px 8px;
+    min-height: 32px;
     font-size: 0.66rem;
     border-radius: 9px;
     gap: 4px;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
@@ -3119,14 +3239,28 @@ onMounted(async () => {
   .wl-plan__header { flex-direction: column; align-items: flex-start; }
   .wl-plan__right  { width: 100%; justify-content: flex-end; }
   .wl-day-detail-header { flex-direction: column; }
-  .wl-bottom-bar__inner { flex-direction: column; align-items: stretch; }
-  .wl-bottom-bar__actions { justify-content: flex-end; }
+  .wl-bottom-bar__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .wl-bottom-bar__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    justify-content: initial;
+  }
   .wl-history-session__meta { flex-direction: column; gap: 4px; }
   .wl-history-datebar { flex-direction: column; align-items: flex-start; gap: 6px; }
   .wl-day-card__footer { flex-direction: column; }
   .wl-btn-preview, .wl-btn-start, .wl-btn-resume { width: 100%; justify-content: center; }
-  .wl-bottom-bar__actions { gap: 6px; }
-  .wl-btn-end, .wl-btn-complete { flex: 1; justify-content: center; }
+  .wl-btn-end, .wl-btn-complete {
+    width: 100%;
+    min-width: 0;
+    flex: initial;
+    justify-content: center;
+  }
 }
 
 /* ── Tiny mobile (≤ 390px) — final trim, badges hidden for width ────────── */

@@ -1,6 +1,6 @@
 {
     "name": "flexFit",
-    "version": "0.84.66",
+    "version": "0.84b3",
     "private": true,
     "scripts": {
         "dev": "concurrently \"cd ../backend && npm run dev\" \"vite\"",
