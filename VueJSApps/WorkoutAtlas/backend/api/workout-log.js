@@ -533,25 +533,58 @@ router.post('/session', async (req, res) => {
     }
 
     const userID = req.session.user.id;
-    const { planId, planName, workoutDate, exercises } = req.body;
+    const { planId, planName, workoutDate, workoutSessionId, exercises } = req.body;
 
     if (!Array.isArray(exercises) || exercises.length === 0) {
       return res.status(400).json({ error: 'exercises array is required.' });
     }
 
     const date = workoutDate || new Date().toISOString().split('T')[0];
-    const sourceScheduleId = Number(planId || 0) || null;
+    let sourceScheduleId = Number(planId || 0) || null;
+    const requestedSessionId = Number(workoutSessionId || 0) || null;
+    let createdSession = false;
 
     await connection.beginTransaction();
 
-    const [sessionResult] = await connection.query(
-      `INSERT INTO workout_log_sessions
-        (user_id, source_workout_schedule_id, workout_date, status, started_at, completed_at, notes)
-       VALUES (?, ?, ?, 'completed', NOW(), NOW(), ?)`,
-      [userID, sourceScheduleId, date, sanitizeText(planName || '', 255)]
-    );
+    let workoutLogSessionId = requestedSessionId;
+    if (workoutLogSessionId) {
+      const [[existingSession]] = await connection.query(
+        `SELECT id, user_id, status, source_workout_schedule_id AS workoutPlanId
+         FROM workout_log_sessions
+         WHERE id = ?
+         LIMIT 1`,
+        [workoutLogSessionId]
+      );
 
-    const workoutLogSessionId = sessionResult.insertId;
+      if (!existingSession) {
+        await connection.rollback();
+        return res.status(404).json({ error: 'Workout session not found.' });
+      }
+
+      if (existingSession.user_id !== userID) {
+        await connection.rollback();
+        return res.status(403).json({ error: 'You do not have permission to save this session.' });
+      }
+
+      if (!['in_progress', 'completed'].includes(String(existingSession.status || '').toLowerCase())) {
+        await connection.rollback();
+        return res.status(409).json({ error: 'This workout session is already closed.' });
+      }
+
+      if (!sourceScheduleId && existingSession.workoutPlanId) {
+        sourceScheduleId = Number(existingSession.workoutPlanId) || null;
+      }
+    } else {
+      const [sessionResult] = await connection.query(
+        `INSERT INTO workout_log_sessions
+          (user_id, source_workout_schedule_id, workout_date, status, started_at, completed_at, notes)
+         VALUES (?, ?, ?, 'completed', NOW(), NOW(), ?)`,
+        [userID, sourceScheduleId, date, sanitizeText(planName || '', 255)]
+      );
+      workoutLogSessionId = sessionResult.insertId;
+      createdSession = true;
+    }
+
     let insertedExerciseLogs = 0;
 
     for (const ex of exercises) {
@@ -680,6 +713,7 @@ router.post('/session', async (req, res) => {
     return res.status(201).json({
       message: 'Session saved successfully.',
       workoutLogSessionId,
+      createdSession,
       insertedExerciseLogs,
     });
   } catch (err) {
@@ -729,7 +763,10 @@ router.get('/history', async (req, res) => {
         wl.Distance                       AS distance,
         wl.Speed                          AS speed,
         wl.source_schedule_group_label    AS scheduleGroup,
+        wls.status                        AS sessionStatus,
         wls.started_at                    AS sessionStartedAt,
+        wls.ended_at                      AS sessionEndedAt,
+        wls.duration_seconds              AS sessionDurationSeconds,
         wls.completed_at                  AS sessionCompletedAt,
         wls.workout_date                  AS sessionWorkoutDate,
         ws.title                          AS planName,
@@ -793,7 +830,10 @@ router.get('/history', async (req, res) => {
           sessionId:          ex.sessionId,
           workoutDate:        ex.workoutDate,
           workoutDayName:     ex.scheduleGroup || '',
+          sessionStatus:      ex.sessionStatus || null,
           sessionStartedAt:   ex.sessionStartedAt || null,
+          sessionEndedAt:     ex.sessionEndedAt || null,
+          sessionDurationSeconds: Number(ex.sessionDurationSeconds || 0),
           sessionCompletedAt: ex.sessionCompletedAt || null,
           planName:           ex.planName || '',
           exercises:          [],

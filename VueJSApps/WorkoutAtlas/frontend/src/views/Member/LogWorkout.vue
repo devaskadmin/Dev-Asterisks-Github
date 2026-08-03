@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
 import { API_BASE } from '@/config/env';
@@ -43,6 +43,7 @@ const expandedPlanId    = ref(null);   // accordion open state
 const expandedPlanData  = ref(null);   // full plan detail (with exercises/days)
 const expandedLoading   = ref(false);
 const dayOrderStateByPlanId = ref({});
+const reorderPanelOpenByPlanId = ref({});
 const latestHistoryByExerciseId = ref({});
 
 /* ─── Session state (Day Details) ───────────────────────────────────────── */
@@ -55,6 +56,9 @@ const saving           = ref(false);
 const saveMessage      = ref('');
 const saveError        = ref('');
 const conflictMessage  = ref('');
+const workoutTimerNowMs = ref(Date.now());
+
+let workoutTimerIntervalId = null;
 
 /* ─── Accordion: active exercise ───────────────────────────────────── */
 const activeExerciseId = ref(null);
@@ -97,6 +101,63 @@ const formatUpdatedAt = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
+};
+
+const formatDurationHms = (totalSeconds) => {
+  const safeSeconds = Math.max(Number(totalSeconds || 0), 0);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = Math.floor(safeSeconds % 60);
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+};
+
+const getElapsedSecondsFromStart = (startedAtValue) => {
+  if (!startedAtValue) return 0;
+  const startedAtMs = new Date(startedAtValue).getTime();
+  if (!Number.isFinite(startedAtMs)) return 0;
+  return Math.max(Math.floor((workoutTimerNowMs.value - startedAtMs) / 1000), 0);
+};
+
+const getHistorySessionDurationSeconds = (session) => {
+  const explicitDuration = Number(session?.sessionDurationSeconds || 0);
+  if (explicitDuration > 0) {
+    return explicitDuration;
+  }
+
+  const startedAtMs = new Date(session?.sessionStartedAt || '').getTime();
+  const completedAtMs = new Date(session?.sessionCompletedAt || session?.sessionEndedAt || '').getTime();
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(completedAtMs)) {
+    return 0;
+  }
+
+  return Math.max(Math.floor((completedAtMs - startedAtMs) / 1000), 0);
+};
+
+const activeWorkoutElapsedSeconds = computed(() =>
+  hasActiveWorkout.value ? getElapsedSecondsFromStart(activeSession.value?.startedAt) : 0,
+);
+
+const activeWorkoutTimerLabel = computed(() => formatDurationHms(activeWorkoutElapsedSeconds.value));
+
+const setWorkoutTimerRunning = (isRunning) => {
+  if (isRunning) {
+    if (workoutTimerIntervalId != null) return;
+    workoutTimerNowMs.value = Date.now();
+    workoutTimerIntervalId = window.setInterval(() => {
+      workoutTimerNowMs.value = Date.now();
+    }, 1000);
+    return;
+  }
+
+  if (workoutTimerIntervalId != null) {
+    window.clearInterval(workoutTimerIntervalId);
+    workoutTimerIntervalId = null;
+  }
+};
+
+const syncWorkoutTimerState = () => {
+  const shouldRun = Boolean(hasActiveWorkout.value && activeSession.value?.startedAt);
+  setWorkoutTimerRunning(shouldRun);
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -219,6 +280,18 @@ const currentDayOrderState = computed(() => getDayOrderState(expandedPlanId.valu
 const dayOrderDirty = computed(() => Boolean(currentDayOrderState.value?.dirty));
 const dayOrderSaving = computed(() => Boolean(currentDayOrderState.value?.saving));
 const dayOrderLoading = computed(() => Boolean(currentDayOrderState.value?.loading));
+
+const isReorderPanelOpen = (planId) => Boolean(reorderPanelOpenByPlanId.value[String(planId || '')]);
+
+const toggleReorderPanel = (planId) => {
+  const pid = String(planId || '').trim();
+  if (!pid) return;
+  const current = Boolean(reorderPanelOpenByPlanId.value[pid]);
+  reorderPanelOpenByPlanId.value = {
+    ...reorderPanelOpenByPlanId.value,
+    [pid]: !current,
+  };
+};
 
 const ensureLocalCustomOrder = (planId) => {
   const state = getDayOrderState(planId);
@@ -676,13 +749,13 @@ const loadWorkoutLists = async () => {
     }
 
     plansLoaded.value = true;
-    await autoExpandSinglePlanIfNeeded();
   } catch (err) {
     plansLoadError.value = err?.message || 'Failed to load workout plans.';
     workoutLists.value = [];
     plansLoaded.value = true;
   } finally {
     loading.value = false;
+    await autoExpandSinglePlanIfNeeded();
   }
 };
 
@@ -715,12 +788,20 @@ const togglePlan = async (planId) => {
     // Collapse
     expandedPlanId.value   = null;
     expandedPlanData.value = null;
+    reorderPanelOpenByPlanId.value = {
+      ...reorderPanelOpenByPlanId.value,
+      [pid]: false,
+    };
     return;
   }
 
   expandedPlanId.value   = pid;
   expandedPlanData.value = null;
   expandedLoading.value  = true;
+  reorderPanelOpenByPlanId.value = {
+    ...reorderPanelOpenByPlanId.value,
+    [pid]: false,
+  };
 
   try {
     const res  = await fetch(`${API_BASE}/api/workout-planner?planId=${encodeURIComponent(pid)}`, { credentials: 'include' });
@@ -746,6 +827,7 @@ const checkActiveSession = async () => {
     if (data.session) {
       activeSession.value    = data.session;
       hasActiveWorkout.value = true;
+      isPreviewMode.value    = false;
       // Restore the date picker to the active session's start date so the
       // page always shows the correct workout even when returning on a later day.
       if (data.session.workoutDate) {
@@ -811,7 +893,10 @@ const startDayWorkout = async (dayName) => {
 
     if (res.status === 409) {
       conflictMessage.value = data.error || 'A workout is already in progress.';
-      if (data.activeSession) activeSession.value = data.activeSession;
+      if (data.activeSession) {
+        activeSession.value = data.activeSession;
+        hasActiveWorkout.value = true;
+      }
       return;
     }
     if (!res.ok) throw new Error(data?.error || 'Failed to start workout session.');
@@ -859,13 +944,21 @@ const completeWorkout = async () => {
       throw new Error(errBody?.error || 'Failed to save session log.');
     }
 
+    let completedDurationSeconds = 0;
     if (activeSession.value?.id) {
-      await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
+      const completeRes = await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
         method: 'POST', credentials: 'include',
       });
+      const completeData = await completeRes.json().catch(() => ({}));
+      if (!completeRes.ok) {
+        throw new Error(completeData?.error || 'Failed to complete workout session.');
+      }
+      completedDurationSeconds = Number(completeData?.session?.durationSeconds || 0);
     }
 
-    saveMessage.value      = '✓ Workout complete! Great work!';
+    saveMessage.value = completedDurationSeconds > 0
+      ? `✓ Workout complete! Great work! Workout Time: ${formatDurationHms(completedDurationSeconds)}`
+      : '✓ Workout complete! Great work!';
     activeSession.value    = null;
     hasActiveWorkout.value = false;
 
@@ -883,11 +976,16 @@ const completeWorkout = async () => {
 
 /* ─── End without saving ─────────────────────────────────────────────────── */
 const endWithoutSaving = async () => {
+  let endedDurationSeconds = 0;
   if (activeSession.value?.id) {
     try {
-      await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
+      const cancelRes = await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
         method: 'POST', credentials: 'include',
       });
+      const cancelData = await cancelRes.json().catch(() => ({}));
+      if (cancelRes.ok) {
+        endedDurationSeconds = Number(cancelData?.session?.durationSeconds || 0);
+      }
     } catch (_) { /* non-fatal */ }
   }
   activeSession.value    = null;
@@ -896,6 +994,14 @@ const endWithoutSaving = async () => {
   activeTab.value        = 'overview';
   selectedDay.value      = '';
   conflictMessage.value  = '';
+  if (endedDurationSeconds > 0) {
+    saveMessage.value = `Workout ended. Workout Time: ${formatDurationHms(endedDurationSeconds)}`;
+    setTimeout(() => {
+      if (saveMessage.value.startsWith('Workout ended.')) {
+        saveMessage.value = '';
+      }
+    }, 3000);
+  }
 };
 
 /* ─── Navigation helpers ─────────────────────────────────────────────────── */
@@ -951,6 +1057,14 @@ watch(selectedWorkoutDate, () => {
     loadWorkoutHistory();
   }
 });
+
+watch(
+  [hasActiveWorkout, () => activeSession.value?.startedAt],
+  () => {
+    syncWorkoutTimerState();
+  },
+  { immediate: true },
+);
 
 const openHistoryTab = () => {
   activeTab.value = 'workoutHistory';
@@ -1066,6 +1180,10 @@ const saveHistoryWorkout = async (session) => {
 onMounted(async () => {
   await loadWorkoutLists();
   await checkActiveSession();
+});
+
+onUnmounted(() => {
+  setWorkoutTimerRunning(false);
 });
 </script>
 
@@ -1208,6 +1326,16 @@ onMounted(async () => {
                 <span v-if="expandedPlanId === String(plan.planId)" class="wl-plan__selected-badge">
                   <i class="fa-solid fa-circle-check"></i> Selected
                 </span>
+                <button
+                  v-if="expandedPlanId === String(plan.planId)"
+                  type="button"
+                  class="wl-btn-reorder"
+                  :aria-expanded="isReorderPanelOpen(plan.planId) ? 'true' : 'false'"
+                  @click="toggleReorderPanel(plan.planId)"
+                >
+                  <i class="fa-solid fa-arrows-up-down"></i>
+                  Reorder
+                </button>
                 <button type="button" class="wl-btn-edit" @click="openInBuilder(plan.planId)">
                   <i class="fa-solid fa-pencil"></i> Edit Plan
                 </button>
@@ -1222,45 +1350,57 @@ onMounted(async () => {
                 No scheduled days found. <button type="button" class="wl-link" @click="openInBuilder(plan.planId)">Open in Builder</button>
               </div>
 
-              <div v-else class="wl-day-grid">
-                <div class="wl-day-order-toolbar workout-log-order-toolbar app-section-card">
-                  <label class="wl-day-order-toggle">
-                    <input
-                      type="checkbox"
-                      :checked="currentDayOrderState?.useCustomWorkoutLogOrder === true"
-                      @change="toggleCustomWorkoutLogOrder($event.target.checked)"
-                    />
-                    <span>Use Custom Workout Log Order</span>
-                  </label>
-                  <span
-                    v-if="currentDayOrderState?.useCustomWorkoutLogOrder"
-                    class="wl-custom-order-badge"
-                  >
-                    Custom Order Enabled
-                  </span>
-                  <div class="wl-day-order-actions">
-                    <button
-                      type="button"
-                      class="wl-order-toolbar-btn wl-order-toolbar-btn--reset"
-                      :disabled="dayOrderSaving || dayOrderLoading"
-                      @click="resetWorkoutLogDayOrder"
+              <div
+                v-else
+                class="wl-day-grid"
+                :class="{ 'wl-day-grid--reorder-open': isReorderPanelOpen(plan.planId) }"
+              >
+                <div
+                  class="wl-day-order-collapsible"
+                  :class="{ 'wl-day-order-collapsible--open': isReorderPanelOpen(plan.planId) }"
+                >
+                  <div class="wl-day-order-toolbar workout-log-order-toolbar app-section-card">
+                    <label class="wl-day-order-toggle">
+                      <input
+                        type="checkbox"
+                        :checked="currentDayOrderState?.useCustomWorkoutLogOrder === true"
+                        @change="toggleCustomWorkoutLogOrder($event.target.checked)"
+                      />
+                      <span>Use Custom Order</span>
+                    </label>
+                    <span
+                      v-if="currentDayOrderState?.useCustomWorkoutLogOrder"
+                      class="wl-custom-order-badge"
                     >
-                      <i class="fa-solid fa-rotate-left"></i> Reset Order
-                    </button>
-                    <button
-                      type="button"
-                      class="wl-order-toolbar-btn wl-order-toolbar-btn--save"
-                      :disabled="dayOrderSaving || dayOrderLoading || !dayOrderDirty"
-                      @click="saveWorkoutLogDayOrder"
-                    >
-                      <i v-if="dayOrderSaving" class="fa-solid fa-spinner fa-spin"></i>
-                      <i v-else class="fa-solid fa-floppy-disk"></i>
-                      Save Order
-                    </button>
+                      Custom Order Enabled
+                    </span>
+                    <div class="wl-day-order-actions">
+                      <button
+                        type="button"
+                        class="wl-order-toolbar-btn wl-order-toolbar-btn--reset"
+                        :disabled="dayOrderSaving || dayOrderLoading"
+                        @click="resetWorkoutLogDayOrder"
+                      >
+                        <i class="fa-solid fa-rotate-left"></i> Reset Order
+                      </button>
+                      <button
+                        type="button"
+                        class="wl-order-toolbar-btn wl-order-toolbar-btn--save"
+                        :disabled="dayOrderSaving || dayOrderLoading || !dayOrderDirty"
+                        @click="saveWorkoutLogDayOrder"
+                      >
+                        <i v-if="dayOrderSaving" class="fa-solid fa-spinner fa-spin"></i>
+                        <i v-else class="fa-solid fa-floppy-disk"></i>
+                        Save Order
+                      </button>
+                    </div>
+                    <p class="wl-day-order-helper">
+                      Enable custom order, then use Move Up/Down on each workout day card.
+                    </p>
+                    <p v-if="currentDayOrderState?.error" class="wl-day-order-error">
+                      {{ currentDayOrderState.error }}
+                    </p>
                   </div>
-                  <p v-if="currentDayOrderState?.error" class="wl-day-order-error">
-                    {{ currentDayOrderState.error }}
-                  </p>
                 </div>
                 <article
                   v-for="group in exercisesByGroup"
@@ -1353,7 +1493,7 @@ onMounted(async () => {
       </div>
 
       <!-- ══ DAY DETAILS TAB ═════════════════════════════════════════════ -->
-      <div v-show="activeTab === 'dayDetails'" class="wl-tab-panel">
+      <div v-show="activeTab === 'dayDetails'" class="wl-tab-panel wl-tab-panel--day-details">
 
         <template v-if="selectedDay && dayExercises.length > 0">
           <!-- Preview mode banner -->
@@ -1377,6 +1517,10 @@ onMounted(async () => {
                 <div class="wl-progress-fill" :style="{ width: progressPct + '%' }"></div>
               </div>
               <span class="wl-progress-label">{{ totalCompleted }} / {{ totalSets }} sets ({{ progressPct }}%)</span>
+              <span v-if="activeSession && hasActiveWorkout" class="wl-workout-time">
+                <i class="fa-solid fa-stopwatch"></i>
+                Workout Time: <strong>{{ activeWorkoutTimerLabel }}</strong>
+              </span>
             </div>
           </div>
 
@@ -1455,6 +1599,10 @@ onMounted(async () => {
                 <span v-if="session.sessionCompletedAt">
                   <i class="fa-solid fa-flag-checkered"></i>
                   Completed: {{ new Date(session.sessionCompletedAt).toLocaleString() }}
+                </span>
+                <span v-if="getHistorySessionDurationSeconds(session) > 0">
+                  <i class="fa-solid fa-stopwatch"></i>
+                  Workout Time: {{ formatDurationHms(getHistorySessionDurationSeconds(session)) }}
                 </span>
                 <!-- Edit mode: Save + Cancel -->
                 <template v-if="editingHistorySessionId === session.sessionId">
@@ -2011,6 +2159,38 @@ onMounted(async () => {
 }
 .wl-btn-edit:hover { background: #e0e7ef; }
 
+.wl-btn-reorder {
+  background: #eaf2ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 7px 11px;
+  min-height: 30px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.wl-btn-reorder:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.wl-day-order-collapsible {
+  grid-column: 1 / -1;
+}
+
+.wl-day-order-helper {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
 .wl-plan__body { border-top: 1px solid var(--border-color, #e5e7eb); padding: 16px 18px; }
 .wl-plan__loading { color: var(--text-color-secondary, #6b7280); font-size: 0.88rem; padding: 8px 0; }
 
@@ -2095,12 +2275,12 @@ onMounted(async () => {
 
 .wl-exercise-list--preview { opacity: 0.75; pointer-events: none; user-select: none; }
 .wl-btn-resume {
-  background: #22c55e; border: none; color: #fff;
+  background: #2563eb; border: none; color: #fff;
   border-radius: 10px; padding: 10px 20px;
   font-size: 0.85rem; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; gap: 7px; transition: background 0.15s;
 }
-.wl-btn-resume:hover { background: #16a34a; }
+.wl-btn-resume:hover { background: #1d4ed8; }
 
 /* ── Day Details tab ────────────────────────────────────────────────────── */
 .wl-day-detail-header {
@@ -2128,6 +2308,15 @@ onMounted(async () => {
   border-radius: 999px; transition: width 0.35s ease;
 }
 .wl-progress-label { color: var(--text-color-secondary, #6b7280); font-size: 0.78rem; }
+.wl-workout-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color, #111827);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.wl-workout-time i { color: #2563eb; }
 .wl-exercise-list  { display: grid; gap: 12px; }
 
 /* ── Sticky bottom bar ──────────────────────────────────────────────────── */
@@ -2505,15 +2694,23 @@ onMounted(async () => {
 }
 
 .wl-page .wl-btn--active,
-.wl-page .wl-btn-resume,
 .wl-page .wl-btn-complete {
   background: #16a34a;
 }
 
 .wl-page .wl-btn--active:hover,
-.wl-page .wl-btn-resume:hover,
 .wl-page .wl-btn-complete:hover {
   background: #15803d;
+}
+
+.wl-page .wl-btn-resume {
+  background: var(--wl-accent);
+  border-color: color-mix(in srgb, var(--wl-accent) 64%, #0f172a 36%);
+  color: #f8fafc;
+}
+
+.wl-page .wl-btn-resume:hover {
+  background: color-mix(in srgb, var(--wl-accent) 86%, #ffffff 14%);
 }
 
 .wl-page .wl-stats .wl-stat-card,
@@ -2889,18 +3086,26 @@ onMounted(async () => {
 
 /* ── v0.84.68.5 Mobile — Workout Log Compact Rework ──────────────────────── */
 @media (max-width: 768px) {
-  :global(body.wa-mobile-nav-active) .wl-page {
-    --mobile-bottom-nav-height: calc(
-      var(--wa-mobile-bottom-nav-height, 0px) +
-      var(--wa-mobile-bottom-nav-gap, 0px)
-    );
-  }
-
   .wl-page {
+    --mobile-bottom-nav-height: max(
+      76px,
+      calc(var(--wa-mobile-bottom-nav-height, 0px) + var(--wa-mobile-bottom-nav-gap, 0px))
+    );
+    --workout-bottom-bar-height: 76px;
     --wl-bottom-bar-offset: calc(var(--mobile-bottom-nav-height, 0px) + env(safe-area-inset-bottom));
-    --wl-bottom-bar-total-height: calc(var(--wl-bottom-bar-height, 92px) + var(--wl-bottom-bar-offset));
+    --wl-active-workout-clearance: calc(
+      var(--mobile-bottom-nav-height, 0px) +
+      var(--workout-bottom-bar-height, 76px) +
+      env(safe-area-inset-bottom) +
+      24px
+    );
+    --wl-bottom-bar-total-height: var(--wl-active-workout-clearance);
     padding-bottom: var(--wl-bottom-bar-total-height);
     overflow-x: clip;
+  }
+
+  .wl-tab-panel--day-details {
+    padding-bottom: var(--wl-active-workout-clearance);
   }
 
   .wl-bottom-bar {
@@ -3007,9 +3212,7 @@ onMounted(async () => {
 
   /* Stat cards: compact */
   .wl-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 5px;
-    margin-bottom: 6px;
+    display: none;
   }
   .wl-stat-card {
     min-height: 44px;
@@ -3089,12 +3292,48 @@ onMounted(async () => {
     font-size: 0.58rem;
     gap: 3px;
   }
+  .wl-btn-reorder {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.62rem;
+    border-radius: 999px;
+    gap: 3px;
+    border-color: rgba(96, 165, 250, 0.45);
+    background: #243244;
+    color: #cbd5e1;
+  }
+  .wl-btn-reorder i {
+    color: #60a5fa;
+  }
+  .wl-btn-reorder:hover,
+  .wl-btn-reorder:focus-visible {
+    background: #2b3d55;
+    border-color: rgba(147, 197, 253, 0.6);
+    color: #f8fafc;
+  }
   .wl-btn-edit {
     min-height: 26px;
     padding: 3px 8px;
     font-size: 0.62rem;
     border-radius: 8px;
     gap: 3px;
+  }
+
+  .wl-day-order-collapsible {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin: 0;
+    transform: translateY(-2px);
+    transition: max-height 0.2s ease, opacity 0.2s ease, transform 0.2s ease, margin 0.2s ease;
+  }
+
+  .wl-day-order-collapsible--open {
+    max-height: 260px;
+    opacity: 1;
+    overflow: visible;
+    margin: 0 0 2px;
+    transform: translateY(0);
   }
 
   /* Day order toolbar: tighter */
@@ -3112,6 +3351,11 @@ onMounted(async () => {
   }
   .wl-day-order-toolbar.app-section-card {
     padding: 0 4px !important;
+  }
+  .wl-day-order-helper {
+    font-size: 0.56rem;
+    line-height: 1.15;
+    margin-top: 1px;
   }
   .wl-day-order-toggle {
     font-size: 0.6rem;
@@ -3142,6 +3386,10 @@ onMounted(async () => {
     padding: 0 5px;
     min-height: 18px;
     font-size: 0.54rem;
+  }
+
+  .wl-day-grid:not(.wl-day-grid--reorder-open) .wl-order-btn {
+    display: none;
   }
 
   /* Workout day cards: smaller text, tighter rows, no glow */
@@ -3214,6 +3462,158 @@ onMounted(async () => {
   .wl-hist-delete-btn { padding: 2px 7px; font-size: 0.58rem; gap: 3px; }
   .wl-hist-sets-table--cardio { overflow-x: auto; }
 
+  .wl-tab-panel .wl-empty,
+  .wl-tab-panel .wl-empty p,
+  .wl-tab-panel .wl-empty h6,
+  .wl-history-datebar,
+  .wl-history-datebar span,
+  .wl-history-session__title,
+  .wl-history-group__plan,
+  .wl-hist-ex-name,
+  .wl-hist-set-row {
+    color: #f8fafc;
+  }
+
+  .wl-history-datebar strong,
+  .wl-history-session__meta,
+  .wl-history-session__meta span,
+  .wl-hist-tag,
+  .wl-hist-set-num,
+  .wl-hist-sets-head--strength,
+  .wl-hist-sets-head--cardio,
+  .wl-hist-sets-head--cardio small,
+  .wl-history-ex__stats,
+  .wl-history-ex__stats span,
+  .wl-hist-ex-info,
+  .wl-hist-ex-tags {
+    color: #cbd5e1;
+  }
+
+  .wl-tab-panel .wl-empty .wl-empty-icon,
+  .wl-history-datebar i,
+  .wl-history-session__meta i,
+  .wl-history-ex__stats i {
+    color: #60a5fa;
+  }
+
+  .wl-history-datebar .wl-btn-preview {
+    color: #cbd5e1;
+    border-color: rgba(96, 165, 250, 0.45);
+    background: #1b2444;
+  }
+
+  .wl-history-datebar .wl-btn-preview:hover {
+    color: #f8fafc;
+    background: #273142;
+  }
+
+  .wl-tab-panel .wl-empty p,
+  .wl-tab-panel .wl-empty h6 {
+    margin-bottom: 0;
+  }
+
+  .wl-page :deep(.session-exercise-card),
+  .wl-page :deep(.sec-meta h5),
+  .wl-page :deep(.sec-meta p),
+  .wl-page :deep(.sec-summary),
+  .wl-page :deep(.sec-prefill-note),
+  .wl-page :deep(.strength-mobile-field span),
+  .wl-page :deep(.c3-col-info),
+  .wl-page :deep(.c3-col-value),
+  .wl-page :deep(.c3-btn-label),
+  .wl-page :deep(.set-num),
+  .wl-page :deep(.c3-set-num) {
+    color: #f8fafc;
+  }
+
+  .wl-page :deep(.sec-meta p),
+  .wl-page :deep(.strength-mobile-field span),
+  .wl-page :deep(.c3-col-info),
+  .wl-page :deep(.sec-summary),
+  .wl-page :deep(.sec-prefill-note),
+  .wl-page :deep(.set-input::placeholder),
+  .wl-page :deep(.c3-col-set),
+  .wl-page :deep(.set-num) {
+    color: #cbd5e1;
+  }
+
+  .wl-page :deep(.strength-mobile-row),
+  .wl-page :deep(.c3-set-group) {
+    background: #1b2444 !important;
+    border: 1px solid rgba(96, 165, 250, 0.22) !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done),
+  .wl-page :deep(.strength-mobile-row--done),
+  .wl-page :deep(.sec-set-row.set-done) {
+    background: rgba(22, 163, 74, 0.10) !important;
+    border-color: rgba(34, 197, 94, 0.35) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row:first-child),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row-done),
+  .wl-page :deep(.strength-mobile-row--done .strength-mobile-field span),
+  .wl-page :deep(.strength-mobile-row--done .set-input),
+  .wl-page :deep(.sec-set-row.set-done .set-input) {
+    background: rgba(22, 163, 74, 0.10) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-col-info),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-col-set),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-set-num),
+  .wl-page :deep(.sec-set-row.set-done .set-num) {
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-complete-btn),
+  .wl-page :deep(.c3-complete-btn--done),
+  .wl-page :deep(.c3-icon-btn--done) {
+    border-color: rgba(34, 197, 94, 0.45) !important;
+    background: rgba(34, 197, 94, 0.16) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn) {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn--remove) {
+    background: rgba(239, 68, 68, 0.12) !important;
+    border: 1px solid rgba(248, 113, 113, 0.35) !important;
+    color: #fca5a5 !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn--complete),
+  .wl-page :deep(.strength-mobile-row .c3-complete-btn) {
+    background: rgba(34, 197, 94, 0.16) !important;
+    border: 1px solid rgba(34, 197, 94, 0.45) !important;
+    color: #86efac !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .set-input),
+  .wl-page :deep(.c3-set-group .set-input) {
+    background: #111b2e !important;
+    border-color: rgba(96, 165, 250, 0.3) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .set-input::placeholder),
+  .wl-page :deep(.c3-set-group .set-input::placeholder) {
+    color: #94a3b8 !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .fa-circle-check),
+  .wl-page :deep(.sec-sets-summary--done i) {
+    color: #22c55e !important;
+  }
+
   /* Bottom bar: compact buttons */
   .wl-btn-complete,
   .wl-btn-end {
@@ -3237,7 +3637,7 @@ onMounted(async () => {
 @media (max-width: 640px) {
   .wl-stats { grid-template-columns: repeat(3, 1fr); }
   .wl-plan__header { flex-direction: column; align-items: flex-start; }
-  .wl-plan__right  { width: 100%; justify-content: flex-end; }
+  .wl-plan__right  { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
   .wl-day-detail-header { flex-direction: column; }
   .wl-bottom-bar__inner {
     display: grid;

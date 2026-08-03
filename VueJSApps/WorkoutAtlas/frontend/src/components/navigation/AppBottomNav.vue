@@ -132,13 +132,13 @@ const handleNavClick = (item, event) => {
   display: none;
 }
 
-@media (min-width: 601px) {
+@media (min-width: 769px) {
   .wa-app-bottom-nav {
     display: none;
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .wa-app-bottom-nav {
     display: grid;
   }

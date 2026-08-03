@@ -32,6 +32,8 @@ router.get('/workout-sessions/active', requireAuth, async (req, res) => {
          workout_date               AS workoutDate,
          status                     AS sessionStatus,
          started_at                 AS startedAt,
+         ended_at                   AS endedAt,
+         duration_seconds           AS durationSeconds,
          completed_at               AS completedAt
        FROM workout_log_sessions
        WHERE user_id = ? AND status = 'in_progress'
@@ -69,7 +71,13 @@ router.post('/workout-sessions/start', requireAuth, async (req, res) => {
     const [existing] = await pool.query(
       `SELECT id,
               source_workout_schedule_id AS workoutPlanId,
-              workout_day_name           AS workoutDayName
+              workout_day_name           AS workoutDayName,
+              workout_date               AS workoutDate,
+              status                     AS sessionStatus,
+              started_at                 AS startedAt,
+              ended_at                   AS endedAt,
+              duration_seconds           AS durationSeconds,
+              completed_at               AS completedAt
        FROM workout_log_sessions
        WHERE user_id = ? AND status = 'in_progress'
        LIMIT 1`,
@@ -110,6 +118,9 @@ router.post('/workout-sessions/start', requireAuth, async (req, res) => {
         workoutDate,
         sessionStatus:  'in_progress',
         startedAt:      new Date().toISOString(),
+        endedAt:        null,
+        durationSeconds: 0,
+        completedAt:    null,
       },
     });
   } catch (err) {
@@ -130,7 +141,10 @@ router.post('/workout-sessions/complete/:sessionId', requireAuth, async (req, re
     }
 
     const [rows] = await pool.query(
-      `SELECT id FROM workout_log_sessions WHERE id = ? AND user_id = ? LIMIT 1`,
+      `SELECT id, started_at AS startedAt
+       FROM workout_log_sessions
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
       [sessionId, userId]
     );
 
@@ -140,12 +154,37 @@ router.post('/workout-sessions/complete/:sessionId', requireAuth, async (req, re
 
     await pool.query(
       `UPDATE workout_log_sessions
-       SET status = 'completed', completed_at = NOW()
+       SET status = 'completed',
+           ended_at = NOW(),
+           completed_at = NOW(),
+           duration_seconds = CASE
+             WHEN started_at IS NULL THEN 0
+             ELSE GREATEST(TIMESTAMPDIFF(SECOND, started_at, NOW()), 0)
+           END
        WHERE id = ? AND user_id = ?`,
       [sessionId, userId]
     );
 
-    return res.status(200).json({ message: 'Workout session completed.' });
+    const [[session]] = await pool.query(
+      `SELECT
+         id,
+         user_id                    AS userId,
+         source_workout_schedule_id AS workoutPlanId,
+         workout_day_id             AS workoutDayId,
+         workout_day_name           AS workoutDayName,
+         workout_date               AS workoutDate,
+         status                     AS sessionStatus,
+         started_at                 AS startedAt,
+         ended_at                   AS endedAt,
+         duration_seconds           AS durationSeconds,
+         completed_at               AS completedAt
+       FROM workout_log_sessions
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [sessionId, userId]
+    );
+
+    return res.status(200).json({ message: 'Workout session completed.', session });
   } catch (err) {
     console.error('❌ POST /workout-sessions/complete:', err);
     return res.status(500).json({ error: 'Failed to complete workout session.' });
@@ -163,14 +202,51 @@ router.post('/workout-sessions/cancel/:sessionId', requireAuth, async (req, res)
       return res.status(400).json({ error: 'Invalid sessionId.' });
     }
 
+    const [rows] = await pool.query(
+      `SELECT id
+       FROM workout_log_sessions
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [sessionId, userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found.' });
+    }
+
     await pool.query(
       `UPDATE workout_log_sessions
-       SET status = 'cancelled', completed_at = NOW()
+       SET status = 'ended',
+           ended_at = NOW(),
+           completed_at = NOW(),
+           duration_seconds = CASE
+             WHEN started_at IS NULL THEN 0
+             ELSE GREATEST(TIMESTAMPDIFF(SECOND, started_at, NOW()), 0)
+           END
        WHERE id = ? AND user_id = ?`,
       [sessionId, userId]
     );
 
-    return res.status(200).json({ message: 'Workout session cancelled.' });
+    const [[session]] = await pool.query(
+      `SELECT
+         id,
+         user_id                    AS userId,
+         source_workout_schedule_id AS workoutPlanId,
+         workout_day_id             AS workoutDayId,
+         workout_day_name           AS workoutDayName,
+         workout_date               AS workoutDate,
+         status                     AS sessionStatus,
+         started_at                 AS startedAt,
+         ended_at                   AS endedAt,
+         duration_seconds           AS durationSeconds,
+         completed_at               AS completedAt
+       FROM workout_log_sessions
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [sessionId, userId]
+    );
+
+    return res.status(200).json({ message: 'Workout session ended.', session });
   } catch (err) {
     console.error('❌ POST /workout-sessions/cancel:', err);
     return res.status(500).json({ error: 'Failed to cancel workout session.' });

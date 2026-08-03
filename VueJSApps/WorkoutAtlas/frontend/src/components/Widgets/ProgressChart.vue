@@ -209,10 +209,7 @@ onMounted(loadChart);
 }
 
 .ps-chart-header__left h5 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
-  color: var(--wa-shell-text, #f8fafc);
+  display: none;
 }
 
 .ps-chart-sub {

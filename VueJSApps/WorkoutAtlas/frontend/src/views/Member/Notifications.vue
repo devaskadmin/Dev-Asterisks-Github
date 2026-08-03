@@ -116,7 +116,7 @@ onMounted(fetchNotifications)
       <h2>Notifications</h2>
       <div class="dashboard-filter d-flex align-items-center gap-2">
         <span class="header-meta">Unread: {{ unreadCount }}</span>
-        <button type="button" class="btn btn-sm btn-light" @click="markAllAsRead" :disabled="unreadCount === 0">
+        <button type="button" class="btn btn-sm mark-all-btn" @click="markAllAsRead" :disabled="unreadCount === 0">
           Mark all read
         </button>
       </div>
@@ -125,15 +125,15 @@ onMounted(fetchNotifications)
     <section class="panel panel-bg notifications-panel">
       <div class="panel-header notifications-head">
         <div class="filter-group">
-          <button type="button" class="btn btn-sm" :class="activeFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'" @click="activeFilter = 'all'">
+          <button type="button" class="btn btn-sm filter-btn" :class="activeFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'" @click="activeFilter = 'all'">
             All
           </button>
-          <button type="button" class="btn btn-sm" :class="activeFilter === 'unread' ? 'btn-primary' : 'btn-outline-primary'" @click="activeFilter = 'unread'">
+          <button type="button" class="btn btn-sm filter-btn" :class="activeFilter === 'unread' ? 'btn-primary' : 'btn-outline-primary'" @click="activeFilter = 'unread'">
             Unread
           </button>
         </div>
 
-        <button type="button" class="btn btn-sm btn-outline-secondary" @click="fetchNotifications" :disabled="loading">
+        <button type="button" class="btn btn-sm refresh-btn" @click="fetchNotifications" :disabled="loading">
           Refresh
         </button>
       </div>
@@ -170,23 +170,50 @@ onMounted(fetchNotifications)
 <style scoped>
 .notifications-page {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding-bottom: 6px;
+  overflow-x: hidden;
+}
+
+.notifications-page .ff-page-header {
+  margin-bottom: 0 !important;
+  background: #1b2444;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.notifications-page .ff-page-header h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.15rem;
 }
 
 .header-meta {
-  color: #ffffff;
+  color: #cbd5e1;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
 .notifications-panel {
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 14px;
+  background: #1b2444 !important;
+}
+
+.notifications-panel :deep(.panel-header) {
+  border-bottom: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+.notifications-panel :deep(.panel-body) {
+  padding: 10px;
 }
 
 .notifications-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -195,11 +222,71 @@ onMounted(fetchNotifications)
   gap: 8px;
 }
 
+.mark-all-btn,
+.filter-btn,
+.refresh-btn {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mark-all-btn {
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: #273142;
+  color: #93c5fd;
+}
+
+.mark-all-btn:hover:not(:disabled) {
+  background: #23304a;
+  color: #dbeafe;
+}
+
+.mark-all-btn:disabled {
+  opacity: 0.55;
+}
+
+.filter-btn.btn-primary {
+  border-color: #3b82f6 !important;
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
+  color: #f8fafc !important;
+}
+
+.filter-btn.btn-outline-primary {
+  border-color: rgba(96, 165, 250, 0.35) !important;
+  background: #273142 !important;
+  color: #cbd5e1 !important;
+}
+
+.filter-btn.btn-outline-primary:hover,
+.filter-btn.btn-outline-primary:focus-visible {
+  border-color: #3b82f6;
+  color: #f8fafc;
+  background: #2c3a52;
+}
+
+.refresh-btn {
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: #273142 !important;
+  color: #cbd5e1 !important;
+}
+
+.refresh-btn:hover,
+.refresh-btn:focus-visible {
+  border-color: #3b82f6;
+  color: #f8fafc;
+  background: #2c3a52;
+}
+
 .state-message {
   margin: 0;
   padding: 12px;
-  border: 1px dashed var(--border-color);
+  border: 1px dashed rgba(96, 165, 250, 0.25);
   border-radius: 10px;
+  color: #f8fafc;
+  background: #273142;
 }
 
 .notifications-list {
@@ -211,14 +298,14 @@ onMounted(fetchNotifications)
 }
 
 .notification-item {
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(96, 165, 250, 0.25);
   border-radius: 10px;
   padding: 12px;
-  background: var(--main-color);
+  background: #273142;
 }
 
 .notification-item.unread {
-  border-left: 4px solid #2563eb;
+  border-left: 4px solid #3b82f6;
 }
 
 .notification-item.clickable {
@@ -226,7 +313,7 @@ onMounted(fetchNotifications)
 }
 
 .notification-item.clickable:hover {
-  background: rgba(37, 99, 235, 0.08);
+  background: #2c3a52;
 }
 
 .notification-title-row {
@@ -238,19 +325,19 @@ onMounted(fetchNotifications)
 
 .notification-title-row h5 {
   margin: 0;
-  color: var(--text-color);
+  color: #f8fafc;
 }
 
 .notification-message {
   margin: 6px 0;
-  color: var(--text-color-secondary);
+  color: #cbd5e1;
 }
 
 .notification-meta {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  color: var(--text-color-secondary);
+  color: #cbd5e1;
   font-size: 0.82rem;
   flex-wrap: wrap;
 }
@@ -258,5 +345,56 @@ onMounted(fetchNotifications)
 .type-pill {
   text-transform: capitalize;
   font-weight: 700;
+  color: #93c5fd;
+}
+
+@media (max-width: 600px) {
+  .notifications-page {
+    gap: 8px;
+  }
+
+  .notifications-page .ff-page-header {
+    padding: 10px;
+  }
+
+  .notifications-page .ff-page-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .notifications-page .dashboard-filter {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .notifications-head {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .filter-group {
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .mark-all-btn,
+  .filter-btn,
+  .refresh-btn {
+    min-height: 30px;
+    padding: 0 11px;
+    font-size: 0.72rem;
+  }
+
+  .refresh-btn {
+    flex-shrink: 0;
+  }
+
+  .notifications-panel :deep(.panel-header) {
+    padding: 10px;
+  }
+
+  .notifications-panel :deep(.panel-body) {
+    padding: 8px;
+  }
 }
 </style>

@@ -362,7 +362,7 @@ onMounted(() => {
   useMainContentCurrentBG()
   window.addEventListener('ff-theme-settings-updated', onThemeSettingsUpdated)
 
-  mobileNavMql = window.matchMedia('(max-width: 600px)');
+  mobileNavMql = window.matchMedia('(max-width: 768px)');
   syncMobileViewportState(mobileNavMql.matches);
   if (mobileNavMql.addEventListener) {
     mobileNavMql.addEventListener('change', onMobileViewportChange);
@@ -702,7 +702,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   :root {
     --wa-mobile-bottom-nav-height: 70px;
     --wa-mobile-bottom-nav-gap: 10px;

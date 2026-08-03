@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { DEFAULT_EXERCISE_IMAGE, getExerciseImage } from '@/utils/exerciseImage';
 
 const props = defineProps({
   exercise: {
@@ -52,6 +53,32 @@ const hasPrefilledValues = computed(() =>
 );
 
 const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input--prefilled' : '');
+
+const resolveExerciseImage = (exercise) => {
+  const safeExercise = exercise && typeof exercise === 'object' ? exercise : {};
+  return getExerciseImage({
+    ...safeExercise,
+    image:
+      safeExercise.image ||
+      safeExercise.exerciseImage ||
+      safeExercise.exerciseImageUrl ||
+      safeExercise.imageUrl ||
+      safeExercise.ImageURL ||
+      '',
+  });
+};
+
+const handleExerciseImageError = (event) => {
+  const target = event?.target;
+  if (!target) return;
+
+  if (target.dataset.fallbackApplied === '1') {
+    return;
+  }
+
+  target.dataset.fallbackApplied = '1';
+  target.src = DEFAULT_EXERCISE_IMAGE;
+};
 </script>
 
 <template>
@@ -60,14 +87,13 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     <div class="sec-header" :class="{ 'sec-header--active': isExpanded }" @click="emit('select', exercise.id)">
       <div class="sec-identity">
         <img
-          v-if="exercise.image"
-          :src="exercise.image"
+          :src="resolveExerciseImage(exercise)"
           :alt="exercise.name"
           class="sec-thumb"
+          loading="lazy"
+          decoding="async"
+          @error="handleExerciseImageError"
         />
-        <div v-else class="sec-thumb-placeholder">
-          <i class="fa-solid fa-dumbbell"></i>
-        </div>
         <div class="sec-meta">
           <h5>{{ exercise.name }}</h5>
           <p>
@@ -1169,9 +1195,9 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     gap: 6px;
     align-items: end;
     padding: 7px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid rgba(96, 165, 250, 0.22);
     border-radius: 10px;
-    background: transparent;
+    background: #1b2444;
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
@@ -1179,7 +1205,8 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   }
 
   .strength-mobile-row--done {
-    border-color: rgba(34, 197, 94, 0.28);
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(22, 163, 74, 0.10);
   }
 
   .strength-mobile-field {
@@ -1191,7 +1218,7 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
   .strength-mobile-field span {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #64748b;
+    color: #cbd5e1;
   }
 
   .strength-mobile-field .set-input {
@@ -1202,12 +1229,46 @@ const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input
     min-height: 40px;
     height: 40px;
     text-align: left;
+    background: #111b2e;
+    border-color: rgba(96, 165, 250, 0.3);
+    color: #f8fafc;
+  }
+
+  .strength-mobile-field .set-input::placeholder {
+    color: #94a3b8;
   }
 
   .strength-mobile-row .c3-icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 9px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border-width: 1px;
+  }
+
+  .strength-mobile-row .c3-icon-btn--remove {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fca5a5;
+  }
+
+  .strength-mobile-row .c3-icon-btn--remove:hover {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(248, 113, 113, 0.5);
+    color: #fecaca;
+  }
+
+  .strength-mobile-row .c3-icon-btn--complete,
+  .strength-mobile-row .c3-icon-btn--done {
+    background: rgba(34, 197, 94, 0.16);
+    border-color: rgba(34, 197, 94, 0.45);
+    color: #86efac;
+  }
+
+  .strength-mobile-row .c3-icon-btn--complete:hover,
+  .strength-mobile-row .c3-icon-btn--done:hover {
+    background: rgba(34, 197, 94, 0.22);
+    border-color: rgba(34, 197, 94, 0.58);
+    color: #bbf7d0;
   }
 
   /* §4 Exercise header — 40px image, compact badge, 32px collapse button */

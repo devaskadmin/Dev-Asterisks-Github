@@ -28,10 +28,10 @@ const NutritionLogs = [
           </thead>
           <tbody>
             <tr v-for="(log, index) in NutritionLogs" :key="index">
-              <td data-label="Date">{{ log.date }}</td>
-              <td data-label="Meal">{{ log.meal }}</td>
-              <td data-label="Details">{{ log.details }}</td>
-              <td data-label="Calories">{{ log.calories }}</td>
+              <td data-label="Date"><span class="cell-value">{{ log.date }}</span></td>
+              <td data-label="Meal"><span class="cell-value">{{ log.meal }}</span></td>
+              <td data-label="Details"><span class="cell-value cell-value--details">{{ log.details }}</span></td>
+              <td data-label="Calories"><span class="cell-value">{{ log.calories }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -67,12 +67,27 @@ const NutritionLogs = [
   flex-shrink: 0;
 }
 
-.nutrition-log-panel .btn-add-meal {
+.nutrition-log-panel .btn-box .btn.btn-sm.btn-primary.btn-add-meal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(147, 197, 253, 0.42) !important;
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
+  color: #ffffff !important;
+  text-decoration: none;
+  box-shadow: none !important;
   white-space: nowrap;
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 6px 14px;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.nutrition-log-panel .btn-box .btn.btn-sm.btn-primary.btn-add-meal:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+  filter: brightness(1.06);
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 .nutrition-log-panel .panel-body {
@@ -113,11 +128,16 @@ const NutritionLogs = [
   overflow-wrap: anywhere;
 }
 
+.nutrition-log-table .cell-value {
+  display: inline;
+}
+
 .nutrition-log-table td:nth-child(3) {
   line-height: 1.3;
 }
 
 @media (max-width: 600px) {
+  /* --- panel header --- */
   .nutrition-log-panel .panel-header {
     flex-wrap: nowrap;
     align-items: center;
@@ -129,11 +149,12 @@ const NutritionLogs = [
   }
 
   .nutrition-log-panel .btn-add-meal {
-    min-height: 32px;
-    padding: 4px 11px;
+    min-height: 34px;
+    padding: 0 13px;
     font-size: 0.72rem;
   }
 
+  /* --- table → stacked cards --- */
   .nutrition-log-panel .table-responsive {
     overflow-x: hidden;
   }
@@ -145,6 +166,7 @@ const NutritionLogs = [
   .nutrition-log-table td {
     display: block;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .nutrition-log-table thead {
@@ -152,41 +174,98 @@ const NutritionLogs = [
   }
 
   .nutrition-log-table tbody {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
   }
 
+  /* each row = a card */
   .nutrition-log-table tr {
     border: 1px solid var(--wa-shell-border, rgba(255, 255, 255, 0.12));
     border-radius: 10px;
-    padding: 8px 10px;
+    padding: 12px 14px;
     background: var(--wa-shell-surface-elevated, #17212d);
-    min-width: 0;
-    max-width: 100%;
-    box-sizing: border-box;
+    color: var(--wa-shell-text, #f8fafc);
   }
 
+  /* each cell = one label: value line */
   .nutrition-log-table td {
-    display: grid;
-    grid-template-columns: 78px minmax(0, 1fr);
-    gap: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
     padding: 2px 0;
     font-size: 0.82rem;
-    line-height: 1.3;
+    line-height: 1.4;
+    color: var(--wa-shell-text, #f8fafc);
+    border: none;
     min-width: 0;
-    max-width: 100%;
-    box-sizing: border-box;
     word-break: break-word;
     overflow-wrap: anywhere;
   }
 
+  /* "DATE:" label prefix */
   .nutrition-log-table td::before {
-    content: attr(data-label);
-    font-size: 0.66rem;
+    content: attr(data-label) ":";
+    font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--wa-shell-text-muted, #95a3b8);
+    color: var(--wa-shell-text-muted, #94a3b8);
+    flex-shrink: 0;
+  }
+
+  /* value text — inherits wrapping from flex container */
+  .nutrition-log-table .cell-value {
+    display: inline;
+    text-align: left;
+    min-width: 0;
+    max-width: 100%;
+    color: inherit;
+    overflow-wrap: anywhere;
+  }
+
+  .nutrition-log-table .cell-value--details {
+    display: inline-block;
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+  }
+
+  /* hover / tap states — stay dark navy, never black */
+  .nutrition-log-table tbody tr:hover,
+  .nutrition-log-table tbody tr:focus-within,
+  .nutrition-log-table tbody tr:active {
+    background: #1e293b !important;
+    border-color: rgba(96, 165, 250, 0.35) !important;
+    color: #f8fafc !important;
+  }
+
+  .nutrition-log-table tbody tr:hover td,
+  .nutrition-log-table tbody tr:focus-within td,
+  .nutrition-log-table tbody tr:active td {
+    color: #f8fafc !important;
+  }
+
+  .nutrition-log-table tbody tr:hover td::before,
+  .nutrition-log-table tbody tr:focus-within td::before,
+  .nutrition-log-table tbody tr:active td::before {
+    color: #cbd5e1 !important;
+  }
+
+  .nutrition-log-table tr,
+  .nutrition-log-table td,
+  .nutrition-log-table .cell-value {
+    -webkit-tap-highlight-color: rgba(96, 165, 250, 0.2);
+  }
+
+  /* text selection */
+  .nutrition-log-panel .nutrition-log-table ::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #f8fafc;
   }
 }
 </style>
