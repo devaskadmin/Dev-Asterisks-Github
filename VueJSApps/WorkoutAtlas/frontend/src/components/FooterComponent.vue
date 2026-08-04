@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import {ref} from "vue";
 
 const currentYear = ref('');
@@ -7,7 +7,7 @@ currentYear.value = new Date().getFullYear();
 
 <template>
   <div class="footer">
-    <p>CopyrightÂ© {{ currentYear}} All Rights Reserved By <span class="text-primary">WorkoutAtlas</span></p>
+    <p>Copyright© {{ currentYear}} All Rights Reserved By <span class="text-primary">WorkoutAtlas</span></p>
   </div>
 </template>
 

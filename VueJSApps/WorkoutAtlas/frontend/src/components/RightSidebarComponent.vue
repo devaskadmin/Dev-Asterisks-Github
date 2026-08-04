@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 const props = defineProps(['isSidebarActive', 'closeSidebar'])
 import { onMounted, ref } from "vue"
 import {vClickOutside} from "@/composable/outsideClicker";

@@ -113,16 +113,48 @@ const shortcuts = [
       :formatter="formatter"
       range
       placeholder="Select date range"
-      class="form-control full-datepicker"
+      class="full-datepicker"
     />
   </div>
 </template>
 
 <style scoped lang="scss">
+.input-group.dashboard-filter {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+
 .full-datepicker {
-  min-width: 350px;
+  width: min(100%, 600px);
+  min-width: 0;
   max-width: 600px;
   font-size: 14px;
+}
+
+:deep(.mx-input),
+:deep(.mx-icon-calendar),
+:deep(.mx-icon-clear) {
+  background: var(--wa-shell-surface-elevated, #131f31) !important;
+  border: 1px solid var(--wa-shell-border, rgba(148, 163, 184, 0.2)) !important;
+  color: var(--wa-shell-text, #e9f0fb) !important;
+}
+
+:deep(.mx-input::placeholder) {
+  color: var(--wa-shell-text-muted, #9bacc2) !important;
+}
+
+:deep(.mx-datepicker-main),
+:deep(.mx-datepicker-sidebar),
+:deep(.mx-datepicker-content),
+:deep(.mx-datepicker-popup) {
+  background: var(--wa-shell-surface-elevated, #131f31) !important;
+  border-color: var(--wa-shell-border, rgba(148, 163, 184, 0.2)) !important;
+  color: var(--wa-shell-text, #e9f0fb) !important;
+}
+
+:deep(.mx-datepicker-sidebar) {
+  border-right: 1px solid var(--wa-shell-divider, rgba(148, 163, 184, 0.16)) !important;
 }
 
 /* ── Mobile: full-width date picker ── */
@@ -222,6 +254,19 @@ const shortcuts = [
   display: flex;
   width: auto !important;
   min-width: 400px;
+}
+
+@media (max-width: 768px) {
+  :deep(.mx-datepicker-popup) {
+    min-width: 0 !important;
+    width: min(100vw - 24px, 100%) !important;
+    max-width: 100vw !important;
+  }
+
+  :deep(.mx-datepicker-sidebar),
+  :deep(.mx-datepicker-content) {
+    min-width: 0 !important;
+  }
 }
 
 /* Sidebar and calendar width */

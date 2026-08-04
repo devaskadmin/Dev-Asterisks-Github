@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import {sidebarDropdownManage} from "@/composable/manageSidebarMenu";
 
 const props = defineProps(['isCollapsed','isTwoColumnMenu','isSidebarMini','isSubMenuCollapsed', 'closeMainLeftSidebar'])
@@ -470,7 +470,7 @@ onMounted(() => {
   color: #c0d0e0 !important;
 }
 
-/* â”€â”€ WorkoutAtlas dark sidebar â€” always-on overrides â”€â”€â”€â”€â”€â”€â”€ */
+/* ── WorkoutAtlas dark sidebar — always-on overrides ─────── */
 
 /* Root panel */
 .main-sidebar {
@@ -502,13 +502,13 @@ onMounted(() => {
   padding-bottom: 6px !important;
 }
 
-/* Section wrappers â€” no heavy card borders */
+/* Section wrappers — no heavy card borders */
 .sidebar-item {
   background: transparent !important;
   border-color: transparent !important;
 }
 
-/* Section header titles â€” compact, distinct from nav links */
+/* Section header titles — compact, distinct from nav links */
 .sidebar-link-group-title,
 .sidebar-link-group-title.sidebar-section-header,
 .sidebar-link-group-title.app-header-gradient {
@@ -607,7 +607,7 @@ onMounted(() => {
   border-color: var(--wa-sidebar-divider) !important;
 }
 
-/* Scrollbar â€” narrow, dark-themed */
+/* Scrollbar — narrow, dark-themed */
 .wa-sidebar-scroll::-webkit-scrollbar {
   width: 4px;
 }

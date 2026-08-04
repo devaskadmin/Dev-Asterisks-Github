@@ -1,7 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD:VueJSApps/WorkoutAtlas/CHANGELOG.md
-=======
 ## [0.84.42] - 2026-07-04 - Global Muted Navy Theme
 
 - Centralized the shared WorkoutAtlas palette in the loaded global stylesheet and aligned the dark-theme/app-shell aliases to the same muted navy token set.
@@ -64,7 +62,6 @@
 
 ---
 
->>>>>>> origin/0.84-Mobile:VueJSApps/FlexFit/CHANGELOG.md
 ## [0.82.42] - 2026-05-27 - SQL Architecture Cleanup & Migration Organization
 
 - Refactored entire `backend/migrations/` folder into a categorized subfolder structure for maintainability and multi-developer safety.

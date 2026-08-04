@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { API_BASE } from '@/config/env';
@@ -606,7 +606,7 @@ const demoLogin = async (role) => {
 
       <p class="wa-version login-footer">
         Version: {{ appVersion }}
-        <span aria-hidden="true">â€¢</span>
+        <span aria-hidden="true">•</span>
         <a href="/changelog.html" target="_blank" rel="noopener noreferrer">Change Log</a>
       </p>
 

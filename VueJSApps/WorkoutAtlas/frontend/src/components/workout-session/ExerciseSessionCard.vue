@@ -15,10 +15,6 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  getSetSaveState: {
-    type: Function,
-    default: null,
-  },
 });
 
 const emit = defineEmits(['add-set', 'remove-set', 'update-set', 'select', 'exercise-completed']);
@@ -57,12 +53,6 @@ const hasPrefilledValues = computed(() =>
 );
 
 const prefillClass = (set, field) => (set?.prefilledFields?.[field] ? 'set-input--prefilled' : '');
-const getSaveState = (exerciseId, setNum) => {
-  if (typeof props.getSetSaveState !== 'function') {
-    return { status: 'idle', message: '' };
-  }
-  return props.getSetSaveState(exerciseId, setNum) || { status: 'idle', message: '' };
-};
 
 const resolveExerciseImage = (exercise) => {
   const safeExercise = exercise && typeof exercise === 'object' ? exercise : {};
@@ -181,42 +171,28 @@ const handleExerciseImageError = (event) => {
                 placeholder="0"
                 @input="emit('update-set', exercise.id, idx, 'reps', $event.target.value)"
               />
-            </div>
-          </div>
-          <!-- Action row -->
-          <div class="c3-row c3-row-done">
-            <span class="c3-col-set"></span>
-            <div class="c3-col-info c3-info-action">
-              <button
-                v-if="exercise.sessionSets.length > 1"
-                type="button"
-                class="c3-rm-btn"
-                title="Remove this set"
-                @click="emit('remove-set', exercise.id, idx)"
-              >
-                <i class="fa-solid fa-minus"></i> Remove Set
-              </button>
-            </div>
-            <div class="c3-col-value c3-done-cell">
-              <template v-if="getSaveState(exercise.id, set.setNum).status === 'saving'">
-                <small class="set-save-state">Saving…</small>
-              </template>
-              <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'saved'">
-                <small class="set-save-state set-save-state--saved">Saved</small>
-              </template>
-              <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'error'">
-                <small class="set-save-state set-save-state--error">Save failed</small>
-              </template>
-              <button
-                type="button"
-                class="c3-complete-btn"
-                :class="{ 'c3-complete-btn--done': set.done }"
-                @click="emit('update-set', exercise.id, idx, 'done', !set.done)"
-              >
-                <i v-if="set.done" class="fa-solid fa-circle-check"></i>
-                <i v-else class="fa-regular fa-circle"></i>
-                {{ set.done ? 'Set Done' : 'Complete Set' }}
-              </button>
+              <div class="c3-inline-actions" role="group" aria-label="Set actions">
+                <button
+                  v-if="exercise.sessionSets.length > 1"
+                  type="button"
+                  class="c3-icon-btn c3-icon-btn--remove"
+                  title="Remove this set"
+                  aria-label="Remove this set"
+                  @click="emit('remove-set', exercise.id, idx)"
+                >
+                  <i class="fa-solid fa-minus"></i>
+                </button>
+                <button
+                  type="button"
+                  class="c3-icon-btn c3-icon-btn--complete"
+                  :class="{ 'c3-icon-btn--done': set.done }"
+                  :title="set.done ? 'Set completed' : 'Mark set complete'"
+                  :aria-label="set.done ? 'Set completed' : 'Mark set complete'"
+                  @click="emit('update-set', exercise.id, idx, 'done', !set.done)"
+                >
+                  <i class="fa-solid fa-check"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -338,15 +314,6 @@ const handleExerciseImageError = (event) => {
               </button>
             </div>
             <div class="c3-col-value c3-done-cell">
-              <template v-if="getSaveState(exercise.id, set.setNum).status === 'saving'">
-                <small class="set-save-state">Saving…</small>
-              </template>
-              <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'saved'">
-                <small class="set-save-state set-save-state--saved">Saved</small>
-              </template>
-              <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'error'">
-                <small class="set-save-state set-save-state--error">Save failed</small>
-              </template>
               <button
                 type="button"
                 class="c3-complete-btn"
@@ -457,15 +424,6 @@ const handleExerciseImageError = (event) => {
             </button>
           </div>
           <div class="c3-col-value c3-done-cell">
-            <template v-if="getSaveState(exercise.id, set.setNum).status === 'saving'">
-              <small class="set-save-state">Saving…</small>
-            </template>
-            <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'saved'">
-              <small class="set-save-state set-save-state--saved">Saved</small>
-            </template>
-            <template v-else-if="getSaveState(exercise.id, set.setNum).status === 'error'">
-              <small class="set-save-state set-save-state--error">Save failed</small>
-            </template>
             <button
               type="button"
               class="c3-complete-btn"
@@ -695,22 +653,6 @@ const handleExerciseImageError = (event) => {
 .sec-body {
   display: grid;
   gap: 14px;
-}
-
-.set-save-state {
-  display: inline-block;
-  margin-right: 8px;
-  color: #6b7280;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.set-save-state--saved {
-  color: #15803d;
-}
-
-.set-save-state--error {
-  color: #b91c1c;
 }
 
 .sec-identity {

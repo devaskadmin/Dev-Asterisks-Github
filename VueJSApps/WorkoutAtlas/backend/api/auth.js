@@ -9,18 +9,12 @@ const { sanitizeText, parseNumber } = require('../utils/sanitize.js');
 // ✅ DB Connect
 const pool = require('../db.js');
 
-const notificationService = require('../services/notificationService');
-const emailService = require('../services/emailNotificationService');
-
-const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
-const REMEMBER_ME_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const isDebugEnabled = ['true', '1', 'yes'].includes(String(process.env.DEBUG || process.env.VITE_DEBUG || '').toLowerCase());
 const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_COOKIE_SECURE = isProduction;
 const SESSION_COOKIE_SAMESITE = isProduction ? 'none' : 'lax';
 const CLIENT_ORIGIN = String(process.env.CLIENT_ORIGIN || '').trim();
-const DEV_LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/i;
 
 const normalizeRoleValue = (rawValue = '') => {
   const value = String(rawValue || '').trim().toLowerCase();
@@ -122,9 +116,6 @@ const buildMailTransport = () => {
   });
 };
 
-// Legacy function retained for reference. The forgot-password route now uses
-// emailService.sendPasswordResetEmail() which renders the account template.
-// eslint-disable-next-line no-unused-vars
 const sendResetPasswordEmail = async ({ to, temporaryPassword }) => {
   const transporter = buildMailTransport();
   if (!transporter) {
@@ -506,9 +497,7 @@ router.get('/session/check', (req, res) => {
   const rawCookie = String(req.headers?.cookie || '');
   const hasSessionCookie = /flexfit\.sid=/.test(rawCookie);
   const origin = req.headers.origin || null;
-  const corsAllowed = !origin
-    || (CLIENT_ORIGIN ? origin === CLIENT_ORIGIN : true)
-    || (!isProduction && DEV_LOCALHOST_ORIGIN_RE.test(origin));
+  const corsAllowed = !origin || (CLIENT_ORIGIN ? origin === CLIENT_ORIGIN : true);
   const sessionExists = Boolean(req.session);
   const userID = req.session?.userID || null;
   const username = req.session?.username || null;
@@ -607,8 +596,10 @@ router.post('/forgot-password', async (req, res) => {
       throw dbErr;
     }
 
-    // Send password reset email via email service (uses account template)
-    await emailService.sendPasswordResetEmail(user.id, temporaryPassword);
+    await sendResetPasswordEmail({
+      to: user.username,
+      temporaryPassword,
+    });
 
     return res.json({ message: 'Temporary password sent successfully.' });
   } catch (err) {
@@ -659,22 +650,6 @@ router.post('/reset-password/complete', async (req, res) => {
     if (req.session.user) {
       req.session.user.mustResetPassword = false;
     }
-
-    // Notify user that their password was updated
-    notificationService.createAccountNotification(
-      userId,
-      'Password Updated',
-      'Your account password has been updated successfully.',
-      '/settings'
-    ).catch(() => {});
-
-    // Email confirmation (best-effort)
-    emailService.sendAccountEmail(
-      userId,
-      'Password Updated',
-      'Your account password has been successfully updated. If you did not make this change, contact support immediately.',
-      '/settings'
-    ).catch(() => {});
 
     return res.json({ message: 'Password reset successful.' });
   } catch (err) {
@@ -897,22 +872,6 @@ router.post('/register', async (req, res) => {
         membershipType: safeType,
         subscriptionTier: selectedTier.name,
       });
-
-      // Notify new user (best-effort, does not affect response)
-      notificationService.createAccountNotification(
-        newUserId,
-        'Welcome to WorkoutAtlas',
-        'Your account has been created. Welcome aboard!',
-        '/dashboard'
-      ).catch(() => {});
-
-      // Email welcome message (best-effort)
-      emailService.sendAccountEmail(
-        newUserId,
-        'Welcome to WorkoutAtlas',
-        'Your account has been created. Log in and start your fitness journey today.',
-        '/dashboard'
-      ).catch(() => {});
     } catch (txErr) {
       await conn.rollback();
       throw txErr;

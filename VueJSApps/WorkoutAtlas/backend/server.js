@@ -28,17 +28,13 @@ const DEFAULT_FRONTEND_ORIGINS = [
   'https://workoutatlas.com',
   'https://www.workoutatlas.com',
   'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
 ];
 const allowedOrigins = new Set(
   [...DEFAULT_FRONTEND_ORIGINS, CLIENT_ORIGIN, FRONTEND_URL, ...CORS_ORIGINS].filter(Boolean)
 );
-const DEV_LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/i;
-const isAllowedOrigin = (origin) => {
-  if (!origin) return true;
-  if (allowedOrigins.has(origin)) return true;
-  if (!isProduction && DEV_LOCALHOST_ORIGIN_RE.test(origin)) return true;
-  return false;
-};
 
 console.log(`🚀 CLIENT_ORIGIN=${CLIENT_ORIGIN || '(not set)'}`);
 console.log(`🌐 Allowed CORS origins: ${[...allowedOrigins].join(', ') || '(none configured)'}`);
@@ -53,7 +49,9 @@ app.set('trust proxy', 1);
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, curl, server-to-server)
-    if (isAllowedOrigin(origin)) {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.has(origin)) {
       return callback(null, true);
     }
 
@@ -161,7 +159,7 @@ app.use((req, res, next) => {
   if (isDebugEnabled) {
     const rawCookie = String(req.headers?.cookie || '');
     const origin = req.headers.origin || null;
-    const corsAllowed = isAllowedOrigin(origin);
+    const corsAllowed = !origin || allowedOrigins.has(origin);
     console.log('🧠 Session inbound:', {
       method: req.method,
       path: req.path,
@@ -212,14 +210,11 @@ const openFoodFactsRoutes   = require('./api/OpenFoodFactsAPI/main-api.js');
 const avatarRoutes          = require('./src/routes/avatar.js');
 const toolsRoutes           = require('./api/tools.js');
 const mediaRoutes           = require('./api/media.js');
-const messagesRoutes        = require('./api/messages.js');
-const { startScheduler }    = require('./services/notificationScheduler'); // 🗓️ 0.85.5 system notifications
 
 // Import routes
 app.use('/api', require('./api/auth.js'));
 app.use('/api', require('./api/users.js'));
 app.use('/api', require('./api/excerises.js'));
-app.use('/api', messagesRoutes);
 app.use('/api', require('./api/notifications.js'));
 app.use('/api/workout-log', workoutLogRoutes);
 app.use('/api', workoutSessionRoutes);
@@ -231,9 +226,10 @@ app.use('/api', require('./api/dashboard.js')); // 📊 v0.82.20 Dashboard Live 
 app.use('/api', toolsRoutes); // 🧰 v0.83.5 Tools diagnostics
 app.use('/api', mediaRoutes); // 🖼️ v0.83.7 media resolver
 
-// ✅ Start notification background scheduler (cleanup + membership expiry) – 0.85.5
-// Waits 5 minutes before first run so the database is fully ready.
-startScheduler();
+// Lightweight health route for local/API reachability checks.
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // ✅ Global JSON error handler — MUST be registered after all routes.
 // Catches express-session store failures (which call next(err) before any route

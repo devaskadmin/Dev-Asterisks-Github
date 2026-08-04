@@ -574,26 +574,6 @@ router.post('/session', async (req, res) => {
       if (!sourceScheduleId && existingSession.workoutPlanId) {
         sourceScheduleId = Number(existingSession.workoutPlanId) || null;
       }
-
-      workoutLogSessionId = Number(existingSession.id);
-      await connection.query(
-        `UPDATE workout_log_sessions
-         SET source_workout_schedule_id = COALESCE(?, source_workout_schedule_id),
-             workout_date = COALESCE(?, workout_date),
-             notes = CASE
-               WHEN ? = '' THEN notes
-               ELSE ?
-             END
-         WHERE id = ? AND user_id = ?`,
-        [
-          sourceScheduleId,
-          date,
-          sanitizeText(planName || '', 255),
-          sanitizeText(planName || '', 255),
-          workoutLogSessionId,
-          userID,
-        ]
-      );
     } else {
       const [sessionResult] = await connection.query(
         `INSERT INTO workout_log_sessions
@@ -661,112 +641,49 @@ router.post('/session', async (req, res) => {
       const avgReps   = doneSets.reduce((a, s) => a + Number(s.reps || 0), 0)   / totalSets;
       const totalDur  = doneSets.reduce((a, s) => a + Number(s.duration || 0), 0);
 
-      const normalizedScheduleGroup = sanitizeText(ex.scheduleGroup || '', 120) || null;
-      const normalizedWorkoutType = sanitizeText(ex.workoutType || 'Strength');
-
-      let existingLogRow = null;
-      if (sourceScheduleExerciseId) {
-        const [rowsByScheduleExercise] = await connection.query(
-          `SELECT WorkoutLogID
-           FROM workout_log
-           WHERE workout_log_session_id = ?
-             AND UserID = ?
-             AND source_workout_schedule_exercise_id = ?
-           ORDER BY WorkoutLogID ASC
-           LIMIT 1`,
-          [workoutLogSessionId, userID, sourceScheduleExerciseId]
-        );
-        existingLogRow = rowsByScheduleExercise[0] || null;
-      }
-
-      if (!existingLogRow) {
-        const [rowsByExercise] = await connection.query(
-          `SELECT WorkoutLogID
-           FROM workout_log
-           WHERE workout_log_session_id = ?
-             AND UserID = ?
-             AND ExerciseID = ?
-             AND (source_schedule_group_label <=> ?)
-           ORDER BY WorkoutLogID ASC
-           LIMIT 1`,
-          [workoutLogSessionId, userID, exerciseID || null, normalizedScheduleGroup]
-        );
-        existingLogRow = rowsByExercise[0] || null;
-      }
-
-      let workoutLogId = Number(existingLogRow?.WorkoutLogID || 0);
-      if (!workoutLogId) {
-        const [logResult] = await connection.query(
-          `INSERT INTO workout_log
-            (
-              workout_log_session_id,
-              UserID,
-              ExerciseID,
-              source_workout_schedule_id,
-              source_workout_schedule_exercise_id,
-              source_schedule_group_label,
-              WorkoutDate,
-              performed_at,
-              WorkoutType,
-              Duration,
-              Reps,
-              Sets,
-              Weight
-            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
-          [
-            workoutLogSessionId,
-            userID,
-            exerciseID || null,
-            sourceScheduleId,
-            sourceScheduleExerciseId,
-            normalizedScheduleGroup,
-            date,
-            normalizedWorkoutType,
-            Math.round(totalDur),
-            Math.round(avgReps),
-            totalSets,
-            Math.round(avgWeight),
-          ]
-        );
-        workoutLogId = logResult.insertId;
-      } else {
-        await connection.query(
-          `UPDATE workout_log
-           SET source_workout_schedule_id = COALESCE(?, source_workout_schedule_id),
-               source_workout_schedule_exercise_id = COALESCE(?, source_workout_schedule_exercise_id),
-               source_schedule_group_label = COALESCE(?, source_schedule_group_label),
-               WorkoutDate = COALESCE(?, WorkoutDate),
-               WorkoutType = COALESCE(?, WorkoutType),
-               Duration = ?,
-               Reps = ?,
-               Sets = ?,
-               Weight = ?,
-               performed_at = NOW()
-           WHERE WorkoutLogID = ? AND UserID = ?`,
-          [
-            sourceScheduleId,
-            sourceScheduleExerciseId,
-            normalizedScheduleGroup,
-            date,
-            normalizedWorkoutType,
-            Math.round(totalDur),
-            Math.round(avgReps),
-            totalSets,
-            Math.round(avgWeight),
-            workoutLogId,
-            userID,
-          ]
-        );
-      }
+      const [logResult] = await connection.query(
+        `INSERT INTO workout_log
+          (
+            workout_log_session_id,
+            UserID,
+            ExerciseID,
+            source_workout_schedule_id,
+            source_workout_schedule_exercise_id,
+            source_schedule_group_label,
+            WorkoutDate,
+            performed_at,
+            WorkoutType,
+            Duration,
+            Reps,
+            Sets,
+            Weight
+          )
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+        [
+          workoutLogSessionId,
+          userID,
+          exerciseID || null,
+          sourceScheduleId,
+          sourceScheduleExerciseId,
+          sanitizeText(ex.scheduleGroup || '', 120) || null,
+          date,
+          sanitizeText(ex.workoutType || 'Strength'),
+          Math.round(totalDur),
+          Math.round(avgReps),
+          totalSets,
+          Math.round(avgWeight),
+        ]
+      );
 
       insertedExerciseLogs += 1;
+
+      const workoutLogId = logResult.insertId;
       for (let index = 0; index < sets.length; index += 1) {
         const setEntry = sets[index] || {};
         await connection.query(
           `INSERT INTO workout_log_sets
-            (workout_log_id, set_number, reps, weight, duration_minutes, calories_burned, distance_miles, speed_mph, notes, completed, completed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (workout_log_id, set_number, reps, weight, duration_minutes, calories_burned, distance_miles, speed_mph, completed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE
              reps             = VALUES(reps),
              weight           = VALUES(weight),
@@ -774,9 +691,7 @@ router.post('/session', async (req, res) => {
              calories_burned  = VALUES(calories_burned),
              distance_miles   = VALUES(distance_miles),
              speed_mph        = VALUES(speed_mph),
-             notes            = VALUES(notes),
              completed        = VALUES(completed),
-             completed_at     = VALUES(completed_at),
              updated_at       = CURRENT_TIMESTAMP`,
           [
             workoutLogId,
@@ -787,9 +702,7 @@ router.post('/session', async (req, res) => {
             Number(setEntry?.caloriesBurned || 0) || null,
             Number(setEntry?.distanceMiles || 0) || null,
             Number(setEntry?.speedMph || 0) || null,
-            sanitizeText(setEntry?.notes || '', 1000) || null,
             setEntry?.done ? 1 : 0,
-            setEntry?.done ? (setEntry?.completedAt ? new Date(setEntry.completedAt) : new Date()) : null,
           ]
         );
       }

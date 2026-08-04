@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import WorkoutMetadataForm from '@/components/workout-builder/WorkoutMetadataForm.vue';
@@ -175,9 +175,9 @@ const completedVolume = computed(() => {
 });
 
 const formatUpdatedAt = (value) => {
-  if (!value) return 'â€”';
+  if (!value) return '—';
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'â€”';
+  if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
 };
 
@@ -583,12 +583,12 @@ const createBlock = (exercise) => {
     muscleGroup: exercise.MuscleGroup || '',
     equipment: exercise.Equipment || '',
     recordingType: exercise.RecordingType || '',
-    // Strength fields â€” blank for cardio
+    // Strength fields — blank for cardio
     sets:     isCardio ? 0 : 0,
     reps:     isCardio ? 0 : 0,
     weight:   0,
     restTime: isCardio ? 0 : 0,
-    // Cardio fields â€” blank for strength
+    // Cardio fields — blank for strength
     duration: 0,
     distance: 0,
     speed:    0,
@@ -978,7 +978,7 @@ watch(
         </div>
       </section>
 
-      <!-- â”€â”€ Tab Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- ── Tab Bar ──────────────────────────────────────────── -->
       <nav class="builder-tabs" role="tablist" aria-label="Workout Builder sections">
         <button
           type="button"
@@ -1014,7 +1014,7 @@ watch(
         </button>
       </nav>
 
-      <!-- â”€â”€ TAB 1: Plans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- ── TAB 1: Plans ─────────────────────────────────────── -->
       <section v-show="builderTab === 'plans'" class="builder-section schedule-hub-section">
         <div class="builder-section__head builder-section__head--inline schedule-hub-head">
           <div>
@@ -1035,13 +1035,13 @@ watch(
         </div>
 
         <div v-if="loadingPlanner" class="builder-empty planner-empty planner-empty--loading" aria-live="polite">
-          <div class="planner-empty__icon">ðŸ“‹</div>
+          <div class="planner-empty__icon">📋</div>
           <h4>Loading workout schedules</h4>
           <p>Fetching saved workout plans for your account.</p>
         </div>
 
         <div v-else-if="!hasWorkoutSchedules && !isCreatingWorkout" class="builder-empty schedule-hub-empty" aria-live="polite">
-          <div class="planner-empty__icon">ðŸ—‚ï¸</div>
+          <div class="planner-empty__icon">🗂️</div>
           <h4>No workout schedules yet.</h4>
           <p>Create your first workout plan to start building a guided schedule.</p>
           <div class="schedule-hub-empty__actions">
@@ -1070,10 +1070,10 @@ watch(
         </div>
       </section>
 
-      <!-- â”€â”€ TAB 2: Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- ── TAB 2: Details ───────────────────────────────────── -->
       <section v-show="builderTab === 'details'" class="builder-section collapsible-panel">
         <div v-if="!canShowWorkoutDetails" class="builder-empty planner-empty" aria-live="polite">
-          <div class="planner-empty__icon">ðŸ“</div>
+          <div class="planner-empty__icon">📝</div>
           <h4>No plan selected</h4>
           <p>Select or create a workout plan from the Plans tab first.</p>
           <button type="button" class="btn-create-plan" style="margin-top:8px" @click="builderTab = 'plans'">
@@ -1096,10 +1096,10 @@ watch(
         </div>
       </section>
 
-      <!-- â”€â”€ TAB 3: Schedule Planner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- ── TAB 3: Schedule Planner ──────────────────────────── -->
       <section v-show="builderTab === 'planner'" class="builder-section planner-section">
         <div v-if="!canShowSchedulePlanner" class="builder-empty planner-empty" aria-live="polite">
-          <div class="planner-empty__icon">ðŸ—“ï¸</div>
+          <div class="planner-empty__icon">🗓️</div>
           <h4>Save workout details first</h4>
           <p>Fill in the workout name and details, then save to unlock the Schedule Planner.</p>
           <button type="button" class="btn-create-plan" style="margin-top:8px" @click="builderTab = 'details'">
@@ -1332,7 +1332,7 @@ watch(
 
                         <div class="day-panel-actions">
                           <button type="button" class="btn-add-exercise-day" @click="openPicker">
-                            <span class="btn-add-exercise__icon">ï¼‹</span>
+                            <span class="btn-add-exercise__icon">＋</span>
                             <span>Add Exercise</span>
                           </button>
                         </div>
@@ -1353,19 +1353,19 @@ watch(
             </div>
 
             <div v-if="loadingExercises" class="builder-empty planner-empty planner-empty--loading" aria-live="polite">
-              <div class="planner-empty__icon">â³</div>
+              <div class="planner-empty__icon">⏳</div>
               <h4>Loading exercise library</h4>
               <p>Pulling your exercise catalog now. This will only take a moment.</p>
             </div>
 
             <div v-else-if="loadingPlanner" class="builder-empty planner-empty planner-empty--loading" aria-live="polite">
-              <div class="planner-empty__icon">ðŸ“¦</div>
+              <div class="planner-empty__icon">📦</div>
               <h4>Loading saved planner</h4>
               <p>Fetching your saved workout schedule from your profile settings.</p>
             </div>
 
             <div v-else-if="workoutExercises.length === 0" class="builder-empty planner-empty" aria-live="polite">
-              <div class="planner-empty__icon">ðŸ—“ï¸</div>
+              <div class="planner-empty__icon">🗓️</div>
               <h4>No exercises added yet</h4>
               <p>Open a workout day above and start adding exercises.</p>
             </div>
@@ -1431,7 +1431,7 @@ watch(
   gap: 16px;
 }
 
-/* â”€â”€ Tab Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Tab Bar ──────────────────────────────────────────────────── */
 .builder-tabs {
   display: flex;
   gap: 4px;
@@ -2017,7 +2017,7 @@ watch(
   color: #1d4ed8;
 }
 
-/* â”€â”€ Kebab menu (mobile only) â”€â”€ */
+/* ── Kebab menu (mobile only) ── */
 .day-kebab-wrap {
   position: relative;
   display: none;
@@ -2511,7 +2511,7 @@ watch(
   opacity: 0.55;
 }
 
-/* â”€â”€ 0.84.39 Workout Builder dark-theme normalization (scoped) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 0.84.39 Workout Builder dark-theme normalization (scoped) ─────────── */
 .workout-builder-page {
   --wb-surface-1: var(--wa-shell-surface, #121923);
   --wb-surface-2: var(--wa-shell-surface-elevated, #17212d);
@@ -2915,7 +2915,7 @@ watch(
   }
 }
 
-/* â”€â”€ Short / long label toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Short / long label toggle ───────────────────────────────────── */
 .btn-label-short { display: none; }
 
 @media (max-width: 639px) {
@@ -2984,11 +2984,11 @@ watch(
   }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   MOBILE COMPRESSION  â‰¤ 768px
-   v0.81.5 â€” Workout Builder Mobile Compression
-   CSS only â€” no logic/API/auth changes
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE COMPRESSION  ≤ 768px
+   v0.81.5 — Workout Builder Mobile Compression
+   CSS only — no logic/API/auth changes
+   ═══════════════════════════════════════════════════════════════════ */
 
 /* Global density helper */
 .workout-builder-mobile {
@@ -3008,7 +3008,7 @@ watch(
     gap: 8px;
   }
 
-  /* â”€â”€ Hero compression â”€â”€ */
+  /* ── Hero compression ── */
   .builder-hero {
     padding: 10px 12px;
     gap: 8px;
@@ -3049,7 +3049,7 @@ watch(
     font-size: 0.65rem;
   }
 
-  /* â”€â”€ Tab bar â”€â”€ */
+  /* ── Tab bar ── */
   .builder-tabs {
     padding: 4px;
     border-radius: 10px;
@@ -3067,7 +3067,7 @@ watch(
     font-size: 0.74rem;
   }
 
-  /* â”€â”€ Sections â”€â”€ */
+  /* ── Sections ── */
   .builder-section,
   .planner-section,
   .collapsible-panel {
@@ -3079,7 +3079,7 @@ watch(
     box-sizing: border-box;
   }
 
-  /* â”€â”€ Day card header â”€â”€ */
+  /* ── Day card header ── */
   .workout-day-header {
     padding: 8px 10px;
     gap: 6px;
@@ -3105,7 +3105,7 @@ watch(
     font-size: 11px;
   }
 
-  /* Day actions â€” kebab on mobile */
+  /* Day actions — kebab on mobile */
   .day-actions {
     display: none;
   }
@@ -3118,7 +3118,7 @@ watch(
     flex-wrap: nowrap;
   }
 
-  /* â”€â”€ Day panel â”€â”€ */
+  /* ── Day panel ── */
   .workout-day-panel {
     padding: 8px 10px;
   }
@@ -3128,7 +3128,7 @@ watch(
     margin-bottom: 10px;
   }
 
-  /* â”€â”€ Add Exercise button â”€â”€ */
+  /* ── Add Exercise button ── */
   .btn-add-exercise-day {
     padding: 8px 16px;
     min-height: 36px;
@@ -3136,7 +3136,7 @@ watch(
     border-radius: 10px;
   }
 
-  /* â”€â”€ Planner tools â”€â”€ */
+  /* ── Planner tools ── */
   .planner-tools {
     gap: 8px;
     margin-bottom: 10px;
@@ -3178,12 +3178,12 @@ watch(
     min-width: 0;
   }
 
-  /* â”€â”€ Schedule list â”€â”€ */
+  /* ── Schedule list ── */
   .schedule-hub-list {
     gap: 8px;
   }
 
-  /* â”€â”€ Create/AI buttons â”€â”€ */
+  /* ── Create/AI buttons ── */
   .btn-create-plan,
   .btn-ai-suggest {
     min-height: 42px;
@@ -3193,7 +3193,7 @@ watch(
     box-shadow: none;
   }
 
-  /* â”€â”€ Empty states â”€â”€ */
+  /* ── Empty states ── */
   .planner-empty {
     padding: 16px 12px;
     min-height: 120px;
@@ -3217,7 +3217,7 @@ watch(
     font-size: 0.8rem;
   }
 
-  /* â”€â”€ Collapsible header â”€â”€ */
+  /* ── Collapsible header ── */
   .collapsible-header {
     padding: 10px 12px;
     border-radius: 10px;
@@ -3235,7 +3235,7 @@ watch(
     margin-top: 10px;
   }
 
-  /* â”€â”€ Footer â”€â”€ */
+  /* ── Footer ── */
   .builder-footer {
     padding: 10px;
     gap: 8px;
@@ -3248,7 +3248,7 @@ watch(
     padding: 0 14px;
   }
 
-  /* â”€â”€ Heading groups â”€â”€ */
+  /* ── Heading groups ── */
   .planner-heading-group h3 {
     font-size: 0.9rem;
   }
@@ -3265,7 +3265,7 @@ watch(
     font-size: 0.77rem;
   }
 
-  /* â”€â”€ Workout day accordion â”€â”€ */
+  /* ── Workout day accordion ── */
   .workout-day-accordion {
     gap: 6px;
   }
@@ -3276,7 +3276,7 @@ watch(
     max-width: 100%;
   }
 
-  /* â”€â”€ Empty day state â”€â”€ */
+  /* ── Empty day state ── */
   .empty-day-state {
     padding: 14px;
     border-radius: 8px;

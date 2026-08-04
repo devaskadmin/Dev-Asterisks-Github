@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import {computed, onMounted, onUnmounted, provide, ref, shallowRef, watch} from "vue";
 import {RouterView, useRoute} from 'vue-router';
 import {OverlayScrollbars} from "overlayscrollbars";
@@ -407,12 +407,6 @@ watch(isAdmin, (nextIsAdmin) => {
   }
 })
 
-watch(isAdmin, (nextIsAdmin) => {
-  if (!nextIsAdmin) {
-    closeSidebar()
-  }
-})
-
 watch(
   () => route.fullPath,
   () => {
@@ -646,7 +640,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   background: color-mix(in srgb, var(--wa-shell-surface-elevated) 82%, var(--wa-shell-accent-soft) 18%) !important;
 }
 
-/* â”€â”€ WorkoutAtlas layout cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── WorkoutAtlas layout cleanup ─────────────────────────── */
 
 /* Settings gear: pull 12px inward so it never covers the scrollbar */
 .right-sidebar-btn {
@@ -656,7 +650,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   border-radius: 6px !important;
 }
 
-/* Sidebar right border â€” separates sidebar from content area */
+/* Sidebar right border — separates sidebar from content area */
 .main-sidebar {
   border-right: 1px solid var(--wa-shell-divider, rgba(255, 255, 255, 0.09)) !important;
 }
@@ -801,8 +795,8 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   }
 }
 
-/* â”€â”€ Dark sidebar: override light-theme global rules â”€â”€â”€â”€â”€â”€â”€ */
-/* style.css sets light-theme sidebar to #fff â€” cancel that */
+/* ── Dark sidebar: override light-theme global rules ─────── */
+/* style.css sets light-theme sidebar to #fff — cancel that */
 .light-theme .main-sidebar,
 .light-theme .main-sidebar::after,
 .dark-theme .main-sidebar,
@@ -820,7 +814,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   color: var(--wa-shell-text-secondary, #a5afbd) !important;
 }
 
-/* Section header gradient variable â€” overridden to dark surface */
+/* Section header gradient variable — overridden to dark surface */
 .main-sidebar .sidebar-link-group-title.sidebar-section-header {
   --ff-page-header-gradient: transparent !important;
   --ff-page-header-bg: rgba(255, 255, 255, 0.04) !important;
@@ -829,7 +823,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   color: var(--wa-shell-text-muted, #748094) !important;
 }
 
-/* Light-theme link colors â€” keep dark */
+/* Light-theme link colors — keep dark */
 .light-theme .sidebar-item .sidebar-link .nav-icon,
 .light-theme .sidebar-item .sidebar-dropdown-item .sidebar-link {
   color: var(--wa-shell-text-secondary, #a5afbd) !important;

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 const props = defineProps(['onNavCloseClick', 'isExpanded', 'toggleSidebar', 'profileToggleSidebar', 'canUseThemeSettings'])
 import {onMounted, ref, onUnmounted, watchEffect, computed} from 'vue'
 import { useRouter } from 'vue-router'
@@ -569,7 +569,7 @@ onUnmounted(() => {
   display: none;
 }
 
-/* ======== Mobile Header (â‰¤768px) ======== */
+/* ======== Mobile Header (≤768px) ======== */
 .navbar-mobile-search-row {
   display: none;
 }
@@ -669,7 +669,7 @@ onUnmounted(() => {
   }
 }
 
-/* â‰¤480px: further compress */
+/* ≤480px: further compress */
 @media (max-width: 480px) {
   .top-navbar {
     padding: 8px 8px;

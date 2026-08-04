@@ -17,8 +17,6 @@ const saving          = ref(false);
 const saveMessage     = ref('');
 const saveError       = ref('');
 const conflictMessage = ref('');
-const setSaveStateByKey = ref({});
-
 const workoutTimerNowMs = ref(Date.now());
 
 let workoutTimerIntervalId = null;
@@ -99,10 +97,6 @@ const buildInitialSets = (exercise) => {
     weight:   Number(exercise.weight   || 0),
     reps:     Number(exercise.reps     || 0),
     duration: Number(exercise.duration || 0),
-    caloriesBurned: 0,
-    distanceMiles: 0,
-    speedMph: 0,
-    notes: '',
     done:     false,
   }));
 };
@@ -116,10 +110,6 @@ const addSet = (exerciseId) => {
     weight:   last.weight,
     reps:     last.reps,
     duration: last.duration,
-    caloriesBurned: last.caloriesBurned || 0,
-    distanceMiles: last.distanceMiles || 0,
-    speedMph: last.speedMph || 0,
-    notes: last.notes || '',
     done:     false,
   });
 };
@@ -131,192 +121,11 @@ const removeSet = (exerciseId, setIndex) => {
   ex.sessionSets.forEach((s, i) => { s.setNum = i + 1; });
 };
 
-const getSetSaveKey = (exerciseId, setNumber) => `${String(exerciseId || '').trim()}:${Number(setNumber || 0)}`;
-
-const setSetSaveState = (exerciseId, setNumber, state) => {
-  const key = getSetSaveKey(exerciseId, setNumber);
-  setSaveStateByKey.value = {
-    ...setSaveStateByKey.value,
-    [key]: {
-      status: 'idle',
-      message: '',
-      ...state,
-    },
-  };
-};
-
-const getSetSaveState = (exerciseId, setNumber) => {
-  const key = getSetSaveKey(exerciseId, setNumber);
-  return setSaveStateByKey.value[key] || { status: 'idle', message: '' };
-};
-
-const parseSetFieldValue = (field, value) => {
-  if (field === 'done') return Boolean(value);
-  if (field === 'notes') return String(value ?? '');
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : 0;
-};
-
-const applySessionProgress = (savedRows = []) => {
-  const rows = Array.isArray(savedRows) ? savedRows : [];
-  const rowsBySourceExerciseId = new Map();
-  const rowsByExerciseAndGroup = new Map();
-
-  for (const row of rows) {
-    const sourceExerciseId = Number(row?.sourceScheduleExerciseId || 0);
-    const exerciseId = Number(row?.exerciseId || 0);
-    const scheduleGroup = String(row?.scheduleGroup || '').trim().toLowerCase();
-    const rowSetNumber = Number(row?.setNumber || 0);
-    if (!rowSetNumber) continue;
-
-    if (sourceExerciseId) {
-      if (!rowsBySourceExerciseId.has(sourceExerciseId)) {
-        rowsBySourceExerciseId.set(sourceExerciseId, []);
-      }
-      rowsBySourceExerciseId.get(sourceExerciseId).push(row);
-      continue;
-    }
-
-    const compositeKey = `${exerciseId}:${scheduleGroup}`;
-    if (!rowsByExerciseAndGroup.has(compositeKey)) {
-      rowsByExerciseAndGroup.set(compositeKey, []);
-    }
-    rowsByExerciseAndGroup.get(compositeKey).push(row);
-  }
-
-  sessionExercises.value = sessionExercises.value.map((exercise) => {
-    const embeddedSourceExerciseId = Number(String(exercise?.id || '').replace(/^wse-/i, '')) || 0;
-    const exerciseId = Number(exercise?.exerciseId || 0);
-    const scheduleGroup = String(exercise?.scheduleGroup || '').trim().toLowerCase();
-
-    const matchedRows = embeddedSourceExerciseId
-      ? (rowsBySourceExerciseId.get(embeddedSourceExerciseId) || [])
-      : (rowsByExerciseAndGroup.get(`${exerciseId}:${scheduleGroup}`) || []);
-
-    if (!matchedRows.length) {
-      return exercise;
-    }
-
-    const rowBySetNumber = new Map();
-    for (const row of matchedRows) {
-      const rowSetNumber = Number(row?.setNumber || 0);
-      if (rowSetNumber > 0) {
-        rowBySetNumber.set(rowSetNumber, row);
-      }
-    }
-
-    const nextSets = (exercise.sessionSets || []).map((set) => {
-      const match = rowBySetNumber.get(Number(set?.setNum || 0));
-      if (!match) {
-        return set;
-      }
-      return {
-        ...set,
-        weight: Number(match.weight || 0),
-        reps: Number(match.reps || 0),
-        duration: Number(match.duration || 0),
-        caloriesBurned: Number(match.caloriesBurned || 0),
-        distanceMiles: Number(match.distanceMiles || 0),
-        speedMph: Number(match.speedMph || 0),
-        notes: String(match.notes || ''),
-        done: Boolean(Number(match.completed || 0)),
-        completedAt: match.completedAt || null,
-      };
-    });
-
-    return {
-      ...exercise,
-      sessionSets: nextSets,
-    };
-  });
-};
-
-const loadSessionProgress = async (sessionId) => {
-  const normalizedSessionId = Number(sessionId || 0);
-  if (!normalizedSessionId) return;
-
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/workout-sessions/${encodeURIComponent(normalizedSessionId)}/progress`,
-      { credentials: 'include' }
-    );
-    if (!response.ok) return;
-
-    const payload = await response.json();
-    applySessionProgress(payload?.sets || []);
-  } catch (_) {
-    // non-fatal
-  }
-};
-
-const persistSetAutosave = async (exercise, setEntry) => {
-  if (!activeSession.value?.id) {
-    return;
-  }
-
-  const exerciseId = Number(exercise?.exerciseId || 0);
-  const setNumber = Number(setEntry?.setNum || 0);
-  if (!exerciseId || !setNumber) {
-    return;
-  }
-
-  setSetSaveState(exercise.id, setNumber, { status: 'saving', message: 'Saving…' });
-
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/workout-sessions/${encodeURIComponent(activeSession.value.id)}/set`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          workoutPlanId: planId.value,
-          workoutDate: activeSession.value?.workoutDate || today(),
-          workoutType: exercise?.workoutType || 'Strength',
-          scheduleGroup: exercise?.scheduleGroup || selectedDay.value || '',
-          exerciseId,
-          exerciseName: exercise?.name || '',
-          exerciseInstanceId: exercise?.id || null,
-          setNumber,
-          weight: setEntry?.weight,
-          reps: setEntry?.reps,
-          duration: setEntry?.duration,
-          caloriesBurned: setEntry?.caloriesBurned,
-          distanceMiles: setEntry?.distanceMiles,
-          speedMph: setEntry?.speedMph,
-          notes: setEntry?.notes || '',
-          completed: Boolean(setEntry?.done),
-          completedAt: setEntry?.done ? (setEntry?.completedAt || new Date().toISOString()) : null,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      throw new Error(errBody?.error || 'Failed to autosave set.');
-    }
-
-    setSetSaveState(exercise.id, setNumber, { status: 'saved', message: 'Saved' });
-  } catch (err) {
-    setSetSaveState(exercise.id, setNumber, { status: 'error', message: err?.message || 'Save failed' });
-    saveError.value = err?.message || 'Failed to autosave set.';
-  }
-};
-
-const updateSet = async (exerciseId, setIndex, field, value) => {
+const updateSet = (exerciseId, setIndex, field, value) => {
   const ex = sessionExercises.value.find((e) => e.id === exerciseId);
   if (!ex) return;
-  const targetSet = ex.sessionSets[setIndex];
-  if (!targetSet) return;
-
-  ex.sessionSets[setIndex][field] = parseSetFieldValue(field, value);
-
-  if (field === 'done') {
-    ex.sessionSets[setIndex].completedAt = ex.sessionSets[setIndex].done
-      ? new Date().toISOString()
-      : null;
-    await persistSetAutosave(ex, ex.sessionSets[setIndex]);
-  }
+  ex.sessionSets[setIndex][field] =
+    field === 'done' ? Boolean(value) : (Number(value) || 0);
 };
 
 /* ─── Load plan ──────────────────────────────────────────────────────────── */
@@ -395,7 +204,6 @@ const checkActiveSession = async () => {
       activeSession.value = data.session;
       selectedDay.value   = data.session.workoutDayName;
       activeTab.value     = 'dayDetails';
-      await loadSessionProgress(data.session.id);
     }
   } catch (_) {
     // non-fatal
@@ -763,7 +571,6 @@ onUnmounted(() => {
                 :key="exercise.id"
                 :exercise="exercise"
                 :is-cardio="isCardio(exercise)"
-                :get-set-save-state="getSetSaveState"
                 @add-set="addSet"
                 @remove-set="removeSet"
                 @update-set="updateSet"
@@ -802,10 +609,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.workout-detail-page {
-  --mobile-action-bar-height: 84px;
-  padding-bottom: 100px;
-}
+.workout-detail-page { padding-bottom: 100px; }
 
 /* Loading / Error */
 .wd-loading, .wd-error {
@@ -1015,11 +819,7 @@ onUnmounted(() => {
 
 /* Sticky bottom bar */
 .wd-bottom-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
   background: rgba(255,255,255,0.96);
   border-top: 1px solid var(--border-color, #e5e7eb);
   backdrop-filter: blur(8px); padding: 12px 16px;
@@ -1067,16 +867,5 @@ onUnmounted(() => {
   .wd-day-detail-header { flex-direction: column; }
   .wd-bottom-bar__inner { flex-direction: column; align-items: stretch; }
   .wd-bottom-bar__actions { justify-content: flex-end; }
-}
-
-@media (max-width: 1024px) {
-  .workout-detail-page {
-    padding-bottom: var(--mobile-bottom-clearance);
-  }
-
-  .wd-bottom-bar {
-    bottom: var(--mobile-bottom-nav-offset);
-    padding-bottom: calc(12px + var(--mobile-safe-area-bottom));
-  }
 }
 </style>

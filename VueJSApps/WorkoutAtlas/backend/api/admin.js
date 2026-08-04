@@ -20,8 +20,6 @@ const requireAdmin = require('../middleware/requireAdmin');
 const pool       = require('../db');
 const { sanitizeText } = require('../utils/sanitize');
 const { ensureUserMediaFolders, deleteUserMediaFolders } = require('../services/userMediaService');
-const notificationService = require('../services/notificationService');
-const emailService = require('../services/emailNotificationService');
 
 // Apply admin guard to every route in this file
 router.use(requireAdmin);
@@ -194,22 +192,6 @@ router.post('/members', async (req, res) => {
     }
 
     res.status(201).json({ message: 'Member created.', userId: uid, media: mediaResult });
-
-    // Notify new user of account creation (best-effort, response already sent)
-    notificationService.createAccountNotification(
-      uid,
-      'Account Created',
-      `Welcome to WorkoutAtlas, ${safeFirst}! Your admin-created account is ready.`,
-      '/dashboard'
-    ).catch(() => {});
-
-    // Email new user (best-effort)
-    emailService.sendAccountEmail(
-      uid,
-      'Account Created',
-      `Welcome to WorkoutAtlas, ${safeFirst}! Your account has been created by an administrator. Log in to get started.`,
-      '/dashboard'
-    ).catch(() => {});
   } catch (err) {
     await conn.rollback();
     console.error('❌ admin/members POST:', err);
@@ -291,22 +273,6 @@ router.patch('/members/:id/role', async (req, res) => {
     await conn.query('UPDATE user_profiles SET user_role = ? WHERE user_id = ?', [role, uid]);
 
     await conn.commit();
-
-    // Notify the affected user of the role change (best-effort)
-    notificationService.createAccountNotification(
-      uid,
-      'Role Updated',
-      `Your account role has been changed to '${role}'.`,
-      '/settings'
-    ).catch(() => {});
-
-    // Email the affected user (best-effort)
-    const roleLabel = role === 'trainer' ? 'Trainer' : role.charAt(0).toUpperCase() + role.slice(1);
-    const roleDetail = role === 'trainer'
-      ? 'You have been assigned as a trainer. Log in to WorkoutAtlas to begin working with your members.'
-      : `Your account role has been updated to ${roleLabel}.`;
-    emailService.sendAccountEmail(uid, 'Role Updated', roleDetail, '/settings').catch(() => {});
-
     res.json({ message: `Role updated to '${role}'.` });
   } catch (err) {
     await conn.rollback();
@@ -604,66 +570,6 @@ router.get('/tiers', async (req, res) => {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch tiers.' });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────
-// POST /api/admin/notifications/broadcast
-// Send an ADMIN notification to all users (or a specific role subset).
-// Body: { title, message, link?, targetRole? }
-//   targetRole – optional role slug ('member', 'trainer', 'admin').
-//                Omit or null to broadcast to all active users.
-// ─────────────────────────────────────────────────────────────────
-router.post('/notifications/broadcast', async (req, res) => {
-  const { title, message, link = '/dashboard', targetRole = null } = req.body;
-
-  if (!title || !message) {
-    return res.status(400).json({ error: 'title and message are required.' });
-  }
-
-  const safeTitle   = sanitizeText(title,   255);
-  const safeMessage = sanitizeText(message, 1000);
-  const safeLink    = link ? String(link).trim().substring(0, 255) : '/dashboard';
-  const safeRole    = targetRole ? sanitizeText(targetRole, 50) : null;
-
-  try {
-    let userRows;
-    if (safeRole) {
-      [userRows] = await pool.query(
-        `SELECT DISTINCT u.id
-         FROM users u
-         INNER JOIN user_roles ur ON ur.user_id = u.id
-         INNER JOIN roles r ON r.id = ur.role_id
-         WHERE r.slug = ? AND r.is_active = 1`,
-        [safeRole]
-      );
-    } else {
-      [userRows] = await pool.query(`SELECT id FROM users`);
-    }
-
-    let sent = 0;
-    const errors = [];
-    for (const row of userRows) {
-      try {
-        await notificationService.createAdminNotification(row.id, safeTitle, safeMessage, safeLink);
-        emailService.sendAdminEmail(row.id, safeTitle, safeMessage, safeLink).catch(() => {});
-        sent++;
-      } catch (err) {
-        errors.push(row.id);
-      }
-    }
-
-    console.log(`📢 [Admin Broadcast] Sent ${sent}/${userRows.length} notifications. Title: '${safeTitle}'`);
-
-    res.json({
-      message: `Broadcast sent to ${sent} user${sent !== 1 ? 's' : ''}.`,
-      sent,
-      total: userRows.length,
-      ...(errors.length ? { failedUserIds: errors } : {}),
-    });
-  } catch (err) {
-    console.error('❌ admin/notifications/broadcast:', err);
-    res.status(500).json({ error: 'Failed to send broadcast.' });
   }
 });
 

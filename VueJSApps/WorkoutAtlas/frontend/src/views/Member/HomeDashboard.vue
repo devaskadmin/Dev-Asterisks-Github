@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
@@ -43,7 +43,7 @@ const formatTrend = (value, suffix = '', zeroText = 'No change') => {
 }
 
 const formatActivityDate = (isoDate) => {
-  if (!isoDate) return 'â€”'
+  if (!isoDate) return '—'
   const date = new Date(`${isoDate}T00:00:00`)
   return Number.isNaN(date.getTime())
     ? isoDate
@@ -159,28 +159,28 @@ const summaryCards = computed(() => {
     {
       key: 'workouts',
       label: 'Workouts',
-      value: loadingMetrics.value ? 'â€”' : String(summary.workouts),
+      value: loadingMetrics.value ? '—' : String(summary.workouts),
       helper: 'This week',
       icon: 'fa-solid fa-dumbbell',
     },
     {
       key: 'streak',
       label: 'Streak',
-      value: loadingMetrics.value ? 'â€”' : `${summary.streak}`,
+      value: loadingMetrics.value ? '—' : `${summary.streak}`,
       helper: 'Days',
       icon: 'fa-solid fa-fire',
     },
     {
       key: 'calories',
       label: 'Calories',
-      value: loadingMetrics.value ? 'â€”' : summary.calories.toLocaleString(),
+      value: loadingMetrics.value ? '—' : summary.calories.toLocaleString(),
       helper: 'Burned',
       icon: 'fa-solid fa-bolt',
     },
     {
       key: 'protein',
       label: 'Protein',
-      value: loadingMetrics.value ? 'â€”' : `${summary.protein}g`,
+      value: loadingMetrics.value ? '—' : `${summary.protein}g`,
       helper: 'Today',
       icon: 'fa-solid fa-drumstick-bite',
     },
@@ -350,8 +350,8 @@ onUnmounted(() => {
       <section class="wa-greeting-row">
         <div class="wa-greeting">
           <p class="wa-greeting-line">Good {{ currentPeriod }},</p>
-          <h1>{{ greetingName }} ðŸ‘‹</h1>
-          <p class="wa-streak">ðŸ”¥ {{ loadingMetrics ? 'â€”' : statsSummary.streak }} Day Streak</p>
+          <h1>{{ greetingName }} 👋</h1>
+          <p class="wa-streak">🔥 {{ loadingMetrics ? '—' : statsSummary.streak }} Day Streak</p>
         </div>
         <div class="wa-date-picker-wrap" aria-label="Date range selector">
           <DateRangePicker @change="onDateChange" />
@@ -379,7 +379,7 @@ onUnmounted(() => {
               <span class="wa-summary-label">{{ card.label }}</span>
               <i :class="card.icon"></i>
             </div>
-              <p class="wa-summary-value">{{ loadingMetrics ? 'â€”' : card.value }}</p>
+              <p class="wa-summary-value">{{ loadingMetrics ? '—' : card.value }}</p>
             <p class="wa-summary-helper">{{ card.helper }}</p>
           </article>
         </div>
@@ -389,11 +389,11 @@ onUnmounted(() => {
         <article class="wa-weekly-card">
           <div class="wa-section-head">
             <h3>Workouts This Week</h3>
-            <router-link to="/workout-log" aria-label="Open workout log" class="wa-weekly-link">â€º</router-link>
+            <router-link to="/workout-log" aria-label="Open workout log" class="wa-weekly-link">›</router-link>
           </div>
 
           <p class="wa-weekly-main">
-            {{ loadingMetrics ? 'â€”' : `${weeklyProgress.completed} / ${weeklyProgress.target || 'â€”'} completed` }}
+            {{ loadingMetrics ? '—' : `${weeklyProgress.completed} / ${weeklyProgress.target || '—'} completed` }}
           </p>
 
           <div class="wa-progress-track" role="progressbar" :aria-valuenow="weeklyProgress.percent" aria-valuemin="0" aria-valuemax="100">
@@ -443,7 +443,7 @@ onUnmounted(() => {
             </div>
             <div class="wa-quick-action-right">
               <span class="wa-quick-action-icon"><i :class="action.icon"></i></span>
-              <span class="wa-quick-action-arrow" aria-hidden="true">â€º</span>
+              <span class="wa-quick-action-arrow" aria-hidden="true">›</span>
             </div>
           </div>
         </router-link>
@@ -474,7 +474,7 @@ onUnmounted(() => {
               <strong>{{ action.title }}</strong>
               <small>{{ action.description }}</small>
             </span>
-            <span class="wa-role-arrow" aria-hidden="true">â€º</span>
+            <span class="wa-role-arrow" aria-hidden="true">›</span>
           </router-link>
         </div>
       </section>

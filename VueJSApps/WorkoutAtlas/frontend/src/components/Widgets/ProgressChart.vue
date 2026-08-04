@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import axios from 'axios';
 import vueApexcharts from 'vue3-apexcharts';
@@ -17,9 +17,9 @@ const chartType = ref('bar');
 
 const chartTitle = computed(() => 'Workouts Logged');
 const chartSubtitle = computed(() => {
-  if (groupBy.value === 'month') return 'All Exercises Â· Monthly View';
-  if (groupBy.value === 'year') return 'All Exercises Â· Yearly View';
-  return 'All Exercises Â· Daily View';
+  if (groupBy.value === 'month') return 'All Exercises · Monthly View';
+  if (groupBy.value === 'year') return 'All Exercises · Yearly View';
+  return 'All Exercises · Daily View';
 });
 
 const chartHeight = computed(() => (chartData.value.length > 0 && chartData.value.length <= 3 ? 240 : 300));
@@ -141,7 +141,7 @@ onMounted(loadChart);
       <div class="ps-chart-header">
         <div class="ps-chart-header__left">
           <h5>Training Progress</h5>
-          <span class="ps-chart-sub">{{ chartTitle }} Â· {{ chartSubtitle }}</span>
+          <span class="ps-chart-sub">{{ chartTitle }} · {{ chartSubtitle }}</span>
         </div>
         <div class="ps-chart-controls">
           <div class="ps-group-btns">
@@ -164,14 +164,14 @@ onMounted(loadChart);
     <div class="ps-chart-body">
       <div v-if="chartLoading" class="ps-state">
         <i class="fa-solid fa-spinner fa-spin"></i>
-        <span>Loading chartâ€¦</span>
+        <span>Loading chart…</span>
       </div>
       <div v-else-if="chartError" class="ps-state ps-state--error">
         <i class="fa-solid fa-triangle-exclamation"></i>
         <span>{{ chartError }}</span>
       </div>
       <div v-else-if="!chartData.length" class="ps-empty-state">
-        <div class="ps-empty-icon">ðŸ“Š</div>
+        <div class="ps-empty-icon">📊</div>
         <h6 class="ps-empty-title">No workout history found</h6>
         <div class="ps-empty-tips">
           <span>Complete workouts to generate analytics</span>
