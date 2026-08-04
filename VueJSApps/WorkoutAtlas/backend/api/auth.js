@@ -14,6 +14,7 @@ const emailService = require('../services/emailNotificationService');
 
 const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 const REMEMBER_ME_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const isDebugEnabled = ['true', '1', 'yes'].includes(String(process.env.DEBUG || process.env.VITE_DEBUG || '').toLowerCase());
 const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_COOKIE_SECURE = isProduction;
@@ -317,7 +318,8 @@ router.post('/login', async (req, res) => {
       req.session.userID = user.id;
       req.session.username = user.username;
       req.session.mustResetPassword = isPendingReset;
-      req.session.cookie.maxAge = rememberMe ? REMEMBER_ME_MAX_AGE_MS : DEFAULT_SESSION_MAX_AGE_MS;
+      // 0.84b3: successful logins persist for 30 days unless explicitly ended.
+      req.session.cookie.maxAge = THIRTY_DAYS_MS;
       console.log('✅ Session user assigned:', req.session.user);
 
       // Do not return login success before save completes.

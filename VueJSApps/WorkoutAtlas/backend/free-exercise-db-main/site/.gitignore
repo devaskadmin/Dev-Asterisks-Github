@@ -7,7 +7,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-
+node_modules
 .DS_Store
 dist
 dist-ssr
@@ -26,9 +26,6 @@ coverage
 *.njsproj
 *.sln
 *.sw?
-<<<<<<< HEAD:VueJSApps/WorkoutAtlas/backend/free-exercise-db-main/site/.gitignore
-=======
-
 yarn.lock
 package-lock.json
 .vscode/extensions.json
@@ -90,4 +87,5 @@ build/
 
 # node_modules (should already be excluded by nested .gitignores, belt-and-suspenders)
 node_modules/
->>>>>>> origin/0.84-Mobile:VueJSApps/FlexFit/.gitignore
+=======
+>>>>>>> 0.84-Mobile

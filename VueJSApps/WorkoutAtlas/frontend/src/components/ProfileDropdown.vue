@@ -109,9 +109,10 @@ onUnmounted(() => {
     <!-- Profile Button -->
     <button
       ref="buttonRef"
+      type="button"
       class="profile-dropdown-btn"
       :class="{ 'is-open': isOpen }"
-      @click="toggleDropdown"
+      @click.stop="toggleDropdown"
       aria-haspopup="true"
       :aria-expanded="isOpen"
       aria-label="Open profile menu"

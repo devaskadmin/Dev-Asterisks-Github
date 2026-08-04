@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { DEFAULT_EXERCISE_IMAGE, getExerciseImage } from '@/utils/exerciseImage';
 
 const props = defineProps({
   exercise: {
@@ -62,6 +63,32 @@ const getSaveState = (exerciseId, setNum) => {
   }
   return props.getSetSaveState(exerciseId, setNum) || { status: 'idle', message: '' };
 };
+
+const resolveExerciseImage = (exercise) => {
+  const safeExercise = exercise && typeof exercise === 'object' ? exercise : {};
+  return getExerciseImage({
+    ...safeExercise,
+    image:
+      safeExercise.image ||
+      safeExercise.exerciseImage ||
+      safeExercise.exerciseImageUrl ||
+      safeExercise.imageUrl ||
+      safeExercise.ImageURL ||
+      '',
+  });
+};
+
+const handleExerciseImageError = (event) => {
+  const target = event?.target;
+  if (!target) return;
+
+  if (target.dataset.fallbackApplied === '1') {
+    return;
+  }
+
+  target.dataset.fallbackApplied = '1';
+  target.src = DEFAULT_EXERCISE_IMAGE;
+};
 </script>
 
 <template>
@@ -70,14 +97,13 @@ const getSaveState = (exerciseId, setNum) => {
     <div class="sec-header" :class="{ 'sec-header--active': isExpanded }" @click="emit('select', exercise.id)">
       <div class="sec-identity">
         <img
-          v-if="exercise.image"
-          :src="exercise.image"
+          :src="resolveExerciseImage(exercise)"
           :alt="exercise.name"
           class="sec-thumb"
+          loading="lazy"
+          decoding="async"
+          @error="handleExerciseImageError"
         />
-        <div v-else class="sec-thumb-placeholder">
-          <i class="fa-solid fa-dumbbell"></i>
-        </div>
         <div class="sec-meta">
           <h5>{{ exercise.name }}</h5>
           <p>
@@ -96,12 +122,15 @@ const getSaveState = (exerciseId, setNum) => {
         </span>
         <button
           type="button"
-          class="sec-select-btn"
-          :class="{ 'sec-select-btn--active': isExpanded }"
+          class="sec-select-btn exercise-collapse-btn"
+          :class="{ 'sec-select-btn--active': isExpanded, 'is-collapsed': !isExpanded }"
+          :title="isExpanded ? 'Collapse exercise' : 'Select exercise'"
+          :aria-label="isExpanded ? 'Collapse exercise' : 'Select exercise'"
+          :aria-expanded="isExpanded ? 'true' : 'false'"
           @click.stop="emit('select', exercise.id)"
         >
           <i :class="isExpanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-          {{ isExpanded ? 'Collapse' : 'Select Exercise' }}
+          <span class="sr-only">{{ isExpanded ? 'Collapse exercise' : 'Select exercise' }}</span>
         </button>
       </div>
     </div>
@@ -531,11 +560,29 @@ const getSaveState = (exerciseId, setNum) => {
 }
 
 .sec-header-actions {
-  display: flex;
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.sec-header-actions .sec-type-chip {
+  justify-self: start;
+}
+
+.sec-header-actions .sec-sets-summary {
+  justify-self: center;
+}
+
+.sec-header-actions .sec-select-btn,
+.sec-header-actions .exercise-collapse-btn {
+  justify-self: end;
 }
 
 .sec-sets-summary {
@@ -555,26 +602,94 @@ const getSaveState = (exerciseId, setNum) => {
 .sec-select-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
   background: transparent;
   border: 1.5px solid #3b82f6;
   color: #2563eb;
-  border-radius: 8px;
-  padding: 5px 11px;
-  font-size: 0.75rem;
+  border-radius: 999px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 0.86rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.14s ease;
-  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
 .sec-select-btn:hover {
   background: #eff6ff;
 }
 
+.sec-select-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
 .sec-select-btn--active {
   background: #dbeafe;
   border-color: #2563eb;
+}
+
+.exercise-collapse-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  color: #60a5fa;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.exercise-collapse-btn:hover {
+  background: rgba(30, 64, 175, 0.26);
+  border-color: rgba(96, 165, 250, 0.62);
+  color: #93c5fd;
+}
+
+.exercise-collapse-btn:active {
+  transform: translateY(0);
+  background: rgba(37, 99, 235, 0.3);
+}
+
+.exercise-collapse-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24);
+}
+
+.exercise-collapse-btn.sec-select-btn--active {
+  border-color: rgba(96, 165, 250, 0.68);
+  background: rgba(30, 64, 175, 0.36);
+  color: #bfdbfe;
+}
+
+.exercise-collapse-btn i {
+  transition: transform 0.22s ease;
+}
+
+.exercise-collapse-btn.is-collapsed i {
+  transform: rotate(180deg);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .sec-body {
@@ -1074,6 +1189,53 @@ const getSaveState = (exerciseId, setNum) => {
     padding: 10px 12px;
     gap: 10px;
     border-radius: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-body,
+  .cardio-table-wrap,
+  .cardio-3col-table,
+  .strength-table--mobile,
+  .sec-footer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-header {
+    margin: 0;
+    padding: 2px 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .sec-identity {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .sec-meta {
+    min-width: 0;
+  }
+
+  .sec-meta h5,
+  .sec-meta p {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .sec-header-actions {
+    flex: 0 0 auto;
+    display: inline-grid;
+    grid-template-columns: auto auto auto;
+    justify-content: initial;
+    min-width: 0;
   }
 
   .strength-table--desktop {
@@ -1091,14 +1253,18 @@ const getSaveState = (exerciseId, setNum) => {
     gap: 6px;
     align-items: end;
     padding: 7px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid rgba(96, 165, 250, 0.22);
     border-radius: 10px;
-    background: transparent;
+    background: #1b2444;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .strength-mobile-row--done {
-    border-color: rgba(34, 197, 94, 0.28);
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(22, 163, 74, 0.10);
   }
 
   .strength-mobile-field {
@@ -1110,7 +1276,7 @@ const getSaveState = (exerciseId, setNum) => {
   .strength-mobile-field span {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #64748b;
+    color: #cbd5e1;
   }
 
   .strength-mobile-field .set-input {
@@ -1121,12 +1287,46 @@ const getSaveState = (exerciseId, setNum) => {
     min-height: 40px;
     height: 40px;
     text-align: left;
+    background: #111b2e;
+    border-color: rgba(96, 165, 250, 0.3);
+    color: #f8fafc;
+  }
+
+  .strength-mobile-field .set-input::placeholder {
+    color: #94a3b8;
   }
 
   .strength-mobile-row .c3-icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 9px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border-width: 1px;
+  }
+
+  .strength-mobile-row .c3-icon-btn--remove {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fca5a5;
+  }
+
+  .strength-mobile-row .c3-icon-btn--remove:hover {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(248, 113, 113, 0.5);
+    color: #fecaca;
+  }
+
+  .strength-mobile-row .c3-icon-btn--complete,
+  .strength-mobile-row .c3-icon-btn--done {
+    background: rgba(34, 197, 94, 0.16);
+    border-color: rgba(34, 197, 94, 0.45);
+    color: #86efac;
+  }
+
+  .strength-mobile-row .c3-icon-btn--complete:hover,
+  .strength-mobile-row .c3-icon-btn--done:hover {
+    background: rgba(34, 197, 94, 0.22);
+    border-color: rgba(34, 197, 94, 0.58);
+    color: #bbf7d0;
   }
 
   /* §4 Exercise header — 40px image, compact badge, 32px collapse button */
@@ -1140,10 +1340,12 @@ const getSaveState = (exerciseId, setNum) => {
   .sec-meta p    { font-size: 0.7rem; }
   .sec-type-chip { font-size: 0.62rem; padding: 2px 6px; }
   .sec-sets-summary { font-size: 0.68rem; }
-  .sec-select-btn {
-    height: 32px;
-    padding: 0 9px;
-    font-size: 0.68rem;
+  .sec-select-btn,
+  .exercise-collapse-btn {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    font-size: 12px;
     border-radius: 7px;
   }
 
@@ -1167,6 +1369,8 @@ const getSaveState = (exerciseId, setNum) => {
     padding: 6px 8px;
     border-bottom: none;
     background: transparent !important;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   /* Hide set number column (redundant in 2-col layout) */
@@ -1185,10 +1389,17 @@ const getSaveState = (exerciseId, setNum) => {
     display: flex;
     align-items: center;
     gap: 6px;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
   }
 
   .c3-inline-actions {
     gap: 5px;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   .c3-icon-btn {
@@ -1204,6 +1415,9 @@ const getSaveState = (exerciseId, setNum) => {
     padding: 0 8px;
     font-size: 0.82rem;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     text-align: left;
   }
 
@@ -1211,41 +1425,95 @@ const getSaveState = (exerciseId, setNum) => {
   .c3-row-done {
     grid-column: 1 / -1;
     flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    align-items: stretch;
+    justify-content: flex-start;
     gap: 6px;
     padding: 7px 8px;
     border-top: 0 !important;
     background: transparent !important;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+  }
+
+  .c3-info-action,
+  .c3-done-cell {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    justify-content: stretch;
   }
 
   .c3-rm-btn {
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    white-space: normal;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 10px;
+    white-space: nowrap;
     border-radius: 9px;
     border: 1px solid #fca5a5;
     background: #fff5f5;
     color: #dc2626;
+    justify-content: center;
   }
   .c3-complete-btn {
-    width: 40px;
-    height: 40px;
-    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 10px;
     white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
     border-radius: 9px;
+    justify-content: center;
   }
 
   .c3-btn-label {
-    display: none;
+    display: inline;
   }
 
   /* Footer: compress */
-  .sec-footer { gap: 6px; flex-wrap: wrap; }
-  .add-set-btn   { font-size: 0.72rem; padding: 5px 10px; }
+  .sec-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .sec-footer > * {
+    min-width: 0;
+  }
+
+  .add-set-btn,
+  .c3-finish-btn {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
+  .add-set-btn { font-size: 0.72rem; padding: 5px 10px; }
   .c3-finish-btn { font-size: 0.76rem; padding: 6px 12px; }
+
   .sec-summary   { font-size: 0.7rem; }
+
+  .sec-summary,
+  .sec-prefill-note {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* ─── v0.81.6 Mobile 480px — further compression ──────────────── */
@@ -1253,11 +1521,14 @@ const getSaveState = (exerciseId, setNum) => {
   .session-exercise-card { padding: 8px 10px; gap: 8px; }
   .sec-thumb, .sec-thumb-placeholder { width: 36px; height: 36px; }
   .sec-meta h5 { font-size: 0.8rem; }
+  .sec-select-btn,
+  .exercise-collapse-btn { width: 30px; min-width: 30px; height: 30px; }
   .set-input { min-height: 34px; height: 34px; font-size: 0.78rem; }
   .c3-icon-btn { width: 28px; height: 28px; border-radius: 6px; }
-  .c3-rm-btn,
-  .c3-complete-btn,
-  .strength-mobile-row .c3-icon-btn { width: 38px; height: 38px; }
+  .strength-mobile-row .c3-icon-btn {
+    width: 38px;
+    height: 38px;
+  }
 
   /* Cardio table info labels smaller */
   .c3-col-info { font-size: 0.65rem; }
@@ -1269,11 +1540,25 @@ const getSaveState = (exerciseId, setNum) => {
     gap: 4px;
   }
 
+  .sec-select-btn,
+  .exercise-collapse-btn {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+  }
+
   .strength-mobile-row .c3-icon-btn,
   .c3-rm-btn,
   .c3-complete-btn {
     width: 36px;
     height: 36px;
+  }
+
+  .c3-rm-btn,
+  .c3-complete-btn {
+    width: 100%;
+    min-height: 34px;
+    height: auto;
   }
 
   .strength-mobile-field .set-input {

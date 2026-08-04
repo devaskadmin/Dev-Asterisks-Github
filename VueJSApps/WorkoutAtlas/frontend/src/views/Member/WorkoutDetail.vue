@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { API_BASE } from '@/config/env';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
@@ -18,6 +18,10 @@ const saveMessage     = ref('');
 const saveError       = ref('');
 const conflictMessage = ref('');
 const setSaveStateByKey = ref({});
+
+const workoutTimerNowMs = ref(Date.now());
+
+let workoutTimerIntervalId = null;
 
 /* ─── Data state ─────────────────────────────────────────────────────────── */
 const plan             = ref(null);
@@ -318,6 +322,43 @@ const updateSet = async (exerciseId, setIndex, field, value) => {
 /* ─── Load plan ──────────────────────────────────────────────────────────── */
 const today = () => new Date().toISOString().split('T')[0];
 
+const formatDurationHms = (totalSeconds) => {
+  const safeSeconds = Math.max(Number(totalSeconds || 0), 0);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = Math.floor(safeSeconds % 60);
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+};
+
+const getElapsedSecondsFromStart = (startedAtValue) => {
+  if (!startedAtValue) return 0;
+  const startedAtMs = new Date(startedAtValue).getTime();
+  if (!Number.isFinite(startedAtMs)) return 0;
+  return Math.max(Math.floor((workoutTimerNowMs.value - startedAtMs) / 1000), 0);
+};
+
+const activeWorkoutElapsedSeconds = computed(() =>
+  activeSession.value?.startedAt ? getElapsedSecondsFromStart(activeSession.value.startedAt) : 0,
+);
+
+const activeWorkoutTimerLabel = computed(() => formatDurationHms(activeWorkoutElapsedSeconds.value));
+
+const setWorkoutTimerRunning = (isRunning) => {
+  if (isRunning) {
+    if (workoutTimerIntervalId != null) return;
+    workoutTimerNowMs.value = Date.now();
+    workoutTimerIntervalId = window.setInterval(() => {
+      workoutTimerNowMs.value = Date.now();
+    }, 1000);
+    return;
+  }
+
+  if (workoutTimerIntervalId != null) {
+    window.clearInterval(workoutTimerIntervalId);
+    workoutTimerIntervalId = null;
+  }
+};
+
 const loadPlan = async () => {
   loading.value   = true;
   saveError.value = '';
@@ -360,6 +401,14 @@ const checkActiveSession = async () => {
     // non-fatal
   }
 };
+
+watch(
+  () => activeSession.value?.startedAt,
+  (startedAt) => {
+    setWorkoutTimerRunning(Boolean(startedAt));
+  },
+  { immediate: true },
+);
 
 /* ─── Start workout for a day (Overview) ────────────────────────────────── */
 const startDayWorkout = async (dayName) => {
@@ -441,14 +490,22 @@ const completeWorkout = async () => {
     }
 
     // 2 ── Mark session completed
+    let completedDurationSeconds = 0;
     if (activeSession.value?.id) {
-      await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
+      const completeRes = await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
         method:      'POST',
         credentials: 'include',
       });
+      const completeData = await completeRes.json().catch(() => ({}));
+      if (!completeRes.ok) {
+        throw new Error(completeData?.error || 'Failed to complete workout session.');
+      }
+      completedDurationSeconds = Number(completeData?.session?.durationSeconds || 0);
     }
 
-    saveMessage.value   = '✓ Workout complete! Great work!';
+    saveMessage.value = completedDurationSeconds > 0
+      ? `✓ Workout complete! Great work! Workout Time: ${formatDurationHms(completedDurationSeconds)}`
+      : '✓ Workout complete! Great work!';
     activeSession.value = null;
 
     setTimeout(() => {
@@ -465,18 +522,31 @@ const completeWorkout = async () => {
 
 /* ─── End workout without saving ────────────────────────────────────────── */
 const endWithoutSaving = async () => {
+  let endedDurationSeconds = 0;
   if (activeSession.value?.id) {
     try {
-      await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
+      const cancelRes = await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
         method:      'POST',
         credentials: 'include',
       });
+      const cancelData = await cancelRes.json().catch(() => ({}));
+      if (cancelRes.ok) {
+        endedDurationSeconds = Number(cancelData?.session?.durationSeconds || 0);
+      }
     } catch (_) { /* non-fatal */ }
   }
   activeSession.value   = null;
   activeTab.value       = 'overview';
   selectedDay.value     = '';
   conflictMessage.value = '';
+  if (endedDurationSeconds > 0) {
+    saveMessage.value = `Workout ended. Workout Time: ${formatDurationHms(endedDurationSeconds)}`;
+    setTimeout(() => {
+      if (saveMessage.value.startsWith('Workout ended.')) {
+        saveMessage.value = '';
+      }
+    }, 3000);
+  }
 };
 
 /* ─── Navigation ─────────────────────────────────────────────────────────── */
@@ -488,6 +558,10 @@ const openInBuilder = () =>
 onMounted(async () => {
   await loadPlan();
   await checkActiveSession();
+});
+
+onUnmounted(() => {
+  setWorkoutTimerRunning(false);
 });
 </script>
 
@@ -541,6 +615,7 @@ onMounted(async () => {
             <i class="fa-solid fa-circle-play"></i>
             Session in progress &mdash; {{ activeSession.workoutDayName }}
             &bull; Started {{ new Date(activeSession.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            &bull; Workout Time: {{ activeWorkoutTimerLabel }}
           </div>
 
           <div class="wd-hero__actions">
@@ -674,6 +749,10 @@ onMounted(async () => {
                   <div class="wd-progress-fill" :style="{ width: progressPct + '%' }"></div>
                 </div>
                 <span class="wd-progress-label">{{ totalCompleted }} / {{ totalSets }} sets ({{ progressPct }}%)</span>
+                <span v-if="activeSession" class="wd-workout-time">
+                  <i class="fa-solid fa-stopwatch"></i>
+                  Workout Time: <strong>{{ activeWorkoutTimerLabel }}</strong>
+                </span>
               </div>
             </div>
 
@@ -907,6 +986,15 @@ onMounted(async () => {
   border-radius: 999px; transition: width 0.35s ease;
 }
 .wd-progress-label { color: var(--text-color-secondary, #6b7280); font-size: 0.78rem; }
+.wd-workout-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color, #111827);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.wd-workout-time i { color: #2563eb; }
 
 /* Exercise list */
 .wd-exercise-list { display: grid; gap: 12px; }
@@ -962,6 +1050,16 @@ onMounted(async () => {
 .wd-btn-end:hover { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
 
 /* Responsive */
+@media (max-width: 768px) {
+  .workout-detail-page {
+    padding-bottom: calc(108px + var(--wa-mobile-bottom-nav-clearance, calc(92px + env(safe-area-inset-bottom))));
+  }
+
+  .wd-bottom-bar {
+    bottom: var(--wa-mobile-bottom-nav-clearance, calc(92px + env(safe-area-inset-bottom)));
+  }
+}
+
 @media (max-width: 600px) {
   .wd-hero__body { flex-direction: column; }
   .wd-hero__stats { justify-content: space-around; width: 100%; }

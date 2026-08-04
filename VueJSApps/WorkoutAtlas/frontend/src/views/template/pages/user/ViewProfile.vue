@@ -30,7 +30,7 @@ const activityHistory = [
       </section>
 
       <section class="view-profile-layout">
-        <article class="app-section-card vp-card vp-profile-card">
+        <article class="vp-card vp-profile-card">
           <div class="vp-card-head">
             <h5 class="vp-card-title">Athlete Profile</h5>
             <div class="dropdown">
@@ -77,7 +77,7 @@ const activityHistory = [
         </article>
 
         <div class="profile-right-stack">
-          <article class="app-section-card vp-card">
+          <article class="vp-card">
             <div class="vp-card-head">
               <h5 class="vp-card-title">Goals & Progress</h5>
             </div>
@@ -92,7 +92,7 @@ const activityHistory = [
             </div>
           </article>
 
-          <article class="app-section-card vp-card">
+          <article class="vp-card">
             <div class="vp-card-head">
               <h5 class="vp-card-title">Recent Workouts</h5>
             </div>
@@ -107,7 +107,7 @@ const activityHistory = [
             </div>
           </article>
 
-          <article class="app-section-card vp-card">
+          <article class="vp-card">
             <div class="vp-card-head">
               <h5 class="vp-card-title">Activity History</h5>
             </div>

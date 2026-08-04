@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
 import { API_BASE } from '@/config/env';
@@ -43,6 +43,7 @@ const expandedPlanId    = ref(null);   // accordion open state
 const expandedPlanData  = ref(null);   // full plan detail (with exercises/days)
 const expandedLoading   = ref(false);
 const dayOrderStateByPlanId = ref({});
+const reorderPanelOpenByPlanId = ref({});
 const latestHistoryByExerciseId = ref({});
 
 /* ─── Session state (Day Details) ───────────────────────────────────────── */
@@ -56,6 +57,10 @@ const saveMessage      = ref('');
 const saveError        = ref('');
 const conflictMessage  = ref('');
 const setSaveStateByKey = ref({});
+
+const workoutTimerNowMs = ref(Date.now());
+
+let workoutTimerIntervalId = null;
 
 /* ─── Accordion: active exercise ───────────────────────────────────── */
 const activeExerciseId = ref(null);
@@ -98,6 +103,63 @@ const formatUpdatedAt = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
+};
+
+const formatDurationHms = (totalSeconds) => {
+  const safeSeconds = Math.max(Number(totalSeconds || 0), 0);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = Math.floor(safeSeconds % 60);
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+};
+
+const getElapsedSecondsFromStart = (startedAtValue) => {
+  if (!startedAtValue) return 0;
+  const startedAtMs = new Date(startedAtValue).getTime();
+  if (!Number.isFinite(startedAtMs)) return 0;
+  return Math.max(Math.floor((workoutTimerNowMs.value - startedAtMs) / 1000), 0);
+};
+
+const getHistorySessionDurationSeconds = (session) => {
+  const explicitDuration = Number(session?.sessionDurationSeconds || 0);
+  if (explicitDuration > 0) {
+    return explicitDuration;
+  }
+
+  const startedAtMs = new Date(session?.sessionStartedAt || '').getTime();
+  const completedAtMs = new Date(session?.sessionCompletedAt || session?.sessionEndedAt || '').getTime();
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(completedAtMs)) {
+    return 0;
+  }
+
+  return Math.max(Math.floor((completedAtMs - startedAtMs) / 1000), 0);
+};
+
+const activeWorkoutElapsedSeconds = computed(() =>
+  hasActiveWorkout.value ? getElapsedSecondsFromStart(activeSession.value?.startedAt) : 0,
+);
+
+const activeWorkoutTimerLabel = computed(() => formatDurationHms(activeWorkoutElapsedSeconds.value));
+
+const setWorkoutTimerRunning = (isRunning) => {
+  if (isRunning) {
+    if (workoutTimerIntervalId != null) return;
+    workoutTimerNowMs.value = Date.now();
+    workoutTimerIntervalId = window.setInterval(() => {
+      workoutTimerNowMs.value = Date.now();
+    }, 1000);
+    return;
+  }
+
+  if (workoutTimerIntervalId != null) {
+    window.clearInterval(workoutTimerIntervalId);
+    workoutTimerIntervalId = null;
+  }
+};
+
+const syncWorkoutTimerState = () => {
+  const shouldRun = Boolean(hasActiveWorkout.value && activeSession.value?.startedAt);
+  setWorkoutTimerRunning(shouldRun);
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -195,14 +257,24 @@ const groups = computed(() => {
 
 const allExercises = computed(() => expandedPlanData.value?.exercises || []);
 
+const buildExerciseNameSummary = (exercises = []) =>
+  (Array.isArray(exercises) ? exercises : [])
+    .map((exercise) => String(exercise?.name || exercise?.exerciseName || '').trim())
+    .filter(Boolean)
+    .join(' • ');
+
 const exercisesByGroup = computed(() =>
   groups.value
-    .map((group) => ({
-      name: group,
-      exercises: allExercises.value.filter(
+    .map((group) => {
+      const groupExercises = allExercises.value.filter(
         (ex) => (ex.scheduleGroup || groups.value[0]) === group,
-      ),
-    }))
+      );
+      return {
+        name: group,
+        exercises: groupExercises,
+        exerciseNameSummary: buildExerciseNameSummary(groupExercises),
+      };
+    })
     .filter((g) => g.exercises.length > 0),
 );
 
@@ -210,6 +282,18 @@ const currentDayOrderState = computed(() => getDayOrderState(expandedPlanId.valu
 const dayOrderDirty = computed(() => Boolean(currentDayOrderState.value?.dirty));
 const dayOrderSaving = computed(() => Boolean(currentDayOrderState.value?.saving));
 const dayOrderLoading = computed(() => Boolean(currentDayOrderState.value?.loading));
+
+const isReorderPanelOpen = (planId) => Boolean(reorderPanelOpenByPlanId.value[String(planId || '')]);
+
+const toggleReorderPanel = (planId) => {
+  const pid = String(planId || '').trim();
+  if (!pid) return;
+  const current = Boolean(reorderPanelOpenByPlanId.value[pid]);
+  reorderPanelOpenByPlanId.value = {
+    ...reorderPanelOpenByPlanId.value,
+    [pid]: !current,
+  };
+};
 
 const ensureLocalCustomOrder = (planId) => {
   const state = getDayOrderState(planId);
@@ -850,13 +934,13 @@ const loadWorkoutLists = async () => {
     }
 
     plansLoaded.value = true;
-    await autoExpandSinglePlanIfNeeded();
   } catch (err) {
     plansLoadError.value = err?.message || 'Failed to load workout plans.';
     workoutLists.value = [];
     plansLoaded.value = true;
   } finally {
     loading.value = false;
+    await autoExpandSinglePlanIfNeeded();
   }
 };
 
@@ -889,12 +973,20 @@ const togglePlan = async (planId) => {
     // Collapse
     expandedPlanId.value   = null;
     expandedPlanData.value = null;
+    reorderPanelOpenByPlanId.value = {
+      ...reorderPanelOpenByPlanId.value,
+      [pid]: false,
+    };
     return;
   }
 
   expandedPlanId.value   = pid;
   expandedPlanData.value = null;
   expandedLoading.value  = true;
+  reorderPanelOpenByPlanId.value = {
+    ...reorderPanelOpenByPlanId.value,
+    [pid]: false,
+  };
 
   try {
     const res  = await fetch(`${API_BASE}/api/workout-planner?planId=${encodeURIComponent(pid)}`, { credentials: 'include' });
@@ -920,6 +1012,7 @@ const checkActiveSession = async () => {
     if (data.session) {
       activeSession.value    = data.session;
       hasActiveWorkout.value = true;
+      isPreviewMode.value    = false;
       // Restore the date picker to the active session's start date so the
       // page always shows the correct workout even when returning on a later day.
       if (data.session.workoutDate) {
@@ -986,7 +1079,10 @@ const startDayWorkout = async (dayName) => {
 
     if (res.status === 409) {
       conflictMessage.value = data.error || 'A workout is already in progress.';
-      if (data.activeSession) activeSession.value = data.activeSession;
+      if (data.activeSession) {
+        activeSession.value = data.activeSession;
+        hasActiveWorkout.value = true;
+      }
       return;
     }
     if (!res.ok) throw new Error(data?.error || 'Failed to start workout session.');
@@ -1034,13 +1130,21 @@ const completeWorkout = async () => {
       throw new Error(errBody?.error || 'Failed to save session log.');
     }
 
+    let completedDurationSeconds = 0;
     if (activeSession.value?.id) {
-      await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
+      const completeRes = await fetch(`${API_BASE}/api/workout-sessions/complete/${activeSession.value.id}`, {
         method: 'POST', credentials: 'include',
       });
+      const completeData = await completeRes.json().catch(() => ({}));
+      if (!completeRes.ok) {
+        throw new Error(completeData?.error || 'Failed to complete workout session.');
+      }
+      completedDurationSeconds = Number(completeData?.session?.durationSeconds || 0);
     }
 
-    saveMessage.value      = '✓ Workout complete! Great work!';
+    saveMessage.value = completedDurationSeconds > 0
+      ? `✓ Workout complete! Great work! Workout Time: ${formatDurationHms(completedDurationSeconds)}`
+      : '✓ Workout complete! Great work!';
     activeSession.value    = null;
     hasActiveWorkout.value = false;
 
@@ -1058,11 +1162,16 @@ const completeWorkout = async () => {
 
 /* ─── End without saving ─────────────────────────────────────────────────── */
 const endWithoutSaving = async () => {
+  let endedDurationSeconds = 0;
   if (activeSession.value?.id) {
     try {
-      await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
+      const cancelRes = await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
         method: 'POST', credentials: 'include',
       });
+      const cancelData = await cancelRes.json().catch(() => ({}));
+      if (cancelRes.ok) {
+        endedDurationSeconds = Number(cancelData?.session?.durationSeconds || 0);
+      }
     } catch (_) { /* non-fatal */ }
   }
   activeSession.value    = null;
@@ -1071,6 +1180,14 @@ const endWithoutSaving = async () => {
   activeTab.value        = 'overview';
   selectedDay.value      = '';
   conflictMessage.value  = '';
+  if (endedDurationSeconds > 0) {
+    saveMessage.value = `Workout ended. Workout Time: ${formatDurationHms(endedDurationSeconds)}`;
+    setTimeout(() => {
+      if (saveMessage.value.startsWith('Workout ended.')) {
+        saveMessage.value = '';
+      }
+    }, 3000);
+  }
 };
 
 /* ─── Navigation helpers ─────────────────────────────────────────────────── */
@@ -1126,6 +1243,14 @@ watch(selectedWorkoutDate, () => {
     loadWorkoutHistory();
   }
 });
+
+watch(
+  [hasActiveWorkout, () => activeSession.value?.startedAt],
+  () => {
+    syncWorkoutTimerState();
+  },
+  { immediate: true },
+);
 
 const openHistoryTab = () => {
   activeTab.value = 'workoutHistory';
@@ -1241,6 +1366,10 @@ const saveHistoryWorkout = async (session) => {
 onMounted(async () => {
   await loadWorkoutLists();
   await checkActiveSession();
+});
+
+onUnmounted(() => {
+  setWorkoutTimerRunning(false);
 });
 </script>
 
@@ -1383,6 +1512,16 @@ onMounted(async () => {
                 <span v-if="expandedPlanId === String(plan.planId)" class="wl-plan__selected-badge">
                   <i class="fa-solid fa-circle-check"></i> Selected
                 </span>
+                <button
+                  v-if="expandedPlanId === String(plan.planId)"
+                  type="button"
+                  class="wl-btn-reorder"
+                  :aria-expanded="isReorderPanelOpen(plan.planId) ? 'true' : 'false'"
+                  @click="toggleReorderPanel(plan.planId)"
+                >
+                  <i class="fa-solid fa-arrows-up-down"></i>
+                  Reorder
+                </button>
                 <button type="button" class="wl-btn-edit" @click="openInBuilder(plan.planId)">
                   <i class="fa-solid fa-pencil"></i> Edit Plan
                 </button>
@@ -1397,45 +1536,57 @@ onMounted(async () => {
                 No scheduled days found. <button type="button" class="wl-link" @click="openInBuilder(plan.planId)">Open in Builder</button>
               </div>
 
-              <div v-else class="wl-day-grid">
-                <div class="wl-day-order-toolbar workout-log-order-toolbar app-section-card">
-                  <label class="wl-day-order-toggle">
-                    <input
-                      type="checkbox"
-                      :checked="currentDayOrderState?.useCustomWorkoutLogOrder === true"
-                      @change="toggleCustomWorkoutLogOrder($event.target.checked)"
-                    />
-                    <span>Use Custom Workout Log Order</span>
-                  </label>
-                  <span
-                    v-if="currentDayOrderState?.useCustomWorkoutLogOrder"
-                    class="wl-custom-order-badge"
-                  >
-                    Custom Order Enabled
-                  </span>
-                  <div class="wl-day-order-actions">
-                    <button
-                      type="button"
-                      class="wl-order-toolbar-btn wl-order-toolbar-btn--reset"
-                      :disabled="dayOrderSaving || dayOrderLoading"
-                      @click="resetWorkoutLogDayOrder"
+              <div
+                v-else
+                class="wl-day-grid"
+                :class="{ 'wl-day-grid--reorder-open': isReorderPanelOpen(plan.planId) }"
+              >
+                <div
+                  class="wl-day-order-collapsible"
+                  :class="{ 'wl-day-order-collapsible--open': isReorderPanelOpen(plan.planId) }"
+                >
+                  <div class="wl-day-order-toolbar workout-log-order-toolbar app-section-card">
+                    <label class="wl-day-order-toggle">
+                      <input
+                        type="checkbox"
+                        :checked="currentDayOrderState?.useCustomWorkoutLogOrder === true"
+                        @change="toggleCustomWorkoutLogOrder($event.target.checked)"
+                      />
+                      <span>Use Custom Order</span>
+                    </label>
+                    <span
+                      v-if="currentDayOrderState?.useCustomWorkoutLogOrder"
+                      class="wl-custom-order-badge"
                     >
-                      <i class="fa-solid fa-rotate-left"></i> Reset Order
-                    </button>
-                    <button
-                      type="button"
-                      class="wl-order-toolbar-btn wl-order-toolbar-btn--save"
-                      :disabled="dayOrderSaving || dayOrderLoading || !dayOrderDirty"
-                      @click="saveWorkoutLogDayOrder"
-                    >
-                      <i v-if="dayOrderSaving" class="fa-solid fa-spinner fa-spin"></i>
-                      <i v-else class="fa-solid fa-floppy-disk"></i>
-                      Save Order
-                    </button>
+                      Custom Order Enabled
+                    </span>
+                    <div class="wl-day-order-actions">
+                      <button
+                        type="button"
+                        class="wl-order-toolbar-btn wl-order-toolbar-btn--reset"
+                        :disabled="dayOrderSaving || dayOrderLoading"
+                        @click="resetWorkoutLogDayOrder"
+                      >
+                        <i class="fa-solid fa-rotate-left"></i> Reset Order
+                      </button>
+                      <button
+                        type="button"
+                        class="wl-order-toolbar-btn wl-order-toolbar-btn--save"
+                        :disabled="dayOrderSaving || dayOrderLoading || !dayOrderDirty"
+                        @click="saveWorkoutLogDayOrder"
+                      >
+                        <i v-if="dayOrderSaving" class="fa-solid fa-spinner fa-spin"></i>
+                        <i v-else class="fa-solid fa-floppy-disk"></i>
+                        Save Order
+                      </button>
+                    </div>
+                    <p class="wl-day-order-helper">
+                      Enable custom order, then use Move Up/Down on each workout day card.
+                    </p>
+                    <p v-if="currentDayOrderState?.error" class="wl-day-order-error">
+                      {{ currentDayOrderState.error }}
+                    </p>
                   </div>
-                  <p v-if="currentDayOrderState?.error" class="wl-day-order-error">
-                    {{ currentDayOrderState.error }}
-                  </p>
                 </div>
                 <article
                   v-for="group in exercisesByGroup"
@@ -1480,16 +1631,14 @@ onMounted(async () => {
                     </div>
                   </div>
 
-                  <!-- Exercise preview -->
-                  <ul class="wl-day-card__exercises">
-                    <li v-for="ex in group.exercises" :key="ex.id" class="wl-day-card__ex-row">
-                      <span class="wl-ex-name">{{ ex.name }}</span>
-                      <span class="wl-ex-detail">
-                        <template v-if="isCardio(ex)">{{ ex.duration || '—' }} min</template>
-                        <template v-else>{{ ex.sets || '—' }} × {{ ex.reps || '—' }}<template v-if="ex.weight"> @ {{ ex.weight }} lb</template></template>
-                      </span>
-                    </li>
-                  </ul>
+                  <!-- Exercise preview summary -->
+                  <p
+                    class="wl-day-card__ex-summary"
+                    :title="group.exerciseNameSummary || undefined"
+                    :aria-label="group.exerciseNameSummary ? `Exercises: ${group.exerciseNameSummary}` : 'No exercises listed'"
+                  >
+                    {{ group.exerciseNameSummary || 'No exercises listed' }}
+                  </p>
 
                   <!-- Action -->
                   <div class="wl-day-card__footer">
@@ -1530,7 +1679,7 @@ onMounted(async () => {
       </div>
 
       <!-- ══ DAY DETAILS TAB ═════════════════════════════════════════════ -->
-      <div v-show="activeTab === 'dayDetails'" class="wl-tab-panel">
+      <div v-show="activeTab === 'dayDetails'" class="wl-tab-panel wl-tab-panel--day-details">
 
         <template v-if="selectedDay && dayExercises.length > 0">
           <!-- Preview mode banner -->
@@ -1554,6 +1703,10 @@ onMounted(async () => {
                 <div class="wl-progress-fill" :style="{ width: progressPct + '%' }"></div>
               </div>
               <span class="wl-progress-label">{{ totalCompleted }} / {{ totalSets }} sets ({{ progressPct }}%)</span>
+              <span v-if="activeSession && hasActiveWorkout" class="wl-workout-time">
+                <i class="fa-solid fa-stopwatch"></i>
+                Workout Time: <strong>{{ activeWorkoutTimerLabel }}</strong>
+              </span>
             </div>
           </div>
 
@@ -1633,6 +1786,10 @@ onMounted(async () => {
                 <span v-if="session.sessionCompletedAt">
                   <i class="fa-solid fa-flag-checkered"></i>
                   Completed: {{ new Date(session.sessionCompletedAt).toLocaleString() }}
+                </span>
+                <span v-if="getHistorySessionDurationSeconds(session) > 0">
+                  <i class="fa-solid fa-stopwatch"></i>
+                  Workout Time: {{ formatDurationHms(getHistorySessionDurationSeconds(session)) }}
                 </span>
                 <!-- Edit mode: Save + Cancel -->
                 <template v-if="editingHistorySessionId === session.sessionId">
@@ -1871,6 +2028,8 @@ onMounted(async () => {
 <style scoped>
 .wl-page {
   --mobile-action-bar-height: 84px;
+  --mobile-bottom-nav-height: 0px;
+  --wl-bottom-bar-height: 92px;
   padding-bottom: 100px;
 }
 
@@ -2059,22 +2218,51 @@ onMounted(async () => {
 
 /* ── Tabs ───────────────────────────────────────────────────────────────── */
 .wl-tabs {
-  display: flex; gap: 4px;
-  border-bottom: 2px solid var(--border-color, #e5e7eb);
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border-color, #dbe3ee);
+  border-radius: 12px;
+  background: #e2e8f0;
   margin-bottom: 20px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .wl-tab {
-  background: none; border: none;
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
-  padding: 10px 18px; font-size: 0.88rem; font-weight: 700;
+  flex: 1 1 0;
+  min-width: 0;
+  background: #cbd5e1;
+  border: 1px solid #c0ccd9;
+  margin-bottom: 0;
+  padding: 9px 12px;
+  font-size: 0.86rem;
+  font-weight: 700;
   cursor: pointer; color: var(--text-color-secondary, #6b7280);
-  display: flex; align-items: center; gap: 7px;
-  transition: color 0.15s, border-color 0.15s;
-  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  border-radius: 9px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
-.wl-tab:hover      { color: #2563eb; }
-.wl-tab--active    { color: #2563eb; border-bottom-color: #2563eb; }
-.wl-tab--disabled  { opacity: 0.4; cursor: not-allowed; }
+.wl-tab:hover {
+  background: #bfcbd9;
+  color: #334155;
+}
+.wl-tab--active {
+  background: #334155;
+  color: #f8fafc;
+  border-color: #475569;
+}
+.wl-tab--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .wl-tab-badge {
   background: #dbeafe; color: #1d4ed8;
   border-radius: 999px; padding: 1px 9px;
@@ -2159,6 +2347,38 @@ onMounted(async () => {
 }
 .wl-btn-edit:hover { background: #e0e7ef; }
 
+.wl-btn-reorder {
+  background: #eaf2ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 7px 11px;
+  min-height: 30px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.wl-btn-reorder:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.wl-day-order-collapsible {
+  grid-column: 1 / -1;
+}
+
+.wl-day-order-helper {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
 .wl-plan__body { border-top: 1px solid var(--border-color, #e5e7eb); padding: 16px 18px; }
 .wl-plan__loading { color: var(--text-color-secondary, #6b7280); font-size: 0.88rem; padding: 8px 0; }
 
@@ -2194,17 +2414,16 @@ onMounted(async () => {
 .wl-day-card__meta span { display: flex; align-items: center; gap: 4px; }
 .wl-day-card__meta i    { color: #3b82f6; }
 
-.wl-day-card__exercises {
-  list-style: none; padding: 0; margin: 0;
-  display: grid; gap: 5px;
-  border-top: 1px solid var(--border-color, #f3f4f6); padding-top: 10px;
+.wl-day-card__ex-summary {
+  margin: 0;
+  border-top: 1px solid var(--border-color, #f3f4f6);
+  padding-top: 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-color-secondary, #6b7280);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.wl-day-card__ex-row {
-  display: flex; justify-content: space-between;
-  align-items: center; gap: 8px; font-size: 0.83rem;
-}
-.wl-ex-name   { color: var(--text-color, #111827); font-weight: 600; }
-.wl-ex-detail { color: var(--text-color-secondary, #6b7280); white-space: nowrap; }
 
 .wl-day-card__footer { display: flex; justify-content: flex-end; gap: 10px; }
 
@@ -2244,12 +2463,12 @@ onMounted(async () => {
 
 .wl-exercise-list--preview { opacity: 0.75; pointer-events: none; user-select: none; }
 .wl-btn-resume {
-  background: #22c55e; border: none; color: #fff;
+  background: #2563eb; border: none; color: #fff;
   border-radius: 10px; padding: 10px 20px;
   font-size: 0.85rem; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; gap: 7px; transition: background 0.15s;
 }
-.wl-btn-resume:hover { background: #16a34a; }
+.wl-btn-resume:hover { background: #1d4ed8; }
 
 /* ── Day Details tab ────────────────────────────────────────────────────── */
 .wl-day-detail-header {
@@ -2277,6 +2496,15 @@ onMounted(async () => {
   border-radius: 999px; transition: width 0.35s ease;
 }
 .wl-progress-label { color: var(--text-color-secondary, #6b7280); font-size: 0.78rem; }
+.wl-workout-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color, #111827);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.wl-workout-time i { color: #2563eb; }
 .wl-exercise-list  { display: grid; gap: 12px; }
 
 /* ── Sticky bottom bar ──────────────────────────────────────────────────── */
@@ -2658,15 +2886,23 @@ onMounted(async () => {
 }
 
 .wl-page .wl-btn--active,
-.wl-page .wl-btn-resume,
 .wl-page .wl-btn-complete {
   background: #16a34a;
 }
 
 .wl-page .wl-btn--active:hover,
-.wl-page .wl-btn-resume:hover,
 .wl-page .wl-btn-complete:hover {
   background: #15803d;
+}
+
+.wl-page .wl-btn-resume {
+  background: var(--wl-accent);
+  border-color: color-mix(in srgb, var(--wl-accent) 64%, #0f172a 36%);
+  color: #f8fafc;
+}
+
+.wl-page .wl-btn-resume:hover {
+  background: color-mix(in srgb, var(--wl-accent) 86%, #ffffff 14%);
 }
 
 .wl-page .wl-stats .wl-stat-card,
@@ -2727,7 +2963,7 @@ onMounted(async () => {
 .wl-page .wl-day-order-toggle,
 .wl-page .wl-plan__meta,
 .wl-page .wl-day-card__meta,
-.wl-page .wl-ex-detail,
+.wl-page .wl-day-card__ex-summary,
 .wl-page .wl-progress-label,
 .wl-page .wl-history-session__meta,
 .wl-page .wl-hist-set-num,
@@ -2749,20 +2985,25 @@ onMounted(async () => {
 }
 
 .wl-page .wl-tabs {
-  border-bottom-color: var(--wl-border);
+  background: color-mix(in srgb, var(--wl-surface-2) 82%, #1f2937 18%);
+  border-color: var(--wl-border);
 }
 
 .wl-page .wl-tab {
-  color: var(--wl-text-muted);
+  background: color-mix(in srgb, var(--wl-surface-3) 78%, #334155 22%);
+  border-color: color-mix(in srgb, var(--wl-border) 72%, #334155 28%);
+  color: var(--wl-text-secondary);
 }
 
 .wl-page .wl-tab:hover,
 .wl-page .wl-tab--active {
-  color: var(--wl-accent);
+  color: var(--wl-text);
 }
 
 .wl-page .wl-tab--active {
-  border-bottom-color: var(--wl-accent);
+  background: color-mix(in srgb, var(--wl-surface-2) 60%, #3b4257 40%);
+  border-color: color-mix(in srgb, var(--wl-accent) 46%, var(--wl-border) 54%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wl-accent) 24%, transparent 76%);
 }
 
 .wl-page .wl-tab-badge,
@@ -2776,7 +3017,7 @@ onMounted(async () => {
   color: color-mix(in srgb, var(--wl-accent) 78%, #ffffff 22%);
 }
 
-.wl-page .wl-day-card__exercises,
+.wl-page .wl-day-card__ex-summary,
 .wl-page .wl-plan__body,
 .wl-page .wl-history-session__header,
 .wl-page .wl-modal__header,
@@ -2915,6 +3156,15 @@ onMounted(async () => {
   color: var(--wl-text-secondary);
 }
 
+.wl-page :deep(.sec-meta h5),
+.wl-page :deep(.sec-summary),
+.wl-page :deep(.c3-head span),
+.wl-page :deep(.c3-set-num),
+.wl-page :deep(.c3-col-value),
+.wl-page :deep(.c3-btn-label) {
+  color: var(--wl-text);
+}
+
 .wl-page :deep(.sec-type-chip),
 .wl-page :deep(.sec-select-btn--active) {
   background: color-mix(in srgb, var(--wl-accent) 22%, transparent 78%);
@@ -2930,7 +3180,7 @@ onMounted(async () => {
 .wl-page :deep(.c3-finish-btn) {
   background: var(--wl-surface-2);
   border-color: var(--wl-border);
-  color: var(--wl-text-secondary);
+  color: var(--wl-text);
   border-radius: 8px;
 }
 
@@ -2938,6 +3188,77 @@ onMounted(async () => {
 .wl-page :deep(.add-set-btn) {
   border-color: color-mix(in srgb, var(--wl-accent) 45%, var(--wl-border) 55%);
   color: var(--wl-accent);
+}
+
+.wl-page :deep(.exercise-collapse-btn) {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  color: #60a5fa;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.wl-page :deep(.exercise-collapse-btn:hover) {
+  background: rgba(30, 64, 175, 0.26);
+  border-color: rgba(96, 165, 250, 0.62);
+  color: #93c5fd;
+}
+
+.wl-page :deep(.exercise-collapse-btn:active) {
+  transform: translateY(0);
+  background: rgba(37, 99, 235, 0.3);
+}
+
+.wl-page :deep(.exercise-collapse-btn:focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24);
+}
+
+.wl-page :deep(.exercise-collapse-btn.sec-select-btn--active) {
+  border-color: rgba(96, 165, 250, 0.68);
+  background: rgba(30, 64, 175, 0.36);
+  color: #bfdbfe;
+}
+
+.wl-page :deep(.exercise-collapse-btn i) {
+  transition: transform 0.22s ease;
+}
+
+.wl-page :deep(.exercise-collapse-btn.is-collapsed i) {
+  transform: rotate(180deg);
+}
+
+.wl-page :deep(.set-input::placeholder) {
+  color: var(--wl-text-muted);
+}
+
+.wl-page :deep(.c3-rm-btn) {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.wl-page :deep(.c3-complete-btn),
+.wl-page :deep(.c3-finish-btn) {
+  background: #16a34a;
+  border-color: #15803d;
+  color: #f8fafc;
+}
+
+.wl-page :deep(.c3-complete-btn:hover),
+.wl-page :deep(.c3-finish-btn:hover) {
+  background: #15803d;
 }
 
 .wl-page :deep(.set-input:focus) {
@@ -2955,296 +3276,591 @@ onMounted(async () => {
   color: #bbf7d0;
 }
 
-@media (max-width: 1024px) {
-  .wl-page {
-    padding-bottom: var(--mobile-bottom-clearance);
-  }
-
-  .wl-bottom-bar {
-    bottom: var(--mobile-bottom-nav-offset);
-    padding-bottom: calc(12px + var(--mobile-safe-area-bottom));
-  }
-}
-/* ── v0.81.9 Mobile 768px — Workout Log Compact Layout ───────────────────── */
+/* ── v0.84.68.5 Mobile — Workout Log Compact Rework ──────────────────────── */
 @media (max-width: 768px) {
   .wl-page {
-    padding-bottom: calc(144px + env(safe-area-inset-bottom));
+    --mobile-bottom-nav-height: max(
+      76px,
+      calc(var(--wa-mobile-bottom-nav-height, 0px) + var(--wa-mobile-bottom-nav-gap, 0px))
+    );
+    --workout-bottom-bar-height: 76px;
+    --wl-bottom-bar-offset: calc(var(--mobile-bottom-nav-height, 0px) + env(safe-area-inset-bottom));
+    --wl-active-workout-clearance: calc(
+      var(--mobile-bottom-nav-height, 0px) +
+      var(--workout-bottom-bar-height, 76px) +
+      env(safe-area-inset-bottom) +
+      24px
+    );
+    --wl-bottom-bar-total-height: var(--wl-active-workout-clearance);
+    padding-bottom: var(--wl-bottom-bar-total-height);
     overflow-x: clip;
   }
 
-  /* Global density */
-  .workout-log-mobile .app-page-canvas { gap: 8px; }
-  .wl-exercise-list { gap: 8px; }
-  .wl-accordion      { gap: 8px; }
-  .wl-history-list   { gap: 8px; }
-  .wl-day-grid       { gap: 8px; }
-
-  /* Hero: compact padding */
-  .builder-hero {
-    padding: 18px;
-    gap: 12px;
-    border-radius: 18px;
-    min-height: auto;
+  .wl-tab-panel--day-details {
+    padding-bottom: var(--wl-active-workout-clearance);
   }
-  .builder-hero__content { gap: 6px; }
+
+  .wl-bottom-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    bottom: calc(var(--mobile-bottom-nav-height, 0px) + env(safe-area-inset-bottom));
+    z-index: 60;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 6px max(10px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: clip;
+  }
+
+  .wl-bottom-bar__inner {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+  }
+
+  .wl-bottom-bar__label {
+    font-size: 0.68rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wl-bottom-bar__actions {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 6px;
+  }
+
+  /* Global density */
+  .workout-log-mobile .app-page-canvas { gap: 6px; }
+  .wl-exercise-list { gap: 6px; }
+  .wl-accordion      { gap: 6px; }
+  .wl-history-list   { gap: 6px; }
+  .wl-day-grid       { gap: 6px; }
+
+  /* Hero: compact padding, no glow */
+  .builder-hero {
+    padding: 10px 12px;
+    gap: 6px;
+    border-radius: 12px;
+    min-height: auto;
+    box-shadow: none;
+  }
+  .builder-hero__content { gap: 3px; }
 
   /* Title + date row: side-by-side, subtitle hidden */
   .wl-hero-title-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 6px;
     flex-wrap: wrap;
   }
-  .builder-hero__text h2 { font-size: 1.15rem; margin: 0; }
+  .builder-hero__text h2 { font-size: 0.88rem; margin: 0; }
   .builder-hero__subtitle { display: none; }
 
-  /* Date picker: auto width, pill style */
+  /* Date picker: small pill */
   .wl-date-input {
     width: auto;
-    min-width: 140px;
-    height: 44px;
-    padding: 8px 14px;
-    font-size: 16px;
+    min-width: 92px;
+    height: 30px;
+    padding: 3px 7px;
+    font-size: 10px;
     font-weight: 600;
     flex-shrink: 0;
   }
 
-  /* Toolbar: 2-column grid */
+  /* Header action buttons: short pills, same height */
   .wl-toolbar {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 10px;
+    gap: 6px;
+    margin-top: 6px;
   }
   .wl-toolbar .wl-btn {
-    height: 46px;
-    font-size: 14px;
-    padding: 8px;
+    height: 32px;
+    min-height: 32px;
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    line-height: 1;
+    gap: 3px;
     justify-content: center;
+    box-shadow: none;
   }
+  .wl-toolbar .wl-btn i { font-size: 10px; }
 
-  /* Stats cards: 3-col compact */
+  /* Stat cards: compact */
   .wl-stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 10px;
+    display: none;
   }
   .wl-stat-card {
-    min-height: 80px;
-    padding: 10px;
-    gap: 4px;
+    min-height: 44px;
+    padding: 5px 6px;
+    gap: 1px;
+    border-radius: 9px;
     align-content: center;
+    box-shadow: none;
   }
-  .wl-stat-card span   { font-size: 0.72rem; }
-  .wl-stat-card strong { font-size: 1.05rem; }
+  .wl-stat-card span   { font-size: 0.56rem; }
+  .wl-stat-card strong { font-size: 0.78rem; }
 
-  /* Tabs: compact 3-column grid, no horizontal scroll */
+  /* Tabs: short, gray/navy-gray, no glow — Overview | Day Details | Workout History only */
   .wl-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     white-space: normal;
     flex-wrap: initial;
     max-width: 100%;
-    gap: 2px;
-    border-bottom: 0;
-    padding: 2px;
-    margin-bottom: 12px;
+    gap: 1px;
+    border: 1px solid #334155;
+    padding: 1px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    border-radius: 9px;
+    background: #1e293b;
   }
   .wl-tab {
     min-width: 0;
-    padding: 8px 6px;
-    font-size: 0.8rem;
-    gap: 5px;
+    min-height: 30px;
+    padding: 3px 3px;
+    font-size: 0.6rem;
+    gap: 2px;
     margin-bottom: 0;
     justify-content: center;
     text-align: center;
-    background: #273142;
-    color: #d1d5db;
-    border: 1px solid #334155;
-    border-radius: 10px;
+    background: #242e3d;
+    color: #cbd5e1;
+    border: none;
+    border-radius: 6px;
     white-space: normal;
-    line-height: 1.1;
+    line-height: 1.05;
   }
+  .wl-tab i { font-size: 0.62rem; }
   .wl-tab:hover {
     background: #334155;
     color: #f3f4f6;
   }
   .wl-tab--active {
-    background: #374151;
+    background: #3b4759;
     color: #f8fafc !important;
-    border-color: #3b82f6;
-    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.35);
+    box-shadow: none;
   }
   .wl-tab--disabled {
-    opacity: 0.55;
-    background: #1f2937;
-    color: #94a3b8;
+    opacity: 0.5;
+    background: #1c2531;
+    color: #8b98ab;
   }
-  .wl-tab-badge {
-    font-size: 0.64rem;
+  /* Remove the day badge/text from the tab row entirely on mobile */
+  .wl-tab-badge { display: none; }
+
+  /* Plan card: tight spacing, small pill badges, no glow */
+  .wl-plan { border-radius: 10px; }
+  .wl-plan--expanded { box-shadow: none; }
+  .wl-plan__header  { padding: 8px 10px; gap: 6px; }
+  .wl-plan__left    { gap: 8px; }
+  .wl-plan__chevron { font-size: 0.7rem; width: 16px; }
+  .wl-plan__info    { gap: 2px; }
+  .wl-plan__name    { font-size: 0.76rem; }
+  .wl-plan__meta    { font-size: 0.6rem; gap: 6px; }
+  .wl-plan__tag     { padding: 0 6px; font-size: 0.58rem; }
+  .wl-plan__body    { padding: 6px 8px; }
+  .wl-plan__loading { font-size: 0.72rem; padding: 6px 0; }
+  .wl-plan__right   { gap: 6px; }
+  .wl-plan__selected-badge {
     padding: 1px 6px;
-    max-width: 110px;
-    background: rgba(59, 130, 246, 0.18);
-    border: 1px solid rgba(59, 130, 246, 0.45);
-    color: #bfdbfe;
+    font-size: 0.58rem;
+    gap: 3px;
+  }
+  .wl-btn-reorder {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.62rem;
+    border-radius: 999px;
+    gap: 3px;
+    border-color: rgba(96, 165, 250, 0.45);
+    background: #243244;
+    color: #cbd5e1;
+  }
+  .wl-btn-reorder i {
+    color: #60a5fa;
+  }
+  .wl-btn-reorder:hover,
+  .wl-btn-reorder:focus-visible {
+    background: #2b3d55;
+    border-color: rgba(147, 197, 253, 0.6);
+    color: #f8fafc;
+  }
+  .wl-btn-edit {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.62rem;
+    border-radius: 8px;
+    gap: 3px;
+  }
+
+  .wl-day-order-collapsible {
+    max-height: 0;
+    opacity: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin: 0;
+    transform: translateY(-2px);
+    transition: max-height 0.2s ease, opacity 0.2s ease, transform 0.2s ease, margin 0.2s ease;
   }
 
-  /* Plan accordion */
-  .wl-plan__header  { padding: 12px 14px; }
-  .wl-plan__name    { font-size: 0.9rem; }
-  .wl-plan__meta    { font-size: 0.74rem; gap: 8px; }
-  .wl-plan__body    { padding: 10px 12px; }
+  .wl-day-order-collapsible--open {
+    max-height: 260px;
+    opacity: 1;
+    overflow: visible;
+    margin: 0 0 2px;
+    transform: translateY(0);
+  }
 
-  /* Day cards */
-  .wl-day-card          { padding: 12px; gap: 8px; }
-  .wl-day-card__title h4 { font-size: 0.9rem; }
-  .wl-day-card__meta    { font-size: 0.74rem; gap: 8px; }
+  /* Day order toolbar: tighter */
   .wl-day-order-toolbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-start;
+    padding: 0 4px;
+    gap: 2px;
+    margin-top: 0;
+    margin-bottom: 0;
+    min-height: 0;
   }
+  .wl-day-order-toolbar.app-section-card {
+    padding: 0 4px !important;
+  }
+  .wl-day-order-helper {
+    font-size: 0.56rem;
+    line-height: 1.15;
+    margin-top: 1px;
+  }
+  .wl-day-order-toggle {
+    font-size: 0.6rem;
+    gap: 4px;
+    line-height: 1.15;
+  }
+  .wl-day-order-toggle input { width: 12px; height: 12px; }
+  .wl-custom-order-badge { font-size: 0.54rem; padding: 1px 6px; }
   .wl-day-order-actions {
-    width: 100%;
+    width: auto;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 3px;
+    align-items: center;
+    margin: 0;
   }
   .wl-order-toolbar-btn {
-    min-height: 30px;
-    padding: 5px 9px;
-    font-size: 0.73rem;
+    min-height: 34px;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 0.62rem;
+    border-radius: 999px;
+    gap: 4px;
+    line-height: 1;
+    white-space: nowrap;
   }
   .wl-order-btn {
-    padding: 2px 6px;
-    min-height: 22px;
-    font-size: 0.66rem;
+    padding: 0 5px;
+    min-height: 18px;
+    font-size: 0.54rem;
   }
-  .wl-day-card__ex-row  { font-size: 0.78rem; }
 
-  /* §3 Global font reduction — secondary labels */
-  .wl-ex-detail { font-size: 0.72rem; }
-  .wl-plan__meta span { font-size: 0.72rem; }
-  .wl-history-session__meta { font-size: 0.72rem; }
-  .wl-hist-tag  { font-size: 0.66rem; padding: 1px 7px; }
+  .wl-day-grid:not(.wl-day-grid--reorder-open) .wl-order-btn {
+    display: none;
+  }
 
-  /* Day detail header */
-  .wl-day-detail-header { padding: 12px; gap: 8px; margin-bottom: 10px; }
+  /* Workout day cards: smaller text, tighter rows, no glow */
+  .wl-day-card {
+    padding: 5px 7px 6px;
+    gap: 4px;
+    border-radius: 10px;
+  }
+  .wl-day-card--active { box-shadow: none; }
+  .wl-day-card__header   { gap: 4px; }
+  .wl-day-card__title    { gap: 5px; }
+  .wl-day-card__title h4 { font-size: 0.78rem; }
+  .wl-in-progress-chip   { padding: 1px 7px; font-size: 0.56rem; }
+  .wl-day-card__meta     { font-size: 0.6rem; gap: 4px; }
+  .wl-day-card__ex-summary {
+    padding-top: 5px;
+    font-size: 0.62rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+  .wl-day-card__footer   { gap: 6px; }
+
+  /* Preview / Start / Resume buttons: compact */
+  .wl-btn-preview,
+  .wl-btn-start,
+  .wl-btn-resume {
+    padding: 6px 10px;
+    min-height: 32px;
+    font-size: 0.66rem;
+    border-radius: 9px;
+    gap: 5px;
+  }
+
+  /* Secondary label sizes (global ~20% reduction) */
+  .wl-plan__meta span        { font-size: 0.6rem; }
+  .wl-history-session__meta  { font-size: 0.6rem; }
+  .wl-hist-tag                { font-size: 0.56rem; padding: 1px 6px; }
+
+  /* Day detail header (Day Details panel) */
+  .wl-day-detail-header {
+    padding: 9px;
+    gap: 6px;
+    margin-bottom: 6px;
+    border-radius: 10px;
+  }
+  .wl-day-detail-header__left    { gap: 6px; }
+  .wl-day-detail-header__left h4 { font-size: 0.78rem; }
+  .wl-day-detail-count           { padding: 1px 7px; font-size: 0.58rem; }
+  .wl-day-detail-header__progress { min-width: 120px; gap: 3px; }
+  .wl-progress-label              { font-size: 0.6rem; }
+  .wl-preview-badge               { padding: 1px 7px; font-size: 0.56rem; }
 
   /* History */
-  .wl-history-session__header     { padding: 10px 14px; gap: 8px; }
-  .wl-history-exercises--detailed { padding: 10px 14px; gap: 10px; }
-  .wl-hist-ex-card    { padding: 10px; gap: 8px; }
-  .wl-hist-ex-thumb   { width: 36px; height: 36px; font-size: 0.9rem; }
-  .wl-hist-ex-name    { font-size: 0.85rem; }
-  .wl-history-datebar { padding: 8px 12px; font-size: 0.8rem; margin-bottom: 10px; }
+  .wl-history-datebar { padding: 6px 10px; font-size: 0.64rem; margin-bottom: 6px; gap: 6px; }
+  .wl-history-session { border-radius: 10px; }
+  .wl-history-session--editing { box-shadow: none; }
+  .wl-history-session__header     { padding: 8px 10px; gap: 6px; }
+  .wl-history-group__plan         { font-size: 0.74rem; }
+  .wl-history-group__day          { font-size: 0.58rem; padding: 1px 7px; }
+  .wl-history-exercises--detailed { padding: 8px 10px; gap: 8px; }
+  .wl-hist-ex-card    { padding: 8px; gap: 6px; border-radius: 9px; }
+  .wl-hist-ex-thumb   { width: 30px; height: 30px; font-size: 0.74rem; }
+  .wl-hist-ex-name    { font-size: 0.7rem; }
+  .wl-hist-edit-btn,
+  .wl-hist-save-btn,
+  .wl-hist-cancel-btn,
+  .wl-hist-delete-btn { padding: 2px 7px; font-size: 0.58rem; gap: 3px; }
+  .wl-hist-sets-table--cardio { overflow-x: auto; }
 
-  /* Bottom bar */
-  .wl-bottom-bar { padding: 8px 12px; }
+  .wl-tab-panel .wl-empty,
+  .wl-tab-panel .wl-empty p,
+  .wl-tab-panel .wl-empty h6,
+  .wl-history-datebar,
+  .wl-history-datebar span,
+  .wl-history-session__title,
+  .wl-history-group__plan,
+  .wl-hist-ex-name,
+  .wl-hist-set-row {
+    color: #f8fafc;
+  }
+
+  .wl-history-datebar strong,
+  .wl-history-session__meta,
+  .wl-history-session__meta span,
+  .wl-hist-tag,
+  .wl-hist-set-num,
+  .wl-hist-sets-head--strength,
+  .wl-hist-sets-head--cardio,
+  .wl-hist-sets-head--cardio small,
+  .wl-history-ex__stats,
+  .wl-history-ex__stats span,
+  .wl-hist-ex-info,
+  .wl-hist-ex-tags {
+    color: #cbd5e1;
+  }
+
+  .wl-tab-panel .wl-empty .wl-empty-icon,
+  .wl-history-datebar i,
+  .wl-history-session__meta i,
+  .wl-history-ex__stats i {
+    color: #60a5fa;
+  }
+
+  .wl-history-datebar .wl-btn-preview {
+    color: #cbd5e1;
+    border-color: rgba(96, 165, 250, 0.45);
+    background: #1b2444;
+  }
+
+  .wl-history-datebar .wl-btn-preview:hover {
+    color: #f8fafc;
+    background: #273142;
+  }
+
+  .wl-tab-panel .wl-empty p,
+  .wl-tab-panel .wl-empty h6 {
+    margin-bottom: 0;
+  }
+
+  .wl-page :deep(.session-exercise-card),
+  .wl-page :deep(.sec-meta h5),
+  .wl-page :deep(.sec-meta p),
+  .wl-page :deep(.sec-summary),
+  .wl-page :deep(.sec-prefill-note),
+  .wl-page :deep(.strength-mobile-field span),
+  .wl-page :deep(.c3-col-info),
+  .wl-page :deep(.c3-col-value),
+  .wl-page :deep(.c3-btn-label),
+  .wl-page :deep(.set-num),
+  .wl-page :deep(.c3-set-num) {
+    color: #f8fafc;
+  }
+
+  .wl-page :deep(.sec-meta p),
+  .wl-page :deep(.strength-mobile-field span),
+  .wl-page :deep(.c3-col-info),
+  .wl-page :deep(.sec-summary),
+  .wl-page :deep(.sec-prefill-note),
+  .wl-page :deep(.set-input::placeholder),
+  .wl-page :deep(.c3-col-set),
+  .wl-page :deep(.set-num) {
+    color: #cbd5e1;
+  }
+
+  .wl-page :deep(.strength-mobile-row),
+  .wl-page :deep(.c3-set-group) {
+    background: #1b2444 !important;
+    border: 1px solid rgba(96, 165, 250, 0.22) !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done),
+  .wl-page :deep(.strength-mobile-row--done),
+  .wl-page :deep(.sec-set-row.set-done) {
+    background: rgba(22, 163, 74, 0.10) !important;
+    border-color: rgba(34, 197, 94, 0.35) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row:first-child),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-row-done),
+  .wl-page :deep(.strength-mobile-row--done .strength-mobile-field span),
+  .wl-page :deep(.strength-mobile-row--done .set-input),
+  .wl-page :deep(.sec-set-row.set-done .set-input) {
+    background: rgba(22, 163, 74, 0.10) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-col-info),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-col-set),
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-set-num),
+  .wl-page :deep(.sec-set-row.set-done .set-num) {
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .c3-complete-btn),
+  .wl-page :deep(.c3-complete-btn--done),
+  .wl-page :deep(.c3-icon-btn--done) {
+    border-color: rgba(34, 197, 94, 0.45) !important;
+    background: rgba(34, 197, 94, 0.16) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn) {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn--remove) {
+    background: rgba(239, 68, 68, 0.12) !important;
+    border: 1px solid rgba(248, 113, 113, 0.35) !important;
+    color: #fca5a5 !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .c3-icon-btn--complete),
+  .wl-page :deep(.strength-mobile-row .c3-complete-btn) {
+    background: rgba(34, 197, 94, 0.16) !important;
+    border: 1px solid rgba(34, 197, 94, 0.45) !important;
+    color: #86efac !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .set-input),
+  .wl-page :deep(.c3-set-group .set-input) {
+    background: #111b2e !important;
+    border-color: rgba(96, 165, 250, 0.3) !important;
+    color: #f8fafc !important;
+  }
+
+  .wl-page :deep(.strength-mobile-row .set-input::placeholder),
+  .wl-page :deep(.c3-set-group .set-input::placeholder) {
+    color: #94a3b8 !important;
+  }
+
+  .wl-page :deep(.c3-set-group.c3-set-done .fa-circle-check),
+  .wl-page :deep(.sec-sets-summary--done i) {
+    color: #22c55e !important;
+  }
+
+  /* Bottom bar: compact buttons */
   .wl-btn-complete,
   .wl-btn-end {
-    padding: 8px 12px;
-    font-size: 0.82rem;
-    border-radius: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 5px 8px;
+    min-height: 32px;
+    font-size: 0.66rem;
+    border-radius: 9px;
+    gap: 4px;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
-/* ── Small mobile (≤ 640px) ──────────────────────────────────────────────── */
+/* ── Small mobile (≤ 640px) — layout stacking only, sizes inherited from 768px ── */
 @media (max-width: 640px) {
   .wl-stats { grid-template-columns: repeat(3, 1fr); }
   .wl-plan__header { flex-direction: column; align-items: flex-start; }
-  .wl-plan__right  { width: 100%; justify-content: flex-end; }
+  .wl-plan__right  { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
   .wl-day-detail-header { flex-direction: column; }
-  .wl-bottom-bar__inner { flex-direction: column; align-items: stretch; }
-  .wl-bottom-bar__actions { justify-content: flex-end; }
-
-  /* Toolbar: keep 2-column grid (Progress | Builder side-by-side) */
-  .wl-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .wl-toolbar .wl-btn { height: 46px; justify-content: center; padding: 8px; font-size: 14px; min-width: 0; }
-
-  /* Tabs */
-  .wl-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding-bottom: 0; }
-  .wl-tab { min-width: 0; padding: 9px 6px; font-size: 0.78rem; white-space: normal; line-height: 1.1; }
-  .wl-tab-badge { max-width: 92px; }
-
-  /* Stats */
-  .wl-stat-card { padding: 10px; gap: 4px; }
-  .wl-stat-card strong { font-size: 1.05rem; }
-  .wl-stat-card span   { font-size: 0.76rem; }
-
-  /* History */
-  .wl-history-session__meta { flex-direction: column; gap: 6px; }
-  .wl-history-datebar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 12px; font-size: 0.82rem; }
-
-  /* Day card footer */
+  .wl-bottom-bar__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .wl-bottom-bar__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    justify-content: initial;
+  }
+  .wl-history-session__meta { flex-direction: column; gap: 4px; }
+  .wl-history-datebar { flex-direction: column; align-items: flex-start; gap: 6px; }
   .wl-day-card__footer { flex-direction: column; }
   .wl-btn-preview, .wl-btn-start, .wl-btn-resume { width: 100%; justify-content: center; }
-
-  /* Bottom bar */
-  .wl-bottom-bar__actions { gap: 8px; }
-  .wl-btn-end, .wl-btn-complete { flex: 1; justify-content: center; font-size: 0.82rem; padding: 9px 12px; }
+  .wl-btn-end, .wl-btn-complete {
+    width: 100%;
+    min-width: 0;
+    flex: initial;
+    justify-content: center;
+  }
 }
 
-/* ── Tiny mobile (≤ 480px) ──────────────────────────────────────────────── */
-@media (max-width: 480px) {
-  /* Stats: keep 3-col, shrink further */
-  .wl-stats { gap: 6px; }
-  .wl-stat-card { padding: 7px 8px; min-height: 60px; }
-  .wl-stat-card span   { font-size: 0.66rem; }
-  .wl-stat-card strong { font-size: 0.92rem; }
-
-  /* Hero text */
-  .builder-hero__text h2  { font-size: 1.1rem; }
-  .builder-hero__subtitle { font-size: 0.78rem; }
-
-  /* Toolbar stays 2-column grid (DO NOT stack on 480) */
-  .wl-toolbar {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .wl-toolbar .wl-btn { height: 42px; font-size: 13px; }
-
-  /* Tabs smaller */
-  .wl-tab { padding: 7px 6px; font-size: 0.74rem; }
-  .wl-tab-badge { max-width: 74px; font-size: 0.6rem; }
-
-  /* Plan header: always stacked */
-  .wl-plan__header { gap: 10px; padding: 10px 12px; }
-
-  /* Day cards */
-  .wl-day-card { padding: 10px; }
-
-  .wl-day-order-toolbar {
-    padding: 7px 8px;
-  }
-  .wl-order-toolbar-btn {
-    font-size: 0.7rem;
-    min-height: 29px;
-    padding: 5px 8px;
-  }
-
-  /* History edit buttons smaller */
-  .wl-hist-edit-btn, .wl-hist-save-btn, .wl-hist-cancel-btn, .wl-hist-delete-btn {
-    padding: 3px 8px; font-size: 0.7rem;
-  }
-
-  /* Cardio set table */
-  .wl-hist-sets-table--cardio { overflow-x: auto; }
-}
-
-/* ── Narrow mobile (≤ 390px) ─────────────────────────────────────────────── */
+/* ── Tiny mobile (≤ 390px) — final trim, badges hidden for width ────────── */
 @media (max-width: 390px) {
-  .wl-stat-card { padding: 6px; }
-  .wl-stat-card span   { font-size: 0.62rem; }
-  .wl-stat-card strong { font-size: 0.86rem; }
-  .wl-tab { padding: 6px 4px; font-size: 0.7rem; }
-  .wl-tab-badge { display: none; }
-  .wl-toolbar .wl-btn  { font-size: 0.74rem; height: 32px; }
+  .wl-stat-card { padding: 4px 5px; }
+  .wl-stat-card span   { font-size: 0.52rem; }
+  .wl-stat-card strong { font-size: 0.72rem; }
+  .wl-tab { min-height: 28px; padding: 2px 3px; font-size: 0.56rem; }
+  .wl-toolbar .wl-btn  { font-size: 9px; }
 }
 </style>

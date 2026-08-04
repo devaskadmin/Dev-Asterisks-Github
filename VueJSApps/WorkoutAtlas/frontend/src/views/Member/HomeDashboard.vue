@@ -700,11 +700,12 @@ onUnmounted(() => {
 .wa-section-head h3 {
   margin: 0;
   font-size: 15px;
+  color: #f8fafc;
 }
 
 .wa-section-head a {
   text-decoration: none;
-  color: var(--wa-text-secondary);
+  color: #93c5fd;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -732,7 +733,7 @@ onUnmounted(() => {
 
 .wa-summary-label {
   font-size: 11px;
-  color: var(--wa-text-muted);
+  color: #cbd5e1;
 }
 
 .wa-summary-card-top i {
@@ -745,12 +746,13 @@ onUnmounted(() => {
   font-size: 24px;
   line-height: 1;
   font-weight: 800;
+  color: #f8fafc;
 }
 
 .wa-summary-helper {
   margin: 2px 0 0;
   font-size: 11px;
-  color: var(--wa-text-muted);
+  color: #94a3b8;
 }
 
 .wa-weekly-main {
@@ -944,11 +946,12 @@ onUnmounted(() => {
 
 .wa-role-text strong {
   font-size: 13px;
+  color: #f8fafc;
 }
 
 .wa-role-text small {
   font-size: 11px;
-  color: var(--wa-text-muted);
+  color: #cbd5e1;
 }
 
 .wa-role-arrow {
@@ -1128,12 +1131,26 @@ onUnmounted(() => {
     padding: 12px;
   }
 
+  .wa-nutrition-chart-section .wa-panel-header {
+    display: none;
+  }
+
+  .wa-nutrition-chart-section .wa-panel-body {
+    padding-top: 0;
+  }
+
   .wa-quick-action-content {
     flex-wrap: wrap;
   }
 
   .wa-quick-action-right {
     margin-left: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .wa-dashboard {
+    padding-bottom: calc(120px + var(--wa-mobile-bottom-nav-clearance, 0px));
   }
 }
 

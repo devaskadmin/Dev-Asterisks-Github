@@ -79,160 +79,222 @@ const goBack = () => {
 
 <style scoped>
 .help-container {
-  max-width: 1000px;
+  width: 100%;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 14px;
+  box-sizing: border-box;
+  color: var(--wa-shell-text, #f8fafc);
+  opacity: 1;
+  filter: none;
+  overflow-x: clip;
 }
 
 .help-header {
-  margin-bottom: 40px;
+  margin-bottom: 18px;
   text-align: center;
-  padding: 40px 20px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(99, 102, 241, 0.1));
-  border-radius: 12px;
+  padding: 16px 14px;
+  background: linear-gradient(180deg, rgba(28, 46, 94, 0.98), rgba(20, 33, 70, 0.98));
+  border: 1px solid rgba(82, 118, 210, 0.5);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .help-title h1 {
-  font-size: 32px;
+  font-size: clamp(1.25rem, 3.8vw, 1.4rem);
   font-weight: 700;
   margin: 0 0 8px 0;
+  line-height: 1.2;
+  color: #f8fafc;
 }
 
 .help-title p {
-  font-size: 16px;
-  color: #8b97b2;
+  font-size: clamp(0.82rem, 2.8vw, 0.9rem);
+  color: #b9c6e4;
   margin: 0;
+  line-height: 1.4;
 }
 
 .help-content {
-  margin-bottom: 40px;
+  margin-bottom: 18px;
 }
 
 .help-section {
-  margin-bottom: 40px;
+  margin-bottom: 18px;
 }
 
 .help-section h2 {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  color: #c8d4f0;
+  font-size: clamp(0.95rem, 3.2vw, 1.06rem);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: #7fa8ff;
 }
 
 .help-items {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
 }
 
 .help-item {
-  background: rgba(17, 33, 67, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 20px;
+  background: rgba(27, 43, 83, 0.94);
+  border: 1px solid rgba(72, 106, 190, 0.45);
+  border-radius: 11px;
+  padding: 13px 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
   transition: all 0.3s ease;
 }
 
 .help-item:hover {
-  background: rgba(17, 33, 67, 0.8);
-  border-color: rgba(59, 130, 246, 0.3);
-  transform: translateY(-2px);
+  background: rgba(33, 53, 102, 0.96);
+  border-color: rgba(96, 134, 228, 0.56);
+  transform: translateY(-1px);
 }
 
 .help-item h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 8px 0;
-  color: #ffffff;
+  font-size: clamp(0.88rem, 2.8vw, 0.95rem);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 5px 0;
+  color: #f8fafc;
 }
 
 .help-item p {
-  font-size: 14px;
-  color: #8b97b2;
+  font-size: clamp(0.78rem, 2.5vw, 0.83rem);
+  color: #b6c2dc;
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.42;
 }
 
 .help-footer {
   text-align: center;
-  padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 14px;
+  border-top: 1px solid rgba(82, 118, 210, 0.26);
 }
 
 .btn-back {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 24px;
-  background: rgba(59, 130, 246, 0.2);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #3b82f6;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  min-height: 44px;
+  padding: 10px 18px;
+  background: rgba(52, 92, 190, 0.24);
+  border: 1px solid rgba(92, 129, 224, 0.42);
+  color: #dbeafe;
+  border-radius: 10px;
+  font-size: 0.87rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
 .btn-back:hover {
-  background: rgba(59, 130, 246, 0.3);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.34);
+  border-color: rgba(125, 164, 255, 0.6);
+}
+
+.btn-back:focus-visible {
+  outline: 2px solid rgba(125, 164, 255, 0.9);
+  outline-offset: 2px;
 }
 
 /* Light theme support */
-body.light-theme .help-header {
+:global(body.light-theme) .help-header {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(99, 102, 241, 0.05));
 }
 
-body.light-theme .help-title h1 {
+:global(body.light-theme) .help-title h1 {
   color: #1a202c;
 }
 
-body.light-theme .help-title p {
+:global(body.light-theme) .help-title p {
   color: #718096;
 }
 
-body.light-theme .help-section h2 {
+:global(body.light-theme) .help-section h2 {
   color: #2d3748;
 }
 
-body.light-theme .help-item {
+:global(body.light-theme) .help-item {
   background: rgba(59, 130, 246, 0.03);
   border-color: rgba(59, 130, 246, 0.1);
 }
 
-body.light-theme .help-item:hover {
+:global(body.light-theme) .help-item:hover {
   background: rgba(59, 130, 246, 0.08);
 }
 
-body.light-theme .help-item h3 {
+:global(body.light-theme) .help-item h3 {
   color: #1a202c;
 }
 
-body.light-theme .help-item p {
+:global(body.light-theme) .help-item p {
   color: #718096;
 }
 
-body.light-theme .help-footer {
+:global(body.light-theme) .help-footer {
   border-color: rgba(0, 0, 0, 0.1);
 }
 
 @media (max-width: 768px) {
   .help-container {
     padding: 12px;
+    max-width: 100%;
   }
 
   .help-header {
-    padding: 24px 12px;
-    margin-bottom: 24px;
+    padding: 15px 12px;
+    margin-bottom: 14px;
   }
 
   .help-title h1 {
-    font-size: 24px;
+    font-size: 1.28rem;
+  }
+
+  .help-title p {
+    font-size: 0.85rem;
+  }
+
+  .help-section {
+    margin-bottom: 14px;
+  }
+
+  .help-section h2 {
+    margin-bottom: 7px;
   }
 
   .help-items {
     grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .help-item {
+    padding: 12px 13px;
+  }
+
+  .btn-back {
+    width: 100%;
+  }
+}
+
+@media (min-width: 992px) {
+  .help-container {
+    padding: 18px;
+  }
+
+  .help-header {
+    margin-bottom: 20px;
+    padding: 18px 16px;
+  }
+
+  .help-section {
+    margin-bottom: 20px;
+  }
+
+  .help-items {
+    gap: 12px;
   }
 }
 </style>

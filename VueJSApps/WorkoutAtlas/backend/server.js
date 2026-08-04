@@ -21,6 +21,7 @@ const CORS_ORIGINS = String(process.env.CORS_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Always include production and local frontend origins as hard fallbacks.
 const DEFAULT_FRONTEND_ORIGINS = [
@@ -70,7 +71,7 @@ const cookieConfig = {
   secure: isProduction,
   sameSite: isProduction ? 'none' : 'lax',
   httpOnly: true,
-  maxAge: 1000 * 60 * 60 * 24,
+  maxAge: THIRTY_DAYS_MS,
 };
 
 const sessionCookieSecure = cookieConfig.secure;
@@ -124,6 +125,7 @@ try {
   sessionStore = new MySQLStore({
     config: sessionDbConfig,
     table: 'user_sessions',
+    expiration: THIRTY_DAYS_MS,
     pool: true,
     cleanup: true,
     keepalive: 30000,

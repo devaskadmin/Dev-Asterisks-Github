@@ -30,6 +30,10 @@ const authStore = useAuth()
 
 const layout = shallowRef('div');
 const isPartials = ref(false);
+const isMobileBottomNav = ref(false);
+const isMobileMenuOpen = ref(false);
+
+let mobileNavMql = null;
 
 const isExpanded = ref(false);
 const isSmall = ref(false);
@@ -133,7 +137,45 @@ const onNavCloseClick = (e) => {
   }
 };
 
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false;
+  isSidebarMini.value = false;
+  document.body.classList.remove('wa-mobile-menu-open');
+};
+
+const openMobileMenu = () => {
+  if (!isMobileBottomNav.value) return;
+  isMobileMenuOpen.value = true;
+  isSidebarMini.value = true;
+  document.body.classList.add('wa-mobile-menu-open');
+};
+
+const syncMobileViewportState = (matches) => {
+  isMobileBottomNav.value = matches;
+  document.body.classList.toggle('wa-mobile-nav-active', matches);
+
+  if (!matches) {
+    closeMobileMenu();
+  }
+};
+
+const onMobileViewportChange = (event) => {
+  syncMobileViewportState(Boolean(event?.matches));
+};
+
+const onMobileSidebarClick = (event) => {
+  if (!isMobileBottomNav.value) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('a.sidebar-link')) {
+    closeMobileMenu();
+  }
+};
+
 const closeMainLeftSidebar = (() => {
+  if (isMobileBottomNav.value) {
+    return;
+  }
   isSidebarMini.value = false
 })
 
@@ -257,6 +299,11 @@ const isProtectedUiRoute = (routeLike = route) => {
   return Boolean(routeLike?.meta?.isPartials);
 };
 
+const syncRouteShellState = (routeLike = route) => {
+  isPartials.value = Boolean(routeLike?.meta?.isPartials);
+  layout.value = layouts[routeLike?.meta?.layout] || 'div';
+};
+
 const loadUserThemeSettings = async () => {
   if (!isProtectedUiRoute()) return;
   if (!isAdmin.value) return;
@@ -296,7 +343,7 @@ onMounted(() => {
   }, 600);
 
   document.addEventListener('click', onDocumentClick);
-  isPartials.value = route.meta.isPartials
+  syncRouteShellState(route)
   if (isProtectedUiRoute()) {
     loadUserThemeSettings()
   }
@@ -314,11 +361,26 @@ onMounted(() => {
     }
   useMainContentCurrentBG()
   window.addEventListener('ff-theme-settings-updated', onThemeSettingsUpdated)
+
+  mobileNavMql = window.matchMedia('(max-width: 768px)');
+  syncMobileViewportState(mobileNavMql.matches);
+  if (mobileNavMql.addEventListener) {
+    mobileNavMql.addEventListener('change', onMobileViewportChange);
+  } else if (mobileNavMql.addListener) {
+    mobileNavMql.addListener(onMobileViewportChange);
+  }
   // useDisableEnablePreloader()
 });
 
 onUnmounted(() => {
   window.removeEventListener('ff-theme-settings-updated', onThemeSettingsUpdated)
+  if (mobileNavMql?.removeEventListener) {
+    mobileNavMql.removeEventListener('change', onMobileViewportChange);
+  } else if (mobileNavMql?.removeListener) {
+    mobileNavMql.removeListener(onMobileViewportChange);
+  }
+  document.body.classList.remove('wa-mobile-nav-active');
+  document.body.classList.remove('wa-mobile-menu-open');
 })
 
 watch(layoutDirection, () => {
@@ -351,9 +413,20 @@ watch(isAdmin, (nextIsAdmin) => {
   }
 })
 
+watch(
+  () => route.fullPath,
+  () => {
+    syncRouteShellState(route);
+  },
+  { immediate: true }
+)
+
 router.afterEach((to) => {
-  isPartials.value = to.meta.isPartials
-  layout.value = layouts[to.meta.layout] || 'div'
+  syncRouteShellState(to)
+
+  if (isMobileBottomNav.value) {
+    closeMobileMenu();
+  }
 
   if (isProtectedUiRoute(to)) {
     loadUserThemeSettings()
@@ -419,20 +492,43 @@ provide('app:layout', layout.value)
       <!-- right sidebar end -->
 
       <!-- main sidebar start -->
-        <MainSidebarComponent v-if="isPartials"
+        <MainSidebarComponent v-if="isPartials && (!isMobileBottomNav || isMobileMenuOpen)"
+            class="wa-main-sidebar"
+            :class="{ 'wa-mobile-drawer-open': isMobileMenuOpen }"
           :isCollapsed="isCollapsed"
           :isTwoColumnMenu="isTwoColumnMenu"
           :isSidebarMini="isSidebarMini"
           :isSubMenuCollapsed="isSubMenuCollapsed"
           :closeMainLeftSidebar="closeMainLeftSidebar"
+            @click.capture="onMobileSidebarClick"
       />
       <!-- main sidebar end -->
+
+        <div
+          v-if="isPartials && isMobileBottomNav && isMobileMenuOpen"
+          class="wa-mobile-menu-backdrop"
+          @click="closeMobileMenu"
+        ></div>
+
+        <button
+          v-if="isPartials && isMobileBottomNav && isMobileMenuOpen"
+          type="button"
+          class="wa-mobile-menu-close"
+          aria-label="Close menu"
+          @click="closeMobileMenu"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </button>
     
     <!-- main content start -->
     <component :is="layout">
       <RouterView/>
     </component>
-    <AppBottomNav v-if="isPartials" />
+    <AppBottomNav
+      v-if="isPartials && isMobileBottomNav"
+      :moreActive="isMobileMenuOpen"
+      @more="openMobileMenu"
+    />
     <FooterComponent v-if="isPartials"/>
 
   </div>
@@ -566,6 +662,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
 }
 
 @media (max-width: 991px) {
+
   html,
   body,
   #app {
@@ -587,7 +684,7 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
     overflow-x: hidden;
     overflow-y: visible;
     padding-inline: 12px !important;
-    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    padding-bottom: var(--wa-mobile-bottom-nav-clearance, 0px);
   }
 
   .body-padding .main-content > *,
@@ -608,6 +705,91 @@ body.wa-dashboard-active .right-sidebar-btn button:hover {
   .body-padding .main-content .tab-content {
     max-width: 100%;
     min-width: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --wa-mobile-bottom-nav-height: 70px;
+    --wa-mobile-bottom-nav-gap: 10px;
+    --wa-mobile-bottom-nav-clearance: calc(var(--wa-mobile-bottom-nav-height) + var(--wa-mobile-bottom-nav-gap) + 12px + env(safe-area-inset-bottom));
+  }
+
+  body.wa-mobile-menu-open {
+    overflow: hidden;
+  }
+
+  .main-sidebar.wa-main-sidebar {
+    display: none !important;
+  }
+
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open {
+    display: block !important;
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    z-index: 1410;
+    transform: none !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+    background: #0b1630 !important;
+    border-right: 0 !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open,
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open::after {
+    background: #0b1630 !important;
+  }
+
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open .main-menu,
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open .wa-sidebar-scroll {
+    max-height: 100dvh;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+
+  .main-sidebar.wa-main-sidebar.wa-mobile-drawer-open .wa-sidebar-scroll {
+    box-sizing: border-box;
+    padding-top: calc(62px + env(safe-area-inset-top));
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+
+  .wa-mobile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    background: rgba(5, 12, 24, 0.56);
+  }
+
+  .wa-mobile-menu-close {
+    position: fixed;
+    top: calc(10px + env(safe-area-inset-top));
+    right: 12px;
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 12px;
+    background: rgba(14, 29, 58, 0.92);
+    color: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 1420;
+  }
+
+  .body-padding .main-content {
+    padding-bottom: max(100px, var(--wa-mobile-bottom-nav-clearance, 0px));
   }
 }
 

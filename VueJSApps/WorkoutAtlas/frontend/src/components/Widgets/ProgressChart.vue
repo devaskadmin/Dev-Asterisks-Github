@@ -39,6 +39,7 @@ const chartOptions = computed(() => ({
     height: 340,
     toolbar: { show: false },
     fontFamily: 'inherit',
+    foreColor: '#cbd5e1',
     background: 'transparent',
     animations: { enabled: true, easing: 'easeinout', speed: 600 },
   },
@@ -66,7 +67,7 @@ const chartOptions = computed(() => ({
   xaxis: {
     categories: chartCategories.value,
     labels: {
-      style: { fontSize: '10px', colors: 'var(--wa-shell-text-muted, #748094)' },
+      style: { fontSize: '10px', colors: '#e5e7eb' },
       rotate: chartData.value.length > 14 ? -35 : 0,
       maxHeight: 50,
     },
@@ -75,12 +76,12 @@ const chartOptions = computed(() => ({
   },
   yaxis: {
     labels: {
-      style: { fontSize: '10px', colors: 'var(--wa-shell-text-muted, #748094)' },
+      style: { fontSize: '10px', colors: '#f8fafc' },
       formatter: (value) => Number(value).toLocaleString(),
     },
   },
   grid: {
-    borderColor: 'var(--wa-shell-border, rgba(255, 255, 255, 0.09))',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
     strokeDashArray: 5,
     padding: { top: 0, right: 8, bottom: 0, left: 4 },
   },
@@ -208,10 +209,7 @@ onMounted(loadChart);
 }
 
 .ps-chart-header__left h5 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
-  color: var(--wa-shell-text, #f8fafc);
+  display: none;
 }
 
 .ps-chart-sub {
@@ -284,6 +282,23 @@ onMounted(loadChart);
 
 .ps-chart-body { padding: 8px 14px 16px; }
 .ps-chart-wrap { overflow: hidden; max-height: 340px; transition: height 0.3s ease; }
+
+.ps-chart-wrap :deep(.apexcharts-text),
+.ps-chart-wrap :deep(.apexcharts-legend-text) {
+  fill: #cbd5e1 !important;
+}
+
+.ps-chart-wrap :deep(.apexcharts-xaxis-texts-g text) {
+  fill: #e5e7eb !important;
+}
+
+.ps-chart-wrap :deep(.apexcharts-yaxis-texts-g text) {
+  fill: #f8fafc !important;
+}
+
+.ps-chart-wrap :deep(.apexcharts-gridline) {
+  stroke: rgba(148, 163, 184, 0.22) !important;
+}
 
 .ps-state,
 .ps-empty-state {
