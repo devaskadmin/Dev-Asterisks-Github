@@ -974,41 +974,27 @@ const completeWorkout = async () => {
   }
 };
 
-/* ─── End without saving ─────────────────────────────────────────────────── */
-const endWithoutSaving = async () => {
-  let endedDurationSeconds = 0;
-  if (activeSession.value?.id) {
-    try {
-      const cancelRes = await fetch(`${API_BASE}/api/workout-sessions/cancel/${activeSession.value.id}`, {
-        method: 'POST', credentials: 'include',
-      });
-      const cancelData = await cancelRes.json().catch(() => ({}));
-      if (cancelRes.ok) {
-        endedDurationSeconds = Number(cancelData?.session?.durationSeconds || 0);
-      }
-    } catch (_) { /* non-fatal */ }
+/* ─── Navigation helpers ─────────────────────────────────────────────────── */
+const editCurrentPlan = () => {
+  const activePlanId = String(activeSession.value?.workoutPlanId || '').trim();
+  if (!activePlanId) {
+    saveError.value = 'No active workout plan found to edit.';
+    return;
   }
-  activeSession.value    = null;
-  hasActiveWorkout.value = false;
-  isPreviewMode.value    = false;
-  activeTab.value        = 'overview';
-  selectedDay.value      = '';
-  conflictMessage.value  = '';
-  if (endedDurationSeconds > 0) {
-    saveMessage.value = `Workout ended. Workout Time: ${formatDurationHms(endedDurationSeconds)}`;
-    setTimeout(() => {
-      if (saveMessage.value.startsWith('Workout ended.')) {
-        saveMessage.value = '';
-      }
-    }, 3000);
-  }
+
+  router.push({
+    name: 'workout_builder',
+    query: { planId: activePlanId, tab: 'create' },
+  });
 };
 
-/* ─── Navigation helpers ─────────────────────────────────────────────────── */
-const startBuilder = () => router.push({ name: 'workout_builder' });
+const canEditCurrentPlan = computed(() => Boolean(String(activeSession.value?.workoutPlanId || '').trim()));
+
 const openInBuilder = (planId) => {
   const pid = String(planId || '').trim();
-  router.push(pid ? { name: 'workout_builder', query: { planId: pid } } : { name: 'workout_builder' });
+  router.push(pid
+    ? { name: 'workout_builder', query: { planId: pid, tab: 'create' } }
+    : { name: 'workout_builder', query: { tab: 'create' } });
 };
 
 const goToInProgress = () => {
@@ -1217,8 +1203,13 @@ onUnmounted(() => {
           >
             <i class="fa-solid fa-clock-rotate-left"></i> Workouts In Progress
           </button>
-          <button type="button" class="wl-btn" @click="startBuilder">
-            <i class="fa-solid fa-dumbbell"></i> Open Workout Builder
+          <button
+            type="button"
+            class="wl-btn"
+            :disabled="!canEditCurrentPlan"
+            @click="editCurrentPlan"
+          >
+            <i class="fa-solid fa-dumbbell"></i> Edit Current Plan
           </button>
         </div>
       </section>
@@ -1794,15 +1785,10 @@ onUnmounted(() => {
     <div v-if="activeTab === 'dayDetails' && selectedDay && dayExercises.length > 0 && !isPreviewMode" class="wl-bottom-bar">
       <div class="wl-bottom-bar__inner">
         <span class="wl-bottom-bar__label">{{ totalCompleted }} / {{ totalSets }} sets done</span>
-        <div class="wl-bottom-bar__actions">
-          <button type="button" class="wl-btn-end" @click="endWithoutSaving">
-            <i class="fa-solid fa-xmark"></i> End Workout
-          </button>
-          <button type="button" class="wl-btn-complete" :disabled="saving" @click="completeWorkout">
-            <i class="fa-solid fa-flag-checkered"></i>
-            {{ saving ? 'Saving…' : 'Complete Workout' }}
-          </button>
-        </div>
+        <button type="button" class="wl-btn-complete" :disabled="saving" @click="completeWorkout">
+          <i class="fa-solid fa-flag-checkered"></i>
+          {{ saving ? 'Saving…' : 'Complete & End Workout' }}
+        </button>
       </div>
     </div>
     <!-- ── Delete History Confirmation Modal ────────────────────────────── -->
@@ -1991,6 +1977,10 @@ onUnmounted(() => {
   transition: background 0.15s;
 }
 .wl-btn:hover { background: #1d4ed8; }
+.wl-btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
 .wl-btn--secondary { background: #f1f5f9; color: #1e40af; border: 1px solid #bfdbfe; }
 .wl-btn--secondary:hover { background: #dbeafe; }
 .wl-btn--active { background: #22c55e; }
@@ -2328,27 +2318,20 @@ onUnmounted(() => {
 }
 .wl-bottom-bar__inner {
   max-width: 960px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: grid; align-items: center; gap: 8px;
 }
 .wl-bottom-bar__label   { font-size: 0.88rem; font-weight: 700; color: var(--text-color, #111827); }
-.wl-bottom-bar__actions { display: flex; gap: 10px; }
 
 .wl-btn-complete {
   background: #22c55e; border: none; color: #fff;
   border-radius: 10px; padding: 10px 18px;
   font-size: 0.88rem; font-weight: 800; cursor: pointer;
-  display: flex; align-items: center; gap: 7px; transition: background 0.15s;
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: background 0.15s;
 }
 .wl-btn-complete:hover:not(:disabled) { background: #16a34a; }
 .wl-btn-complete:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.wl-btn-end {
-  background: #f1f5f9; border: 1px solid #cbd5e1;
-  color: #475569; border-radius: 10px; padding: 10px 16px;
-  font-size: 0.88rem; font-weight: 700; cursor: pointer;
-  display: flex; align-items: center; gap: 7px; transition: background 0.15s;
-}
-.wl-btn-end:hover { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
 
 /* ── Date input ───────────────────────────────────────────────────────────── */
 .wl-date-input {
@@ -2841,7 +2824,6 @@ onUnmounted(() => {
 .wl-page .wl-order-btn,
 .wl-page .wl-btn-edit,
 .wl-page .wl-btn-preview,
-.wl-page .wl-btn-end,
 .wl-page .wl-hist-edit-btn,
 .wl-page .wl-hist-cancel-btn,
 .wl-page .wl-hist-set-input,
@@ -3142,15 +3124,6 @@ onUnmounted(() => {
     white-space: nowrap;
   }
 
-  .wl-bottom-bar__actions {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-    gap: 6px;
-  }
-
   /* Global density */
   .workout-log-mobile .app-page-canvas { gap: 6px; }
   .wl-exercise-list { gap: 6px; }
@@ -3445,6 +3418,18 @@ onUnmounted(() => {
   .wl-progress-label              { font-size: 0.6rem; }
   .wl-preview-badge               { padding: 1px 7px; font-size: 0.56rem; }
 
+  .wl-workout-time {
+    color: #cbd5e1;
+  }
+
+  .wl-workout-time strong {
+    color: #f8fafc;
+  }
+
+  .wl-workout-time i {
+    color: #60a5fa;
+  }
+
   /* History */
   .wl-history-datebar { padding: 6px 10px; font-size: 0.64rem; margin-bottom: 6px; gap: 6px; }
   .wl-history-session { border-radius: 10px; }
@@ -3615,8 +3600,7 @@ onUnmounted(() => {
   }
 
   /* Bottom bar: compact buttons */
-  .wl-btn-complete,
-  .wl-btn-end {
+  .wl-btn-complete {
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -3645,17 +3629,11 @@ onUnmounted(() => {
     align-items: center;
     gap: 6px;
   }
-  .wl-bottom-bar__actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-    justify-content: initial;
-  }
   .wl-history-session__meta { flex-direction: column; gap: 4px; }
   .wl-history-datebar { flex-direction: column; align-items: flex-start; gap: 6px; }
   .wl-day-card__footer { flex-direction: column; }
   .wl-btn-preview, .wl-btn-start, .wl-btn-resume { width: 100%; justify-content: center; }
-  .wl-btn-end, .wl-btn-complete {
+  .wl-btn-complete {
     width: 100%;
     min-width: 0;
     flex: initial;

@@ -1,5 +1,357 @@
 # Changelog
 
+## 0.85.gbp.30 - August 7, 2026
+
+### Workout Builder
+- Revamped Workout Builder layout using Build a Plan and Show Existing Plans accordions
+- Added Select a Workout Plan, Create a Workout Plan, and Suggest with AI tabs
+- Added Featured Global Workout Plan integration
+- Added structured workout goals:
+  - Lose Weight
+  - Build Muscle
+  - Gain Strength
+  - Improve Endurance
+  - Stay in Shape
+  - Improve Mobility
+  - General Fitness
+  - Other
+- Modernized Workout Plan Details layout
+- Workout Plan Type defaults to Standard (Personal)
+- Workout Plan Type is administrator-only
+- Simplified Schedule Planner
+- Removed By Week workflow
+- Removed automatic Any Day / Week 1 creation for new workout plans
+- New workout plans start with zero workout days
+- Improved workout-day controls
+- Added support for adding/saving exercises to workout plan days
+- Improved desktop and mobile Workout Builder styling
+
+### Global Workout Plans
+- Added Global Workout Plans administration system
+- Added Featured and Community Shared workout plan types
+- Featured plans can be created and managed by administrators
+- Featured plans appear in Workout Builder preselected plans
+- Added Global Workout Plans administrator navigation
+- Added CRUD/schedule management foundation
+- Fixed empty state when no global workout plans exist
+- Improved dark-theme styling
+
+### Navigation
+- Added Developer Tools sidebar section
+- Moved Test Roles and Tools into Developer Tools
+- Developer Tools section is hidden on mobile
+
+### Workout Log
+- Added Edit Current Plan action for active workouts
+- Improved workout timer display/behavior
+- Combined End Workout and Complete Workout into a single Complete & End Workout action
+- Improved mobile workout controls
+
+### Login
+- Improved mobile visibility of the gym background image
+
+### Dashboard
+- Standardized Dashboard content width/alignment to match Workout Builder and other application pages
+
+### Fixes
+- Fixed workout-day action menu clipping
+- Improved responsive layouts
+- Improved text contrast
+- Reduced excessive border radius/pill styling
+- General CSS and UX cleanup
+
+## [0.85.gbp.29] - 2026-08-07 - Active Workout Footer Simplification
+
+- Replaced the two-action active workout footer (`End Workout` + `Complete Workout`) with one primary action button: `Complete & End Workout`.
+- Kept the `X / X sets done` progress text above the action.
+- Set the completion action to a single full-width green primary button for both desktop and mobile layouts.
+- Removed the separate end-without-save footer path to reduce accidental data loss risk.
+- Preserved completion flow behavior that saves completed sets/reps, final duration, marks session completed, closes active session, and returns the user to normal Workout Log state.
+- Preserved existing confirmation behavior (no additional confirmations were introduced or removed).
+- Updated version references from `0.85.gbp.27` to `0.85.gbp.29` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.27] - 2026-08-07 - Workout Log Active Plan Edit Action
+
+- Replaced the Workout Log hero action label from `Open Workout Builder` to `Edit Current Plan`.
+- Updated the active action behavior to open Workout Builder directly on the exact active workout plan using `planId` routing.
+- Ensured the target opens on the Create tab context for in-place plan editing and save updates to the same plan (no duplicate plan creation).
+- Kept completed workout history behavior unchanged.
+- Preserved blue button styling and mobile-friendly toolbar behavior.
+- Updated version references from `0.85.gbp.26` to `0.85.gbp.27` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.26] - 2026-08-07 - Login Mobile Background Visibility Tuning
+
+- Improved mobile login background visibility by making the dark overlay approximately 10% more transparent on mobile widths.
+- Kept the same gym background image and preserved full-viewport cover behavior.
+- Kept the login form/card opacity unchanged to preserve readability and contrast.
+- Kept desktop login styling unchanged.
+- Kept mobile background positioning centered for responsive presentation.
+- Updated version references from `0.85.gbp.25` to `0.85.gbp.26` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.25] - 2026-08-07 - Workout Builder Exercise Assignment Workflow
+
+- Enhanced Workout Builder exercise selection flow to support selecting and adding one or more exercises per action from the existing Exercises Database.
+- Added multi-select controls in the exercise picker with `Add Selected` bulk insertion while preserving existing one-click `Add` behavior.
+- Ensured selected exercises are appended to the currently selected workout day in the same selection order.
+- Kept exercise references tied to existing `exercise_id` values (no exercise-master duplication).
+- Preserved immediate Schedule Planner updates and pre-save removal support in the current editing session.
+- Preserved existing save/update flow for personal plans so saving updates the selected plan instead of creating duplicates.
+- Kept admin/global workout plan workflow unchanged.
+- Reused existing schedule relationship tables; no database structure changes required.
+- Updated version references from `0.85.gbp.24` to `0.85.gbp.25` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.24] - 2026-08-07 - Workout Log Mobile Timer Contrast Fix
+
+- Improved active Workout Log timer readability on mobile by applying a lighter text hierarchy on dark card backgrounds.
+- Updated timer text treatment in Day Details:
+  - timer label uses a secondary light color,
+  - timer value uses a primary light color,
+  - timer icon remains clearly visible with the existing accent style.
+- Kept timer functionality unchanged; this is a styling-only update.
+- Preserved desktop timer styling.
+- Updated version references from `0.85.gbp.23` to `0.85.gbp.24` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.23] - 2026-08-06 - Schedule Planner Fallback Day Generator Removal
+
+- Removed remaining Schedule Planner fallback/default day generation paths for new plans.
+- Fixed route query watcher behavior that reloaded newly created draft plans and reintroduced backend default groups.
+- Added a draft-route load guard so `Start New Workout Plan` keeps the planner empty after route update.
+- Updated hydration day-group normalization to load day groups from explicit day sources only (saved `dayGroups` and assigned exercise groups), preventing `weekGroups` fallback labels from becoming workout days.
+- Updated Add Day behavior to require explicit user input (no automatic `Day 1` generation when the input is blank).
+- Preserved existing saved-plan behavior: days are loaded only when editing an existing selected plan.
+- Kept empty-state planner UX for new drafts: `No workout days added yet.` with Add Day input/button visible and no day-card Add Exercise controls until a day exists.
+- Preserved backend/database structure and existing planner payload contract.
+- Updated version references from `0.85.gbp.22` to `0.85.gbp.23` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.22] - 2026-08-06 - Schedule Planner New-Plan Day Reset
+
+- Fixed new-plan Schedule Planner behavior to always start with zero workout days.
+- Cleared planner day groups immediately when `Start New Workout Plan` is clicked.
+- Prevented reuse of day groups from previously opened plans during new-plan creation.
+- Removed remaining first-day fallback mapping in planner group exercise computation.
+- Preserved existing saved-plan day groups when editing an existing workout plan.
+- Kept empty-state text as: `No workout days added yet.`
+- Kept `Add Day` input and `Add Day` button visible while hiding day-card `Add Exercise` controls until a day exists.
+- Preserved backend/database structure and existing planner payload contract.
+- Updated version references from `0.85.gbp.21` to `0.85.gbp.22` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.21] - 2026-08-07 - Schedule Planner Zero-Default-Day Behavior
+
+- Removed automatic Schedule Planner defaults that pre-created `Any Day` and `Week 1` for new workout plans.
+- Updated planner initialization and reset behavior so new plans start with zero workout days.
+- Removed fallback logic that re-inserted default days during load, mode changes, day removal, and exercise operations.
+- Kept existing saved workout plans compatible by preserving and loading their previously saved day groups.
+- Updated empty planner state messaging to show exactly: `No workout days added yet.`
+- Kept `Add Day` input/button visible so users can intentionally create day groups.
+- Preserved backend/database contracts and existing workout-plan save payload structure.
+- Updated version references from `0.85.gbp.20` to `0.85.gbp.21` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.20] - 2026-08-07 - Schedule Planner Inline Day Editing Simplification
+
+- Removed the planner-level `Save Day` button and kept `Add Day` as the only group-editor button.
+- Switched day rename UX to inline editing directly on day-name click in each day card.
+- Added automatic day-name save on Enter, input blur, and outside-click.
+- Removed `Rename` and `Reset` from the three-dot day menu.
+- Kept `Add Exercise` as the primary day-card action.
+- Simplified day menu actions to: `Duplicate Day`, `Move Up`, `Move Down`, and `Delete Day`.
+- Preserved first/last guardrails by hiding `Move Up` on the first day and `Move Down` on the last day.
+- Applied compact modern SaaS-style inline edit visuals consistent with the WorkoutAtlas card system.
+- Preserved existing save logic and backend/database behavior.
+- Updated version references from `0.85.gbp.19` to `0.85.gbp.20` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.19] - 2026-08-07 - Workout Plan Details Layout Row Alignment
+
+- Reworked Workout Plan Details desktop layout into the requested sequence:
+  - Row 1: Plan Name + Est. Time (min)
+  - Row 2: Workout Type + Workout Plan Type (admins only)
+  - Full width: Description and Workout Goals
+- Renamed `Duration (min)` label to `Est. Time (min)` while preserving the `estimatedDuration` field and save behavior.
+- Kept Workout Plan Type default as `Standard (Personal)` and hidden for users/trainers.
+- Preserved mobile single-column stacking and tightened spacing/textarea height for a more compact form.
+- Kept goal chips wrapping cleanly on mobile using compact wrap spacing.
+- Preserved existing save logic and plan metadata compatibility (no backend behavior changes).
+- Updated version references from `0.85.gbp.18` to `0.85.gbp.19` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.18] - 2026-08-07 - Workout Plan Form Chip Goals and Compact Layout
+
+- Replaced the workout goals textarea with selectable multi-select goal chips: Lose Weight, Build Muscle, Gain Strength, Improve Endurance, Stay in Shape, Improve Mobility, General Fitness, and Other.
+- Added an optional text input that appears only when Other is selected.
+- Tightened the Create Workout Plan layout by reducing spacing, shortening the Description field, keeping Workout Type and Duration on one row, and using smaller border radii.
+- Kept Workout Plan Type admin-only with Standard (Personal) as the default visible choice.
+- Preserved the existing save flow and backend behavior by carrying goal selections through planner metadata only.
+- Updated version references from `0.85.gbp.17` to `0.85.gbp.18` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.17] - 2026-08-07 - Workout Day Overflow Menu Clipping Fix
+
+- Fixed the workout-day three-dot action menu so it renders above neighboring cards instead of being clipped by the day card container.
+- Removed the day-card overflow clipping, raised the menu stacking context, and aligned the dropdown to the kebab button with viewport-safe placement.
+- Kept existing day actions unchanged: Rename, Duplicate, Move Up, Move Down, Reset, and Delete.
+- Preserved outside-click dismissal and single-open-menu behavior across day cards.
+- Updated version references from `0.85.gbp.16` to `0.85.gbp.17` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.16] - 2026-08-07 - Workout Builder Day-Only Planner Simplification
+
+- Removed visible `By Week` workflow from Workout Builder and standardized planner behavior to day-based scheduling.
+- Preserved existing data compatibility by normalizing loaded schedule groups from prior day/week data into day groups for editing.
+- Simplified workout day cards to a compact SaaS layout with one clear primary action: `Add Exercise`.
+- Moved secondary day actions (`Rename`, `Duplicate`, `Move Up/Down`, `Reset`, `Delete`) into the three-dot overflow menu for progressive disclosure.
+- Added day duplication action for faster plan authoring while preserving exercise assignment behavior.
+- Hid exercise-count chips when a day has zero exercises.
+- Consolidated empty messaging inside day cards to a single compact prompt: `No exercises yet. Add an exercise to begin.`
+- Removed duplicate planner-level empty-state card to reduce visual noise.
+- Frontend-only update; no backend/database or SQL changes.
+- Updated version references from `0.85.gbp.15` to `0.85.gbp.16` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.15] - 2026-08-06 - Workout Builder Form and Planner Modernization
+
+- Modernized `Create a Workout Plan` details layout with cleaner two-column desktop structure and proper single-column mobile stacking.
+- Updated Workout Plan Type behavior:
+  - Default remains `Standard (Personal)`.
+  - Field is now shown to administrators only.
+  - Non-admin users/trainers do not see the field and are normalized to standard personal plan type on save payload updates.
+- Renamed Estimated Duration label to `Duration (min)` and constrained the field width while keeping it aligned on the same row as Workout Type.
+- Reduced oversized spacing/padding, textarea height, and control border radius for a cleaner modern form.
+- Separated Schedule Planner visually from Workout Plan Details using a dedicated planner section card.
+- Reduced day-row action crowding by shrinking secondary action button density while keeping Add Exercise as the primary action.
+- Reduced large white space in expanded day panels and improved empty-state presentation for day cards and planner lists.
+- Frontend-only UI update; no backend/database logic changes.
+- Updated version references from `0.85.gbp.14` to `0.85.gbp.15` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.14] - 2026-08-06 - Workout Builder Slider and Tab Styling Refinement
+
+- Updated Workout Builder Featured plan carousel controls so `Previous`, `Next`, and slide dots only render when more than one slide exists.
+- Removed single-slide control clutter to prevent empty/pointless slider indicators when only one Featured slide is present.
+- Reduced tab corner radius for `Select a Workout Plan`, `Create a Workout Plan`, and `Suggest with AI` to remove oversized pill styling and provide a cleaner modern shape.
+- Preserved equal tab spacing and all existing tab switching behavior.
+- Frontend-only update; no backend workout logic changes.
+- Updated version references from `0.85.gbp.13` to `0.85.gbp.14` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.13] - 2026-08-05 - Developer Tools Sidebar Visibility Update
+
+- Renamed the sidebar collapsible section from `Tools` to `Developer Tools`.
+- Kept `Test Roles` and `Tools` links inside the renamed section.
+- Preserved the existing `Tools` link label and all existing route names/permissions.
+- Kept section behavior independent from other accordions.
+- Hid the entire `Developer Tools` section on mobile at `600px` width and below.
+- Left `Developer Tools` visible on desktop layouts only.
+- Confirmed no duplicate links were introduced.
+- Updated version references from `0.85.gbp.12` to `0.85.gbp.13` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.12] - 2026-08-05 - Sidebar Tools Section Split
+
+- Added a new collapsible `Tools` section in the left sidebar menu.
+- Moved `Test Roles` and `Tools` links out of `Administrator` into the new `Tools` section.
+- Kept `Global Workout Plans` under `Administrator`.
+- Preserved existing route names and admin-only permission gating for moved links.
+- Ensured links are not duplicated across sections and each accordion section opens/closes independently.
+- Maintained existing sidebar behavior for desktop and mobile layouts.
+- Updated version references from `0.85.gbp.11` to `0.85.gbp.12` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.11] - 2026-08-05 - Global Plan Admin Schedule Editor + Readability
+
+- Replaced Global Workout Plans `Edit Schedule` route handoff with an in-page admin schedule editor so administrators remain on the admin page.
+- Added admin schedule edit workflow on the Global Workout Plans page to load plan planner data from `GET /api/admin/global-workout-plans/:id` and edit schedule groups/exercise assignment in place.
+- Added backend endpoint `PATCH /api/admin/global-workout-plans/:id/schedule` to persist schedule updates directly to the selected global plan only.
+- Preserved global-plan classification during schedule edits and blocked personal workout-builder redirection for admin schedule updates.
+- Improved Global Workout Plans table readability in dark theme for plan name, duration, exercise count, and updated timestamp columns.
+- Updated Featured/Community Shared badge contrast and standardized `Edit Schedule` to a solid blue admin action button style.
+- Updated version references from `0.85.gbp.10` to `0.85.gbp.11` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gbp.10] - 2026-08-04 - Global Workout Plans Empty-State Reliability
+
+- Fixed Global Workout Plans empty-state behavior so no-plans scenarios resolve as a successful load with `workoutLists: []`.
+- Hardened admin access fallback for global plan APIs to support both RBAC table roles and legacy `user_profiles.user_role` admin values.
+- Prevented false load failures when records are empty by preserving HTTP 200 responses for valid empty result sets.
+- Kept red error banner behavior for real API/auth/database/server failures only.
+- Preserved table rendering so empty state displays `No global workout plans found.` without replacing the table.
+- Updated version references from `0.85.gb.8` to `0.85.gbp.10` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.8] - 2026-08-04 - Global Workout Plans Admin Reliability and Button Styling Fix
+
+- Fixed Global Workout Plans admin authorization fallback so admin API access works even when session role fields are stale by validating admin role through RBAC tables.
+- Hardened Global Workout Plans list loading to return an empty successful response for legacy schema mismatches (`ER_NO_SUCH_TABLE`, `ER_BAD_FIELD_ERROR`) instead of surfacing load failures.
+- Confirmed admin global plan API route contract remains `GET /api/admin/global-workout-plans` and response shape remains `workoutLists` + `hasWorkoutLists`.
+- Updated Global Workout Plans page actions to standard blue WorkoutAtlas buttons:
+  - `Create Plan` uses standard blue primary styling.
+  - `New Plan` now uses a visible blue primary style.
+- Removed green gradient/glow behavior from admin page primary actions by forcing flat blue button tokens and no glow.
+- Updated version references from `0.85.gb.6` to `0.85.gb.8` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.6] - 2026-08-04 - Global Workout Plans API Connectivity Fix
+
+- Fixed Global Workout Plans API list queries to avoid non-deterministic `GROUP BY` behavior that can fail under strict MySQL SQL modes.
+- Reworked list loading queries to use per-schedule aggregate subqueries for exercise count and cover image.
+- Preserved response shape for admin and featured plan feeds so frontend list rendering remains compatible.
+- Ensured empty global plans state returns a successful response with `workoutLists: []` instead of surfacing a load error.
+- Verified admin create/update/delete flows still return refreshed `workoutLists` payloads.
+- Updated version references from `0.85.gb.7` to `0.85.gb.6` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.4] - 2026-08-04 - Featured Plans in Workout Builder Select Tab
+
+- Connected Global Workout Plans to Workout Builder under Build a Plan → Select a Workout Plan.
+- Removed hardcoded sample workout entries and now load Featured plans from the database.
+- Added/updated backend Featured feed and clone flow endpoints:
+  - `GET /api/featured-workout-plans`
+  - `POST /api/featured-workout-plans/:id/clone`
+- Featured plan cards now display:
+  - Plan Name
+  - Description
+  - Estimated Duration
+  - Exercise Count
+- Selecting a Featured plan now clones it into the current user's Workout Builder as a personal draft.
+- Saving/editing the copied plan updates only the user's personal copy and does not modify the original Global Workout Plan.
+- Community Shared plans are still excluded from Workout Builder Select a Workout Plan.
+- Added empty-state handling for no Featured plans with the message: `No Featured Workout Plans Available`.
+- Updated version references from `0.85.gb.5` to `0.85.gb.4` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.3] - 2026-08-04 - Global Workout Plans Administration CRUD
+
+- Built the Administrator Global Workout Plans page with Create, Edit, Delete, and View workflows.
+- Added admin-only backend API endpoints for global workout plans:
+  - `GET /api/admin/global-workout-plans`
+  - `GET /api/admin/global-workout-plans/:id`
+  - `POST /api/admin/global-workout-plans`
+  - `PATCH /api/admin/global-workout-plans/:id`
+  - `DELETE /api/admin/global-workout-plans/:id`
+- Added strict administrator access checks on all new global workout plan endpoints.
+- Added required metadata fields in admin workflows:
+  - Plan Name
+  - Description
+  - Workout Plan Type (Featured, Community Shared)
+  - Estimated Duration
+- Reused existing workout schedule/planner serialization and schedule-building logic to avoid duplicating workout behavior.
+- Added direct "Edit Schedule" handoff from Global Workout Plans admin page into Workout Builder (`/workout-builder?planId=<id>`) so schedule authoring continues through existing builder functionality.
+- Updated version references from `0.85.gb.2` to `0.85.gb.3` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.2] - 2026-08-04 - Administrator Global Workout Plans Menu Foundation
+
+- Added a new Administrator menu item: Global Workout Plans.
+- Added a new admin-only route and page scaffold at `/admin/global-workout-plans`.
+- Added route-guard enforcement so only Administrators can access the new page.
+- Implemented a styled placeholder page aligned with existing WorkoutAtlas admin panel UI.
+- No global workout plan functionality was implemented in this release (navigation and page foundation only).
+- Updated version references from `0.85.gb.1` to `0.85.gb.2` in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
+## [0.85.gb.1] - 2026-08-04 - Global Workout Plans Foundation
+
+- Added Workout Plan Type foundation to workout scheduling with supported values `featured` and `community_shared`.
+- Enforced backend validation rules for plan type requests:
+  - `featured` is admin-only for create and update flows.
+  - `community_shared` is reserved and currently blocked for write operations.
+- Preserved compatibility for environments that have not yet applied the migration by conditionally reading/writing `workout_plan_type` only when the column exists.
+- Extended planner and schedule API payloads with `metadata.planType` and `planType`, plus `canCreateFeaturedPlans` capability flags.
+- Added Workout Builder metadata field for Workout Plan Type with role-aware option availability and a coming-soon reservation for Community Shared.
+- Added required SQL migration `backend/migrations/workout/20260804_workout_plan_type_column.sql` to add `workout_schedules.workout_plan_type` and index it.
+- Updated canonical schema definition to include `workout_plan_type` for fresh installs.
+- Updated version references from `0.85.1` to `0.85.gb.1` in frontend/backend package metadata, lock metadata, frontend env version value, and schema version tracking.
+
+## [0.85.1] - 2026-08-03 - Workout Builder AI Suggest Tab Placeholder
+
+- Added the Workout Builder Suggest with AI tab placeholder UI with the title Suggest a Workout with AI.
+- Added a coming soon message and a disabled Generate My Workout button (no backend integration).
+- Kept this update frontend-only with no SQL or schema migration changes.
+- Updated version references from 0.84b3 to 0.85.1 in frontend/backend package metadata, lock metadata, and frontend app version env value.
+
 ## [0.84.42] - 2026-07-04 - Global Muted Navy Theme
 
 - Centralized the shared WorkoutAtlas palette in the loaded global stylesheet and aligned the dark-theme/app-shell aliases to the same muted navy token set.

@@ -231,6 +231,7 @@ const allMenuLinks = [
   { label: 'Scheduling', shortLabel: 'Plan', route: '/calendar', icon: 'fa-solid fa-calendar-days', section: 'Admin', roles: ['admin'] },
   { label: 'Users', shortLabel: 'Users', route: '/admin/users', icon: 'fa-solid fa-users', section: 'Admin', roles: ['admin'] },
   { label: 'Roles', shortLabel: 'Roles', route: '/admin/roles', icon: 'fa-solid fa-user-shield', section: 'Admin', roles: ['admin'] },
+  { label: 'Global Workout Plans', shortLabel: 'Global Plans', route: '/admin/global-workout-plans', icon: 'fa-solid fa-earth-americas', section: 'Admin', roles: ['admin'] },
   { label: 'Test Roles', shortLabel: 'Test', route: '/admin/role-tester', icon: 'fa-solid fa-vials', section: 'Admin', roles: ['admin'] },
   { label: 'Tools', shortLabel: 'Tools', route: '/tools', icon: 'fa-solid fa-screwdriver-wrench', section: 'Admin', roles: ['admin'] },
   { label: 'Admin Chat', shortLabel: 'Chat', route: '/chat', icon: 'fa-solid fa-comments', section: 'Admin', roles: ['admin'] },
@@ -345,8 +346,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="wa-dashboard">
-    <main class="wa-dashboard-main">
+  <div class="app-page-shell wa-dashboard-shell">
+    <div class="app-page-canvas app-inner-shell wa-dashboard-canvas">
+      <div class="wa-dashboard">
+        <main class="wa-dashboard-main">
       <section class="wa-greeting-row">
         <div class="wa-greeting">
           <p class="wa-greeting-line">Good {{ currentPeriod }},</p>
@@ -510,12 +513,26 @@ onUnmounted(() => {
           <NutritionLogChart />
         </div>
       </section>
-    </main>
-
+        </main>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.wa-dashboard-shell {
+  display: block;
+}
+
+.wa-dashboard-canvas {
+  width: 100%;
+  min-width: 0;
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 .wa-dashboard {
   --wa-accent: var(--wa-shell-accent, var(--main-color, #2563eb));
   --wa-accent-hover: color-mix(in srgb, var(--wa-accent) 84%, #ffffff 16%);
@@ -539,8 +556,8 @@ onUnmounted(() => {
 
 .wa-dashboard-main {
   width: 100%;
-  max-width: 1320px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
   display: grid;
   gap: 16px;
 }
@@ -1055,7 +1072,7 @@ onUnmounted(() => {
   }
 
   .wa-dashboard-main {
-    max-width: 1320px;
+    max-width: 100%;
     gap: 14px;
   }
 

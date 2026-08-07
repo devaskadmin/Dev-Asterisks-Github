@@ -1,122 +1,199 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, watch } from 'vue'
 
 const props = defineProps({
   metadata: {
     type: Object,
     required: true,
   },
+  canCreateFeaturedPlans: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['update:metadata']);
 
-const updateField = (field, value) => {
+const isAdminPlanTypeEnabled = computed(() => Boolean(props.canCreateFeaturedPlans));
+
+const goalOptions = [
+  'Lose Weight',
+  'Build Muscle',
+  'Gain Strength',
+  'Improve Endurance',
+  'Stay in Shape',
+  'Improve Mobility',
+  'General Fitness',
+  'Other',
+];
+
+const selectedGoals = computed(() => (Array.isArray(props.metadata?.goals) ? props.metadata.goals : []));
+
+const updateMetadata = (patch) => {
   emit('update:metadata', {
     ...props.metadata,
-    [field]: value,
+    ...patch,
   });
 };
 
-const isWorkoutGoalOpen = ref(false)
+const updateField = (field, value) => {
+  updateMetadata({ [field]: value });
+};
 
-const toggleWorkoutGoal = () => {
-  isWorkoutGoalOpen.value = !isWorkoutGoalOpen.value
-}
+const isGoalSelected = (goal) => selectedGoals.value.includes(goal);
+
+const toggleGoal = (goal) => {
+  const nextGoals = new Set(selectedGoals.value);
+
+  if (nextGoals.has(goal)) {
+    nextGoals.delete(goal);
+    const patch = { goals: Array.from(nextGoals) };
+    if (goal === 'Other') {
+      patch.otherGoal = '';
+    }
+    updateMetadata(patch);
+    return;
+  }
+
+  nextGoals.add(goal);
+  updateMetadata({ goals: Array.from(nextGoals) });
+};
+
+watch(
+  () => props.canCreateFeaturedPlans,
+  (canCreate) => {
+    if (canCreate) return;
+    if (String(props.metadata?.planType || '').trim() === '') return;
+    updateMetadata({ planType: '' });
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
   <div class="builder-metadata-layout">
-    <label class="builder-field">
-      <span>Workout Name</span>
-      <input
-        :value="metadata.name"
-        type="text"
-        placeholder="e.g., Upper Body Power"
-        @input="updateField('name', $event.target.value)"
-      />
-    </label>
+    <div class="builder-grid">
+      <label class="builder-field">
+        <span>Plan Name</span>
+        <input
+          :value="metadata.name"
+          type="text"
+          placeholder="e.g., Upper Body Power"
+          @input="updateField('name', $event.target.value)"
+        />
+      </label>
 
-    <section class="workout-goal-panel" aria-label="Workout Goal settings">
-      <button
-        type="button"
-        class="workout-goal-panel__header"
-        :aria-expanded="isWorkoutGoalOpen"
-        @click="toggleWorkoutGoal"
-      >
-        <span class="workout-goal-panel__label">
-          <i class="fa-solid fa-bullseye workout-goal-panel__title-icon" aria-hidden="true"></i>
-          <span class="workout-goal-panel__title">Workout Goals</span>
-        </span>
-        <span class="workout-goal-panel__icon" :class="{ open: isWorkoutGoalOpen }" aria-hidden="true">
-          <i class="fa-solid fa-chevron-down"></i>
-        </span>
-      </button>
+      <label class="builder-field builder-field--duration">
+        <span>Est. Time (min)</span>
+        <input
+          :value="metadata.estimatedDuration"
+          type="number"
+          min="1"
+          placeholder="45"
+          @input="updateField('estimatedDuration', Number($event.target.value || 0))"
+        />
+      </label>
 
-      <transition name="inner-panel-collapse">
-        <div v-show="isWorkoutGoalOpen" class="workout-goal-panel__body">
-          <div class="builder-grid">
-            <label class="builder-field builder-field--wide">
-              <span>Description</span>
-              <textarea
-                :value="metadata.description"
-                rows="3"
-                placeholder="Goal, pacing, or notes for this workout"
-                @input="updateField('description', $event.target.value)"
-              />
-            </label>
+      <label class="builder-field">
+        <span>Workout Type</span>
+        <select :value="metadata.type" @change="updateField('type', $event.target.value)">
+          <option value="Strength">Strength</option>
+          <option value="Cardio">Cardio</option>
+          <option value="Hybrid">Hybrid</option>
+          <option value="Mobility">Mobility</option>
+        </select>
+      </label>
 
-            <label class="builder-field">
-              <span>Workout Type</span>
-              <select :value="metadata.type" @change="updateField('type', $event.target.value)">
-                <option value="Strength">Strength</option>
-                <option value="Cardio">Cardio</option>
-                <option value="Hybrid">Hybrid</option>
-                <option value="Mobility">Mobility</option>
-              </select>
-            </label>
+      <label v-if="isAdminPlanTypeEnabled" class="builder-field">
+        <span>Workout Plan Type</span>
+        <select :value="metadata.planType || ''" @change="updateField('planType', $event.target.value)">
+          <option value="">Standard (Personal)</option>
+          <option value="featured">Featured (Admin only)</option>
+          <option value="community_shared" disabled>Community Shared (Coming Soon)</option>
+        </select>
+      </label>
 
-            <label class="builder-field">
-              <span>Estimated Duration (min)</span>
-              <input
-                :value="metadata.estimatedDuration"
-                type="number"
-                min="1"
-                placeholder="45"
-                @input="updateField('estimatedDuration', Number($event.target.value || 0))"
-              />
-            </label>
-          </div>
+      <label class="builder-field builder-field--wide">
+        <span>Description</span>
+        <textarea
+          :value="metadata.description"
+          rows="2"
+          placeholder="Overview of this workout plan"
+          @input="updateField('description', $event.target.value)"
+        />
+      </label>
+
+      <div class="builder-field builder-field--wide">
+        <span>Workout Goals</span>
+        <div class="goal-chip-grid" role="group" aria-label="Workout goals">
+          <button
+            v-for="goal in goalOptions"
+            :key="goal"
+            type="button"
+            class="goal-chip"
+            :class="{ active: isGoalSelected(goal) }"
+            :aria-pressed="isGoalSelected(goal)"
+            @click="toggleGoal(goal)"
+          >
+            {{ goal }}
+          </button>
         </div>
-      </transition>
-    </section>
+        <label v-if="isGoalSelected('Other')" class="builder-field builder-field--other-goal">
+          <span class="builder-field__hint">Optional: specify another goal</span>
+          <input
+            :value="metadata.otherGoal || ''"
+            type="text"
+            placeholder="Enter another goal"
+            @input="updateField('otherGoal', $event.target.value)"
+          />
+        </label>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .builder-metadata-layout {
   display: grid;
-  gap: 16px;
+  gap: 6px;
 }
 
 .builder-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .builder-field {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .builder-field--wide {
-  grid-column: span 1;
+  grid-column: span 2;
+}
+
+.builder-inline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.builder-field--duration {
+  width: 100%;
 }
 
 .builder-field span {
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #243447;
+}
+
+.builder-field__hint {
+  font-size: 0.74rem;
+  color: #64748b;
+  line-height: 1.35;
 }
 
 .builder-field input,
@@ -124,11 +201,12 @@ const toggleWorkoutGoal = () => {
 .builder-field textarea {
   width: 100%;
   border: 1px solid #d9e2ef;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #f8fafc;
-  min-height: 48px;
-  padding: 11px 12px;
+  min-height: 36px;
+  padding: 7px 9px;
   color: #0f172a;
+  font-size: 0.9rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
@@ -142,110 +220,66 @@ const toggleWorkoutGoal = () => {
 }
 
 .builder-field textarea {
-  min-height: 110px;
+  min-height: 56px;
   resize: vertical;
 }
 
-.workout-goal-panel {
-  border: 1px solid #d9e2ef;
-  border-radius: 14px;
-  background: #f8fafc;
-  overflow: hidden;
-}
-
-.workout-goal-panel__header {
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f1f5f9;
-  color: #0f172a;
-  padding: 12px 14px;
+.goal-chip-grid {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  cursor: pointer;
 }
 
-.workout-goal-panel__title {
-  font-size: 0.9rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-}
-
-.workout-goal-panel__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.workout-goal-panel__title-icon {
-  font-size: 0.82rem;
-  color: #475569;
-}
-
-.workout-goal-panel__icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid #dbe6f5;
+.goal-chip {
+  appearance: none;
+  border: 1px solid #cbd5e1;
   background: #ffffff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   color: #334155;
-  transition: transform 0.2s ease;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.workout-goal-panel__icon.open {
-  transform: rotate(180deg);
+.goal-chip:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
 }
 
-.workout-goal-panel__body {
-  padding: 14px;
+.goal-chip.active {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
 }
 
-.inner-panel-collapse-enter-active,
-.inner-panel-collapse-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  transform-origin: top;
+.builder-field--other-goal {
+  margin-top: 2px;
 }
 
-.inner-panel-collapse-enter-from,
-.inner-panel-collapse-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
+.builder-field--other-goal .builder-field__hint {
+  margin-top: 2px;
 }
-
-@media (min-width: 900px) {
-  .builder-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-
-  .builder-field--wide {
-    grid-column: span 2;
-  }
-
-  .workout-goal-panel__body {
-    padding: 16px;
-  }
-}
-
-/* ── Mobile: 2-col grid + compact fields ── */
 @media (max-width: 768px) {
   .builder-metadata-layout {
-    gap: 10px;
+    gap: 6px;
   }
 
   .builder-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .builder-field--wide {
+    grid-column: span 1;
   }
 
-  /* Wide fields stay full-width */
-  .builder-field--wide {
-    grid-column: span 2;
+  .builder-field--duration {
+    width: 100%;
   }
 
   .builder-field {
@@ -253,47 +287,36 @@ const toggleWorkoutGoal = () => {
   }
 
   .builder-field span {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
   }
 
   .builder-field input,
   .builder-field select {
     min-height: 36px;
-    padding: 7px 10px;
+    padding: 7px 9px;
     font-size: 0.82rem;
-    border-radius: 9px;
+    border-radius: 8px;
   }
 
   .builder-field textarea {
-    min-height: 70px;
-    padding: 7px 10px;
+    min-height: 52px;
+    padding: 7px 9px;
     font-size: 0.82rem;
-    border-radius: 9px;
+    border-radius: 8px;
   }
 
-  .workout-goal-panel {
-    border-radius: 10px;
+  .goal-chip-grid {
+    gap: 6px;
   }
 
-  .workout-goal-panel__header {
-    padding: 9px 11px;
-  }
-
-  .workout-goal-panel__title {
-    font-size: 0.82rem;
-  }
-
-  .workout-goal-panel__body {
-    padding: 10px;
+  .goal-chip {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 0.76rem;
   }
 }
 
 @media (max-width: 480px) {
-  .builder-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-  }
-
   .builder-field input,
   .builder-field select {
     min-height: 34px;
@@ -303,6 +326,12 @@ const toggleWorkoutGoal = () => {
 
   .builder-field span {
     font-size: 0.73rem;
+  }
+
+  .goal-chip {
+    min-height: 30px;
+    padding: 0 9px;
+    font-size: 0.72rem;
   }
 }
 </style>

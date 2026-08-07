@@ -1,7 +1,7 @@
 # FlexFit – Current Schema Version
 
-**Schema Version:** v0.82.42  
-**Latest Migration Date:** 2026-05-27  
+**Schema Version:** v0.85.gb.1  
+**Latest Migration Date:** 2026-08-04  
 **Maintained By:** Dev Asterisks LLC
 
 ---
@@ -15,6 +15,7 @@
 | Workout Day Ordering | ✅ Active | `20260527_workout_log_day_ordering.sql` |
 | Workout History Indexing | ✅ Active | `20260527_workout_history_index.sql` |
 | Workout Planner Ordering | ✅ Active | `20260527_workout_planner_ordering_columns.sql` |
+| Workout Plan Type Foundation | ✅ Active | `20260804_workout_plan_type_column.sql` |
 | Exercise Ownership | ✅ Active | `20260527_exercise_ownership.sql` |
 | Dashboard Metrics | ✅ Active | `20260527_dashboard_metrics.sql` |
 | Dashboard Metric Queries | ✅ Active | `20260527_dashboard_metric_queries.sql` |

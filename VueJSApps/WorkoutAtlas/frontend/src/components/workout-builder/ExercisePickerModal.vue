@@ -23,6 +23,7 @@ const search = ref('');
 const muscle = ref('All');
 const equipment = ref('All');
 const viewFilter = ref('all'); // 'all' | 'mine' | 'favorites'
+const selectedExerciseIds = ref([]);
 const PAGE_SIZE = 5;
 const visibleCount = ref(PAGE_SIZE);
 
@@ -35,6 +36,7 @@ watch(
       equipment.value = 'All';
       viewFilter.value = 'all';
       visibleCount.value = PAGE_SIZE;
+      selectedExerciseIds.value = [];
     }
   }
 );
@@ -42,6 +44,7 @@ watch(
 // Reset pagination when any filter changes
 watch([search, muscle, equipment, viewFilter], () => {
   visibleCount.value = PAGE_SIZE;
+  selectedExerciseIds.value = [];
 });
 
 const muscleOptions = computed(() => {
@@ -98,15 +101,64 @@ const onImageError = (event) => {
   }
 };
 
+const mapExerciseForEmit = (exercise) => ({
+  ExerciseID: exercise.ExerciseID,
+  ExerciseTitle: exercise.ExerciseTitle,
+  WorkoutType: exercise.WorkoutType,
+  MuscleGroup: exercise.MuscleGroup,
+  Equipment: exercise.Equipment,
+  image: getPrimaryImage(exercise),
+});
+
+const toggleExerciseSelection = (exercise) => {
+  const id = Number(exercise?.ExerciseID || 0);
+  if (!id) {
+    return;
+  }
+
+  const index = selectedExerciseIds.value.indexOf(id);
+  if (index >= 0) {
+    selectedExerciseIds.value.splice(index, 1);
+    return;
+  }
+
+  selectedExerciseIds.value.push(id);
+};
+
+const isExerciseSelected = (exercise) => {
+  const id = Number(exercise?.ExerciseID || 0);
+  return id > 0 && selectedExerciseIds.value.includes(id);
+};
+
+const selectedExercisesPayload = computed(() => {
+  if (!selectedExerciseIds.value.length) {
+    return [];
+  }
+
+  const selectedSet = new Set(selectedExerciseIds.value);
+  const exerciseById = new Map(
+    props.exercises.map((exercise) => [Number(exercise?.ExerciseID || 0), exercise])
+  );
+
+  // Preserve explicit click-selection order.
+  return selectedExerciseIds.value
+    .filter((id) => selectedSet.has(id))
+    .map((id) => exerciseById.get(id))
+    .filter(Boolean)
+    .map(mapExerciseForEmit);
+});
+
+const addSelectedExercises = () => {
+  if (!selectedExercisesPayload.value.length) {
+    return;
+  }
+
+  emit('add', selectedExercisesPayload.value);
+  selectedExerciseIds.value = [];
+};
+
 const quickAdd = (exercise) => {
-  emit('add', {
-    ExerciseID: exercise.ExerciseID,
-    ExerciseTitle: exercise.ExerciseTitle,
-    WorkoutType: exercise.WorkoutType,
-    MuscleGroup: exercise.MuscleGroup,
-    Equipment: exercise.Equipment,
-    image: getPrimaryImage(exercise),
-  });
+  emit('add', mapExerciseForEmit(exercise));
 };
 </script>
 
@@ -184,7 +236,17 @@ const quickAdd = (exercise) => {
               <span class="picker-chip">{{ exercise.Equipment || 'Bodyweight' }}</span>
             </div>
           </div>
-          <button type="button" class="btn-add" @click="quickAdd(exercise)">Add</button>
+          <div class="picker-card__actions">
+            <label class="picker-select-toggle">
+              <input
+                type="checkbox"
+                :checked="isExerciseSelected(exercise)"
+                @change="toggleExerciseSelection(exercise)"
+              />
+              Select
+            </label>
+            <button type="button" class="btn-add" @click="quickAdd(exercise)">Add</button>
+          </div>
         </article>
 
         <div v-if="filteredExercises.length === 0" class="picker-empty">
@@ -194,6 +256,20 @@ const quickAdd = (exercise) => {
         <div v-if="visibleCount < filteredExercises.length" class="picker-load-more">
           <button type="button" class="btn-load-more" @click="loadMore">Load More</button>
         </div>
+      </div>
+
+      <div class="picker-footer">
+        <span class="picker-footer__count">
+          {{ selectedExerciseIds.length }} selected
+        </span>
+        <button
+          type="button"
+          class="btn-add-selected"
+          :disabled="selectedExerciseIds.length === 0"
+          @click="addSelectedExercises"
+        >
+          Add Selected
+        </button>
       </div>
     </div>
   </div>
@@ -218,7 +294,7 @@ const quickAdd = (exercise) => {
   border-radius: 18px;
   border: 1px solid #dbe4ef;
   display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr auto;
 }
 
 .picker-head {
@@ -382,6 +458,57 @@ const quickAdd = (exercise) => {
   cursor: pointer;
 }
 
+.picker-card__actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.picker-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.picker-select-toggle input {
+  width: 14px;
+  height: 14px;
+}
+
+.picker-footer {
+  border-top: 1px solid #e5e7eb;
+  padding: 10px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.picker-footer__count {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.btn-add-selected {
+  border: none;
+  background: #0f766e;
+  color: #ffffff;
+  border-radius: 9px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.btn-add-selected:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .picker-empty {
   text-align: center;
   color: #64748b;
@@ -396,6 +523,14 @@ const quickAdd = (exercise) => {
   .picker-card {
     grid-template-columns: 1fr;
     text-align: left;
+  }
+
+  .picker-card__actions {
+    justify-items: start;
+  }
+
+  .picker-footer {
+    flex-wrap: wrap;
   }
 
   .picker-card img {

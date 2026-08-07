@@ -276,6 +276,12 @@ export const pagesRoutes = [
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
+        path: '/admin/global-workout-plans',
+        component: () => import('@/views/Member/AdminGlobalWorkoutPlans.vue'),
+        name: 'admin_global_workout_plans',
+        meta: { layout: 'AppLayout', isPartials: true },
+    },
+    {
         path: '/tools',
         component: () => import('@/views/ToolsView.vue'),
         name: 'admin_tools',

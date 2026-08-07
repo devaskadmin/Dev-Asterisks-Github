@@ -92,6 +92,22 @@ export const sidebarMenus = ref([
                 icon: 'fa-solid fa-id-badge'
             },
             {
+                name: 'Global Workout Plans',
+                link_name: 'admin_global_workout_plans',
+                icon: 'fa-solid fa-earth-americas'
+            },
+            {
+                name: 'Chat',
+                link_name: 'chat',
+                icon: 'fa-solid fa-comments'
+            },
+        ]
+    },
+    {
+        menu_name: 'Developer Tools',
+        linkClass: 'admin-light-gray',
+        menus: [
+            {
                 name: 'Test Roles',
                 link_name: 'admin_test_roles',
                 icon: 'fa-solid fa-vial-circle-check'
@@ -100,12 +116,7 @@ export const sidebarMenus = ref([
                 name: 'Tools',
                 link_name: 'admin_tools',
                 icon: 'fa-solid fa-toolbox'
-            },
-            {
-                name: 'Chat',
-                link_name: 'chat',
-                icon: 'fa-solid fa-comments'
-            },
+            }
         ]
     },
     

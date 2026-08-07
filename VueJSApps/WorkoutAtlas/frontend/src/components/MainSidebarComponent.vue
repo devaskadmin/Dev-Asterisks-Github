@@ -80,6 +80,10 @@ const canViewAdminMenu = computed(() =>
   isAdmin.value
 )
 
+const canViewToolsMenu = computed(() =>
+  isAdmin.value
+)
+
 
 
 const shouldRenderMenuItem = (menu) => {
@@ -100,6 +104,7 @@ const findMenuByName = ((name) => {
 
       if (section.menu_name === 'Trainer' && !canViewTrainerMenu.value) continue
       if (section.menu_name === 'Administrator' && !canViewAdminMenu.value) continue
+      if (section.menu_name === 'Developer Tools' && !canViewToolsMenu.value) continue
 
       let menu = section;
       for (let j = 0; j < menu.menus.length; j++) {
@@ -193,7 +198,7 @@ onMounted(() => {
             v-for="(sidebar, index) in sidebarMenus"
             :key="`section-${index}-${sidebar.menu_name}`"
             class="sidebar-item"
-            :class="[horizontalMenuEnabled ? 'dropdown': '']"
+            :class="[horizontalMenuEnabled ? 'dropdown': '', sidebar.menu_name === 'Developer Tools' ? 'developer-tools-section' : '']"
           >
             <template v-if="sidebar.menu_name === 'Trainer'">
             <template v-if="canViewTrainerMenu">
@@ -286,6 +291,88 @@ onMounted(() => {
             </template>
             <template v-else-if="sidebar.menu_name === 'Administrator'">
             <template v-if="canViewAdminMenu">
+            <template v-if="horizontalMenuEnabled">
+              <a role="button" :class="['sidebar-link-group-title', 'has-sub', !horizontalMenuEnabled && 'sidebar-section-header', !horizontalMenuEnabled && 'app-header-gradient']" :id="'parentDropdownMenu'+index" :data-bs-toggle="[horizontalMenuEnabled ? 'dropdown' : '']" data-bs-auto-close="outside" aria-expanded="false">
+                {{ $t(sidebar.menu_name) }}
+              </a>
+            </template>
+            <template v-else>
+              <a role="button" :class="['sidebar-link-group-title', 'has-sub', !horizontalMenuEnabled && 'sidebar-section-header', !horizontalMenuEnabled && 'app-header-gradient']" data-bs-toggle="collapse" :href="`#collapseExample-${index}`" aria-expanded="false" :aria-controls="'collapseExample-'+index">
+                {{ $t(sidebar.menu_name) }}
+              </a>
+            </template>
+
+            <template v-if="sidebar.menus">
+              <ul class="sidebar-link-group" :class="[horizontalMenuEnabled ? 'dropdown-menu' : 'show']" :aria-labelledby="[horizontalMenuEnabled ? 'parentDropdownMenu'+index  : '']" :id="[horizontalMenuEnabled ? 'AppDropDownId'+index : `collapseExample-${index}`]" data-bs-parent="#testAccordionExample">
+                <template v-for="(menu, mIndex) in sidebar.menus" :key="`${index}-${mIndex}-${menu.name}`">
+                <li v-if="shouldRenderMenuItem(menu)" class="sidebar-dropdown-item">
+                  <template v-if="menu.link_name">
+                    <router-link
+                      :to="{ name: `${menu.link_name}` }"
+                      class="sidebar-link"
+                      :class="[sidebar.linkClass || '', {active : currentRoute === menu.link_name }]"
+                    >
+                      <span class="nav-icon"><i :class="menu.icon"></i></span><span class="sidebar-txt">{{ $t(menu.name) }}</span>
+                    </router-link>
+                  </template>
+                  <template v-if="menu.sub_menus">
+                    <template v-if="horizontalMenuEnabled">
+                    <a role="button" class="sidebar-link has-sub" :id="'parentSubDropdownMenu'+index" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                      <span v-if="menu.icon" class="nav-icon"><i :class="menu.icon"></i></span><span class="sidebar-txt">{{ $t(menu.name) }}</span>
+                    </a>
+                    </template>
+                    <template v-else>
+                      <a role="button" class="sidebar-link has-sub" data-bs-toggle="collapse" :href="`#subCollapseMenu-${mIndex}-${index}`" aria-expanded="false" :aria-controls="`subCollapseMenu-${mIndex}-${index}`" @click="findMenuByName(menu.name)">
+                        <span v-if="menu.icon" class="nav-icon"><i :class="menu.icon"></i></span><span class="sidebar-txt">{{ $t(menu.name) }}</span>
+                      </a>
+                    </template>
+                  </template>
+                  <ul v-click-outside="closeToggleMenu" class="sidebar-dropdown-menu collapse" :class="[horizontalMenuEnabled ? 'dropdown-menu' : '', openedMenu === menu.name ? 'd-block' : '', (layoutPosition === 'twoColumn' && index === 1) ? 'show' : '']" :id="[horizontalMenuEnabled ? `subDropDownId-${mIndex}-${index}` : `subCollapseMenu-${mIndex}-${index}`]" :aria-labelledby="[horizontalMenuEnabled ? `parentSubDropdownMenu-${mIndex}-${index}`  : '']">
+                    <li v-for="(sub_menu, sIndex) in menu.sub_menus" class="sidebar-dropdown-item">
+                      <template v-if="sub_menu.link_name">
+                        <router-link :to="{ name: `${sub_menu.link_name}` }" class="sidebar-link" :class="{active : currentRoute === sub_menu.link_name }">
+                          <span v-if="sub_menu.icon" class="nav-icon"><i :class="sub_menu.icon"></i></span><span :class="{'sidebar-txt': (currentNavbarSize !== 'small' && layoutPosition !== 'twoColumn')}">{{ sub_menu.name }}</span>
+                        </router-link>
+                      </template>
+                      <template v-else>
+                        <router-link to="#" class="sidebar-link" :class="{active : currentRoute === sub_menu.link_name }">
+                          <span v-if="sub_menu.icon" class="nav-icon"><i v-if="sub_menu.icon" :class="sub_menu.icon"></i></span> <span :class="{'sidebar-txt': currentNavbarSize !== 'small'}">{{ sub_menu.name }}</span>
+                        </router-link>
+                      </template>
+                      <template v-if="sub_menu.sub_menus">
+                        <template v-if="horizontalMenuEnabled">
+                          <a role="button" class="sidebar-link has-sub" :id="'parentSubDropdownMenu'+index" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" @click="findMenuByName(sub_menu.name)">
+                            <span v-if="sub_menu.icon" class="nav-icon"><i :class="sub_menu.icon"></i></span> <span class="sidebar-txt">{{ $t(sub_menu.name) }}</span>
+                          </a>
+                        </template>
+                        <template v-else>
+                        <a role="button" class="sidebar-link has-sub" data-bs-toggle="collapse" :href="`#subCollapseMenu-${mIndex}-${index}-${sIndex}`" aria-expanded="false" :aria-controls="`subCollapseMenu-${mIndex}-${index}-${sIndex}`" @click="findMenuByName(sub_menu.name)">
+                          <span v-if="sub_menu.icon" class="nav-icon"><i :class="sub_menu.icon"></i></span>
+                          <span :class="{'sidebar-txt': currentNavbarSize !== 'small'}">{{ sub_menu.name }}</span>
+                        </a>
+                        </template>
+                      </template>
+                      <SidebarMenuComponent
+                          v-if="sub_menu.sub_menus && sub_menu.sub_menus.length > 0"
+                          :horizontalMenuEnabled="horizontalMenuEnabled"
+                          :sub_menu="sub_menu"
+                          :menuIndexs="`${mIndex}-${index}-${sIndex}`"
+                          :currentRoute="currentRoute"
+                          :toggleMenu="findMenuByName"
+                          :openedMenu="openedMenu"
+                          :isCollapsed="isCollapsed"
+                          :closeAllDropdownMenu="closeAllDropdownMenu"
+                      />
+                    </li>
+                  </ul>
+                </li>
+                </template>
+              </ul>
+            </template>
+            </template>
+            </template>
+            <template v-else-if="sidebar.menu_name === 'Developer Tools'">
+            <template v-if="canViewToolsMenu">
             <template v-if="horizontalMenuEnabled">
               <a role="button" :class="['sidebar-link-group-title', 'has-sub', !horizontalMenuEnabled && 'sidebar-section-header', !horizontalMenuEnabled && 'app-header-gradient']" :id="'parentDropdownMenu'+index" :data-bs-toggle="[horizontalMenuEnabled ? 'dropdown' : '']" data-bs-auto-close="outside" aria-expanded="false">
                 {{ $t(sidebar.menu_name) }}
@@ -617,5 +704,11 @@ onMounted(() => {
 .wa-sidebar-scroll::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--wa-sidebar-divider) 80%, transparent 20%);
   border-radius: 2px;
+}
+
+@media (max-width: 600px) {
+  .developer-tools-section {
+    display: none !important;
+  }
 }
 </style>

@@ -1450,7 +1450,15 @@ const demoLogin = async (role) => {
   }
 
   .wa-login::before {
-    background-position: 58% center;
+    background-position: center center;
+  }
+
+  .wa-login::after {
+    background: linear-gradient(
+      180deg,
+      rgba(1, 8, 18, 0.62),
+      rgba(1, 8, 18, 0.78)
+    );
   }
 }
 

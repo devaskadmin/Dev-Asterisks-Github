@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS workout_schedules (
   title VARCHAR(150) NOT NULL,
   description TEXT DEFAULT NULL,
   workout_type VARCHAR(50) NOT NULL DEFAULT 'Strength',
+  workout_plan_type ENUM('featured', 'community_shared') DEFAULT NULL,
   estimated_duration_minutes INT(11) NOT NULL DEFAULT 0,
   status ENUM('draft', 'active', 'archived') NOT NULL DEFAULT 'draft',
   visibility ENUM('private', 'unlisted', 'public') NOT NULL DEFAULT 'private',

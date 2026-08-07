@@ -14,7 +14,7 @@ const IS_LOCALHOST = typeof window !== 'undefined' && ["localhost", "127.0.0.1"]
 const publicPages = ['login', 'register', 'reset_password', 'terms_policy'];
 const errorPages = ['error_400', 'error_403', 'error_404', 'error_408', 'error_500', 'error_503', 'error_504'];
 const alwaysAllowedPages = new Set([...publicPages, ...errorPages]);
-const adminOnlyPages = new Set(['admin_users', 'admin_roles', 'admin_test_roles', 'admin_tools']);
+const adminOnlyPages = new Set(['admin_users', 'admin_roles', 'admin_global_workout_plans', 'admin_test_roles', 'admin_tools']);
 
 const safeParseStoredUser = () => {
   try {
