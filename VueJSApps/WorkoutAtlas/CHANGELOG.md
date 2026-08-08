@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.85.gbp.33-stage1d] - 2026-08-07 - Dashboard2 Scroll Behavior Alignment
+
+- Removed Dashboard2 route-specific scroll-lock behavior from the body.
+- Removed Dashboard2 internal fixed-height/overflow-y scroll container behavior.
+- Restored Dashboard2 to native page-level vertical scrolling flow consistent with Workout Log.
+- Kept Dashboard2 shell structure, width, and alignment rules unchanged.
+- Preserved Dashboard2 card and section styling.
+- Updated version references from `0.85.gbp.33-stage1c` to `0.85.gbp.33-stage1d`.
+
+## [0.85.gbp.33-stage1c] - 2026-08-07 - Dashboard2 Inner Layout Neutralization
+
+- Removed Dashboard2-specific inner page layout behavior that created a secondary width system inside the shared shell.
+- Kept Dashboard2 outer shell unchanged (`app-page-shell`, `app-page-canvas`, `app-inner-shell`).
+- Neutralized `.wa-dashboard` to a transparent wrapper and constrained `.wa-dashboard-main` to shell width.
+- Replaced greeting-row auto sizing with bounded grid sizing to prevent max-content width expansion from dashboard inner controls.
+- Preserved Dashboard card/component visual styling (greeting, focus, summary, charts, progress, nutrition).
+- Updated version references from `0.85.gbp.33-stage1b` to `0.85.gbp.33-stage1c`.
+
+## [0.85.gbp.33-stage1b] - 2026-08-07 - Temporary Dashboard2 Sidebar Link
+
+- Added a temporary `Dashboard2` link in the Dashboard sidebar menu section for layout testing.
+- Kept existing `Dashboard` link unchanged and still mapped to `/dashboard`.
+- Mapped `Dashboard2` link to temporary `/dashboard2` route.
+- Preserved existing menu permissions and active-link route-name highlighting behavior.
+- Updated version references from `0.85.gbp.33-stage1` to `0.85.gbp.33-stage1b`.
+
+## [0.85.gbp.33-stage1] - 2026-08-07 - Dashboard2 Shell Alignment Test Route
+
+- Added temporary `Dashboard2` member view at `/dashboard2` for shell alignment validation.
+- Dashboard2 reuses Workout Log's known-good outer shell classes: `app-page-shell`, `app-page-canvas`, and `app-inner-shell`.
+- Moved Dashboard inner sections/content into Dashboard2 without copying dashboard-only shell wrappers.
+- Intentionally did not copy `wa-dashboard-shell`, `wa-dashboard-canvas`, or additional dashboard-specific shell width wrappers.
+- Kept original `/dashboard` page unchanged for side-by-side comparison.
+- Updated version references from `0.85.gbp.32` to `0.85.gbp.33-stage1` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.32] - 2026-08-07 - Dashboard Container Alignment Correction
+
+- Removed Dashboard-only wrapper spacing conflict that caused extra inner width/padding relative to Workout Log.
+- Stopped overriding shared `app-page-canvas app-inner-shell` horizontal spacing in Dashboard wrapper.
+- Removed Dashboard-specific horizontal padding additions on `.wa-dashboard` at base/tablet/desktop/mobile breakpoints.
+- Kept Dashboard visual theme, shared global layout CSS, main-content, sidebar width, Workout Log CSS, and Workout Builder CSS unchanged.
+- Aligned Dashboard inner content boundaries with Workout Log at matching viewport sizes.
+- Updated version references from `0.85.gbp.31` to `0.85.gbp.32` in frontend/backend package metadata and frontend app version env value.
+
+## [0.85.gbp.31] - 2026-08-07 - Advanced Theming/Layout Customization Removal
+
+- Removed the advanced layout/theme side panel entry point and panel rendering from the main app shell.
+- Removed customization controls for Nav Position, Theme Direction, Primary Color, Theme Color, Navbar Size, and Sidebar Background.
+- Removed Save Layout Settings and related theme-override persistence wiring.
+- Removed obsolete customization-only components under the layout-setting side panel.
+- Standardized runtime startup behavior to enforce canonical WorkoutAtlas defaults and ignore prior advanced override keys.
+- Preserved current default WorkoutAtlas visual design, desktop/mobile layouts, and existing page/component styling.
+- Updated version references from `0.85.gbp.30` to `0.85.gbp.31` in frontend/backend package metadata and frontend app version env value.
+
 ## 0.85.gbp.30 - August 7, 2026
 
 ### Workout Builder

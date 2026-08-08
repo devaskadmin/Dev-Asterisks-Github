@@ -2,7 +2,6 @@
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { API_BASE } from '@/config/env';
 import { useAuth } from '@/composable/useAuth';
-import { getDefaultTheme, sanitizeTheme } from '@/composable/manageThemeSetting';
 import AvatarModal from '@/components/AvatarModal.vue';
 
 const activeTab = ref('profile')
@@ -57,19 +56,9 @@ const notifications = reactive({
 })
 
 const display = reactive({
-  theme: 'dark',
   language: 'en',
   dashboardLayout: 'detailed',
   startPage: 'dashboard',
-  navPosition: 'vertical',
-  themeDirection: 'ltr',
-  primaryColor: 'blue-color',
-  themeColor: getDefaultTheme(),
-  navbarSize: 'default',
-  sidebarBackground: '',
-  mainBackground: '',
-  preloaderEnabled: true,
-  hideThemeSidebar: false,
 })
 
 const security = reactive({
@@ -91,13 +80,10 @@ async function save() {
 
   if (isAdmin.value) {
     settingsPayload.settings.display = {
-      theme: display.theme,
       language: display.language,
       dashboardLayout: display.dashboardLayout,
       startPage: display.startPage,
-      hideThemeSidebar: display.hideThemeSidebar,
     }
-    settingsPayload.settings.themeConfig = collectThemeConfig()
   }
 
   try {
@@ -113,9 +99,6 @@ async function save() {
       throw new Error(err?.error || 'Failed to save settings.')
     }
 
-    if (isAdmin.value) {
-      applyThemeConfigToLocalStorage()
-    }
     saveStatus.value = 'saved'
     successMsg.value = 'Settings saved successfully.'
     setTimeout(() => {
@@ -170,117 +153,6 @@ const notifOptions = [
   { key: 'productUpdates',     label: 'Product Updates',     desc: 'New features and announcements',          icon: 'fa-solid fa-rocket' },
 ]
 
-const themeOptions = [
-  { value: 'dark',  label: 'Dark',   icon: 'fa-solid fa-moon' },
-  { value: 'light', label: 'Light',  icon: 'fa-solid fa-sun' },
-  { value: 'auto',  label: 'System', icon: 'fa-solid fa-circle-half-stroke' },
-]
-
-const navPositionOptions = [
-  { value: 'vertical', label: 'Vertical' },
-  { value: 'horizontal', label: 'Horizontal' },
-  { value: 'twoColumn', label: 'Two Column' },
-  { value: 'flushMenu', label: 'Flush' },
-]
-
-const themeDirectionOptions = [
-  { value: 'ltr', label: 'LTR' },
-  { value: 'rtl', label: 'RTL' },
-]
-
-const primaryColorOptions = [
-  'blue-color', 'orange-color', 'pink-color', 'eagle_green-color', 'purple-color',
-  'gold-color', 'green-color', 'deep_pink-color', 'tea_green-color', 'yellow_green-color'
-]
-
-const themeColorOptions = [
-  { value: 'light-theme', label: 'Light Theme' },
-  { value: 'dark-theme', label: 'Dark Theme' },
-  { value: 'blue-theme', label: 'Blue Theme' },
-]
-
-const navbarSizeOptions = [
-  { value: 'default', label: 'Default' },
-  { value: 'small', label: 'Small' },
-  { value: 'expand', label: 'Expand on Hover' },
-]
-
-const buildAssetUrl = (name) => new URL(`/src/assets/images/${name}`, import.meta.url).toString();
-
-const sidebarBackgroundOptions = [
-  { value: '', label: 'None' },
-  { value: buildAssetUrl('nav-bg-1.jpg'), label: 'Nav BG 1' },
-  { value: buildAssetUrl('nav-bg-2.jpg'), label: 'Nav BG 2' },
-  { value: buildAssetUrl('nav-bg-3.jpg'), label: 'Nav BG 3' },
-  { value: buildAssetUrl('nav-bg-4.jpg'), label: 'Nav BG 4' },
-]
-
-const mainBackgroundOptions = [
-  { value: '', label: 'None' },
-  { value: buildAssetUrl('main-bg-1.jpg'), label: 'Main BG 1' },
-  { value: buildAssetUrl('main-bg-2.jpg'), label: 'Main BG 2' },
-  { value: buildAssetUrl('main-bg-3.jpg'), label: 'Main BG 3' },
-  { value: buildAssetUrl('main-bg-4.jpg'), label: 'Main BG 4' },
-]
-
-const collectThemeConfig = () => ({
-  navPosition: display.navPosition,
-  themeDirection: display.themeDirection,
-  primaryColor: display.primaryColor,
-  themeColor: display.themeColor,
-  navbarSize: display.navbarSize,
-  sidebarBackground: display.sidebarBackground,
-  mainBackground: display.mainBackground,
-  preloaderEnabled: !!display.preloaderEnabled,
-  hideThemeSidebar: !!display.hideThemeSidebar,
-})
-
-const applyThemeConfigToLocalStorage = () => {
-  if (!isAdmin.value) return
-
-  const cfg = collectThemeConfig();
-
-  localStorage.setItem('layoutPosition', cfg.navPosition);
-  localStorage.setItem('layoutDirection', cfg.themeDirection);
-  localStorage.setItem('selectedStyleSheet', cfg.primaryColor);
-  localStorage.setItem('currentActiveTheme', cfg.themeColor);
-  localStorage.setItem('preloaderEnabled', String(cfg.preloaderEnabled));
-  localStorage.setItem('hideThemeSidebar', String(cfg.hideThemeSidebar));
-
-  if (cfg.navbarSize === 'small') {
-    localStorage.setItem('sidebarSmall', 'enabled');
-    localStorage.removeItem('sidebarHover');
-  } else if (cfg.navbarSize === 'expand') {
-    localStorage.setItem('sidebarHover', 'enabled');
-    localStorage.removeItem('sidebarSmall');
-  } else {
-    localStorage.removeItem('sidebarHover');
-    localStorage.removeItem('sidebarSmall');
-  }
-
-  if (cfg.sidebarBackground) localStorage.setItem('navbackgroundImage', cfg.sidebarBackground);
-  else localStorage.removeItem('navbackgroundImage');
-
-  if (cfg.mainBackground) localStorage.setItem('mainBackgroundImage', cfg.mainBackground);
-  else localStorage.removeItem('mainBackgroundImage');
-
-  window.dispatchEvent(new CustomEvent('ff-theme-settings-updated', { detail: cfg }));
-}
-
-const loadDisplayFromLocalStorage = () => {
-  if (!isAdmin.value) return
-
-  display.navPosition = localStorage.getItem('layoutPosition') || display.navPosition;
-  display.themeDirection = localStorage.getItem('layoutDirection') || display.themeDirection;
-  display.primaryColor = localStorage.getItem('selectedStyleSheet') || display.primaryColor;
-  display.themeColor = sanitizeTheme(localStorage.getItem('currentActiveTheme') || display.themeColor);
-  display.navbarSize = localStorage.getItem('sidebarHover') ? 'expand' : localStorage.getItem('sidebarSmall') ? 'small' : 'default';
-  display.sidebarBackground = localStorage.getItem('navbackgroundImage') || '';
-  display.mainBackground = localStorage.getItem('mainBackgroundImage') || '';
-  display.preloaderEnabled = localStorage.getItem('preloaderEnabled') !== 'false';
-  display.hideThemeSidebar = localStorage.getItem('hideThemeSidebar') === 'true';
-}
-
 const loadUserSettings = async () => {
   try {
     const response = await fetch(`${API_BASE}/api/user-profile-settings`, { credentials: 'include' });
@@ -289,38 +161,14 @@ const loadUserSettings = async () => {
     applyProfileFromServer(data?.profile || {});
     const settings = data?.settings || {};
     const persistedDisplay = settings?.display || {};
-    const cfg = settings?.themeConfig || {};
-
     if (isAdmin.value) {
-      display.theme = persistedDisplay.theme || display.theme;
       display.language = persistedDisplay.language || display.language;
       display.dashboardLayout = persistedDisplay.dashboardLayout || display.dashboardLayout;
       display.startPage = persistedDisplay.startPage || display.startPage;
-
-      display.navPosition = cfg.navPosition || display.navPosition;
-      display.themeDirection = cfg.themeDirection || display.themeDirection;
-      display.primaryColor = cfg.primaryColor || display.primaryColor;
-      display.themeColor = sanitizeTheme(cfg.themeColor || display.themeColor);
-      display.navbarSize = cfg.navbarSize || display.navbarSize;
-      display.sidebarBackground = cfg.sidebarBackground ?? display.sidebarBackground;
-      display.mainBackground = cfg.mainBackground ?? display.mainBackground;
-      display.preloaderEnabled = typeof cfg.preloaderEnabled === 'boolean' ? cfg.preloaderEnabled : display.preloaderEnabled;
-      if (typeof cfg.hideThemeSidebar === 'boolean') {
-        display.hideThemeSidebar = cfg.hideThemeSidebar;
-      } else if (typeof persistedDisplay.hideThemeSidebar === 'boolean') {
-        display.hideThemeSidebar = persistedDisplay.hideThemeSidebar;
-      }
-
-      applyThemeConfigToLocalStorage();
     }
   } catch (_) {
     // keep local fallback
   }
-}
-
-const saveThemeVisibility = async () => {
-  if (!isAdmin.value) return
-  await save();
 }
 
 const isLikelyEmail = (value) => /@/.test(String(value || ''));
@@ -701,18 +549,7 @@ watch(
         <section v-if="isAdmin && activeTab==='display'" class="s-panel panel-bg">
           <div class="s-panel-head">
             <h4 class="s-panel-title">Display and App</h4>
-            <p class="s-panel-sub">Theme, language and layout preferences</p>
-          </div>
-          <div class="ff-field full-width mb-20">
-            <label class="ff-label">Theme</label>
-            <div class="theme-tiles">
-              <button v-for="t in themeOptions" :key="t.value"
-                class="theme-tile" :class="{ active: display.theme===t.value }"
-                @click="display.theme=t.value">
-                <i :class="t.icon"></i>
-                <span>{{ t.label }}</span>
-              </button>
-            </div>
+            <p class="s-panel-sub">Language and application preferences</p>
           </div>
           <div class="ff-form-grid">
             <div class="ff-field">
@@ -739,70 +576,6 @@ watch(
                 <option value="workouts">Workouts</option>
                 <option value="nutrition">Nutrition</option>
               </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Nav Position</label>
-              <select v-model="display.navPosition" class="form-select">
-                <option v-for="opt in navPositionOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Theme Direction</label>
-              <select v-model="display.themeDirection" class="form-select">
-                <option v-for="opt in themeDirectionOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Primary Color</label>
-              <select v-model="display.primaryColor" class="form-select">
-                <option v-for="opt in primaryColorOptions" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Theme Color</label>
-              <select v-model="display.themeColor" class="form-select">
-                <option v-for="opt in themeColorOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Navbar Size</label>
-              <select v-model="display.navbarSize" class="form-select">
-                <option v-for="opt in navbarSizeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Sidebar Background</label>
-              <select v-model="display.sidebarBackground" class="form-select">
-                <option v-for="opt in sidebarBackgroundOptions" :key="opt.label" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Main Background</label>
-              <select v-model="display.mainBackground" class="form-select">
-                <option v-for="opt in mainBackgroundOptions" :key="opt.label" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-
-            <div class="ff-field">
-              <label class="ff-label">Main Preloader</label>
-              <select v-model="display.preloaderEnabled" class="form-select">
-                <option :value="true">Enabled</option>
-                <option :value="false">Disabled</option>
-              </select>
-            </div>
-
-            <div v-if="isAdmin" class="ff-field full-width">
-              <label class="ff-check-row">
-                <input type="checkbox" v-model="display.hideThemeSidebar" @change="saveThemeVisibility" />
-                <span>Hide - Theming side menu advanced theming config</span>
-              </label>
             </div>
           </div>
         </section>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { API_BASE } from '@/config/env'
@@ -325,8 +325,6 @@ const goToQuickAction = (route) => {
 }
 
 onMounted(async () => {
-  document.body.classList.add('wa-dashboard-active')
-
   await authStore.fetchUser()
 
   try {
@@ -339,15 +337,11 @@ onMounted(async () => {
 
   await Promise.all([fetchDashboardStats(), fetchActivityFeed(), fetchNutritionActivity()])
 })
-
-onUnmounted(() => {
-  document.body.classList.remove('wa-dashboard-active')
-})
 </script>
 
 <template>
-  <div class="app-page-shell wa-dashboard-shell">
-    <div class="app-page-canvas app-inner-shell wa-dashboard-canvas">
+  <div class="app-page-shell wl-page workout-log-mobile">
+    <div class="app-page-canvas app-inner-shell">
       <div class="wa-dashboard">
         <main class="wa-dashboard-main">
       <section class="wa-greeting-row">
@@ -520,19 +514,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.wa-dashboard-shell {
-  display: block;
-}
-
-.wa-dashboard-canvas {
-  width: 100%;
-  min-width: 0;
-  padding: 0 !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
 .wa-dashboard {
   --wa-accent: var(--wa-shell-accent, var(--main-color, #2563eb));
   --wa-accent-hover: color-mix(in srgb, var(--wa-accent) 84%, #ffffff 16%);
@@ -547,16 +528,22 @@ onUnmounted(() => {
   --wa-text-secondary: var(--wa-shell-text-secondary, #a5afbd);
   --wa-text-muted: var(--wa-shell-text-muted, #748094);
 
-  min-height: calc(100vh - 70px);
-  background: var(--wa-background);
-  color: var(--wa-text-primary);
-  padding: 20px 16px calc(90px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
   overflow-x: clip;
 }
 
 .wa-dashboard-main {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   display: grid;
   gap: 16px;
@@ -564,7 +551,7 @@ onUnmounted(() => {
 
 .wa-greeting-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
   align-items: center;
   column-gap: 24px;
   position: relative;
@@ -615,8 +602,9 @@ onUnmounted(() => {
 
 .wa-date-picker-wrap {
   justify-self: end;
-  width: clamp(320px, 31vw, 460px);
-  max-width: 100%;
+  width: 100%;
+  max-width: 460px;
+  min-width: 0;
   margin: 0;
   padding: 0;
 }
@@ -653,11 +641,13 @@ onUnmounted(() => {
   background: var(--wa-control-bg, #252E48) !important;
   border: 1px solid var(--wa-border, rgba(145, 160, 200, 0.24)) !important;
   color: var(--wa-text-primary, #F7F9FF) !important;
+  -webkit-text-fill-color: var(--wa-text-primary, #F7F9FF) !important;
+  opacity: 1 !important;
 }
 
 .wa-date-picker-wrap :deep(.mx-icon-calendar),
 .wa-date-picker-wrap :deep(.mx-icon-clear) {
-  color: var(--wa-text-secondary, #c7d3ee) !important;
+  color: #ffffff !important;
 }
 
 .wa-hero-card,
@@ -1061,18 +1051,10 @@ onUnmounted(() => {
 }
 
 @media (min-width: 768px) {
-  .wa-dashboard {
-    padding: 20px 24px 38px;
-  }
 }
 
 @media (min-width: 1024px) {
-  .wa-dashboard {
-    padding: 20px 24px 40px;
-  }
-
   .wa-dashboard-main {
-    max-width: 100%;
     gap: 14px;
   }
 
@@ -1086,10 +1068,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
-  .wa-dashboard {
-    padding: 12px 12px calc(86px + env(safe-area-inset-bottom));
-  }
-
   .wa-dashboard-main,
   .wa-greeting-row,
   .wa-hero-card,
@@ -1165,35 +1143,10 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 600px) {
-  .wa-dashboard {
-    padding-bottom: calc(120px + var(--wa-mobile-bottom-nav-clearance, 0px));
-  }
-}
-
 @media (max-width: 430px) {
   .wa-greeting h1 {
     font-size: 24px;
   }
 }
 
-/* Prevent the floating theme settings control from covering dashboard cards. */
-:global(body.wa-dashboard-active .right-sidebar-btn) {
-  top: auto;
-  bottom: 102px;
-  right: 12px;
-  z-index: 40;
-}
-
-@media (min-width: 768px) {
-  :global(body.wa-dashboard-active .right-sidebar-btn) {
-    bottom: 18px;
-  }
-}
-
-@media (max-width: 767px) {
-  :global(body.wa-dashboard-active .right-sidebar-btn) {
-    display: none !important;
-  }
-}
 </style>

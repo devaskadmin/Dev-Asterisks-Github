@@ -2,20 +2,18 @@
 import {computed, onMounted, onUnmounted, provide, ref, shallowRef, watch} from "vue";
 import {RouterView, useRoute} from 'vue-router';
 import {OverlayScrollbars} from "overlayscrollbars";
-import {changeCurrentTheme, currentActiveTheme, sanitizeTheme, syncThemePreference} from "@/composable/manageThemeSetting.js";
-import {layoutDirection, setRtl, setLtr} from "@/composable/themeDirectionSetting";
-import {selectedStyleSheet, setStyleSheet} from "@/composable/primaryColorChangeSetting";
+import {changeCurrentTheme, currentActiveTheme, sanitizeTheme, getDefaultTheme} from "@/composable/manageThemeSetting.js";
+import {layoutDirection, setLtr} from "@/composable/themeDirectionSetting";
+import {setStyleSheet} from "@/composable/primaryColorChangeSetting";
 import {useMainContentCurrentBG} from "@/composable/mainContentBackgroundSetting";
 import {preloader} from "@/composable/disableEnablePreloaderSetting";
-import {hoverableMenu, currentNavbarSize, handleNavbarSize, sidebarHoverClick, sidebarSmallClick} from "@/composable/navbarSizeSetting";
+import {hoverableMenu, handleNavbarSize} from "@/composable/navbarSizeSetting";
 import {layoutPosition, handleNavPositionClick} from "@/composable/navPositionSetting";
-import { API_BASE } from '@/config/env';
 import { useAuth } from '@/composable/useAuth';
 
 import FooterComponent from "@/components/FooterComponent.vue";
 import MainSidebarComponent from "@/components/MainSidebarComponent.vue";
 import HeaderComponent from "@/components/HeaderComponent.vue";
-import RightSidebarComponent from "@/components/RightSidebarComponent.vue";
 import ProfileRightSidebarComponent from "@/components/ProfileRightSidebarComponent.vue";
 import AppBottomNav from "@/components/navigation/AppBottomNav.vue";
 
@@ -45,10 +43,6 @@ const isSubMenuCollapsed = ref(false);
 const hasFixedSidebar = ref(false);
 const isTwoColumnMenu = ref(false);
 
-const isSidebarActive = ref(false);
-const isBodyOverflowHidden = ref(false);
-const hideThemeSidebar = ref(localStorage.getItem('hideThemeSidebar') === 'true');
-
 const normalizedRole = computed(() => {
   return String(
     authStore.user?.value?.role ||
@@ -60,29 +54,22 @@ const normalizedRole = computed(() => {
 })
 
 const isAdmin = computed(() => ['admin', 'administrator'].includes(normalizedRole.value))
-const canShowThemeControls = computed(() => isAdmin.value && !hideThemeSidebar.value)
+
+const CANONICAL_THEME = getDefaultTheme()
+const CANONICAL_DIRECTION = 'ltr'
+const CANONICAL_COLOR = import.meta.env.VITE_DEFAULT_COLOR || 'blue-color'
+const LEGACY_THEME_OVERRIDE_KEYS = [
+  'hideThemeSidebar',
+  'navbackgroundImage',
+  'mainBackgroundImage',
+  'sidebarHover',
+  'sidebarSmall',
+  'preloaderEnabled',
+]
 
 const isActive = ref(false);
 const profileBtnId = ref('');
 const dataBsToggle = ref('');
-
-const isLightTheme = computed(() => {
-  return currentActiveTheme.value === 'light-theme';
-})
-
-const profileToggleSidebar = (event) => {
-  if (event.target.checked) {
-    profileBtnId.value = 'profileDropdown';
-    dataBsToggle.value = '';
-    isActive.value = true;
-    document.body.classList.add('overflow-hidden');
-  } else {
-    profileBtnId.value = '';
-    dataBsToggle.value = 'dropdown';
-    isActive.value = false;
-    document.body.classList.remove('overflow-hidden');
-  }
-};
 
 const profileToggleDropdown = (event) => {
   if (event.target.checked) {
@@ -190,21 +177,6 @@ const onDocumentClick = (e) => {
   }
 };
 
-const toggleSidebar = (e) => {
-  if (!isAdmin.value) {
-    closeSidebar()
-    return
-  }
-  e.stopPropagation();
-  isSidebarActive.value = !isSidebarActive.value;
-  isBodyOverflowHidden.value = !isBodyOverflowHidden.value;
-};
-
-const closeSidebar = () => {
-  isSidebarActive.value = false;
-  isBodyOverflowHidden.value = false;
-};
-
 const applyBodyThemeClass = (themeValue) => {
   const normalizedTheme = sanitizeTheme(themeValue);
   const element = document.body;
@@ -221,77 +193,25 @@ const applyBodyThemeClass = (themeValue) => {
   }
 };
 
-const applyThemeConfig = (themeConfig = {}) => {
-  if (!isAdmin.value) {
-    closeSidebar()
-    return
-  }
-  if (!themeConfig || typeof themeConfig !== 'object') return;
+const applyCanonicalAppearance = () => {
+  LEGACY_THEME_OVERRIDE_KEYS.forEach((key) => localStorage.removeItem(key));
 
-  if (themeConfig.themeColor) {
-    changeCurrentTheme(themeConfig.themeColor);
-  }
+  const hasNavbarControls = Boolean(document.querySelector('.nav-close-btn'));
 
-  if (themeConfig.themeDirection === 'rtl') {
-    setRtl();
-  } else if (themeConfig.themeDirection === 'ltr') {
-    setLtr();
-  }
-
-  if (themeConfig.primaryColor) {
-    setStyleSheet(themeConfig.primaryColor);
-  }
-
-  if (themeConfig.navPosition) {
-    handleNavPositionClick(themeConfig.navPosition);
-  }
-
-  if (themeConfig.navbarSize === 'small') {
-    sidebarSmallClick({ preventDefault: () => {}, stopPropagation: () => {} });
-  } else if (themeConfig.navbarSize === 'expand') {
-    sidebarHoverClick();
-  } else {
+  if (isProtectedUiRoute() && hasNavbarControls) {
     handleNavbarSize();
+    handleNavPositionClick('vertical');
   }
 
-  if (typeof themeConfig.sidebarBackground === 'string') {
-    if (themeConfig.sidebarBackground) {
-      localStorage.setItem('navbackgroundImage', themeConfig.sidebarBackground);
-    } else {
-      localStorage.removeItem('navbackgroundImage');
-    }
-  }
+  setLtr();
+  setStyleSheet(CANONICAL_COLOR);
+  changeCurrentTheme(CANONICAL_THEME);
+  useMainContentCurrentBG();
 
-  if (typeof themeConfig.mainBackground === 'string') {
-    if (themeConfig.mainBackground) {
-      localStorage.setItem('mainBackgroundImage', themeConfig.mainBackground);
-    } else {
-      localStorage.removeItem('mainBackgroundImage');
-    }
-    useMainContentCurrentBG();
-  }
-
-  if (typeof themeConfig.preloaderEnabled === 'boolean') {
-    localStorage.setItem('preloaderEnabled', String(themeConfig.preloaderEnabled));
-
-    // Do not leave the global loader permanently visible.
-    // If enabled, briefly show it then auto-hide.
-    if (themeConfig.preloaderEnabled) {
-      preloader.value = true;
-      window.setTimeout(() => {
-        preloader.value = false;
-      }, 650);
-    } else {
-      preloader.value = false;
-    }
-  }
-
-  if (typeof themeConfig.hideThemeSidebar === 'boolean') {
-    hideThemeSidebar.value = themeConfig.hideThemeSidebar;
-    localStorage.setItem('hideThemeSidebar', String(themeConfig.hideThemeSidebar));
-    if (themeConfig.hideThemeSidebar) {
-      closeSidebar();
-    }
+  currentActiveTheme.value = sanitizeTheme(localStorage.getItem('currentActiveTheme') || CANONICAL_THEME);
+  applyBodyThemeClass(currentActiveTheme.value);
+  if (layoutDirection.value !== CANONICAL_DIRECTION) {
+    layoutDirection.value = CANONICAL_DIRECTION;
   }
 };
 
@@ -302,30 +222,6 @@ const isProtectedUiRoute = (routeLike = route) => {
 const syncRouteShellState = (routeLike = route) => {
   isPartials.value = Boolean(routeLike?.meta?.isPartials);
   layout.value = layouts[routeLike?.meta?.layout] || 'div';
-};
-
-const loadUserThemeSettings = async () => {
-  if (!isProtectedUiRoute()) return;
-  if (!isAdmin.value) return;
-
-  try {
-    const response = await fetch(`${API_BASE}/api/user-profile-settings`, {
-      credentials: 'include',
-    });
-    if (!response.ok) return;
-
-    const data = await response.json();
-    const settings = data?.settings || {};
-    const themeConfig = settings.themeConfig || {};
-    applyThemeConfig(themeConfig);
-  } catch (e) {
-    // Non-blocking: app still works with localStorage defaults.
-  }
-};
-
-const onThemeSettingsUpdated = (event) => {
-  if (!isAdmin.value) return
-  applyThemeConfig(event?.detail || {});
 };
 
 onMounted(() => {
@@ -344,23 +240,7 @@ onMounted(() => {
 
   document.addEventListener('click', onDocumentClick);
   syncRouteShellState(route)
-  if (isProtectedUiRoute()) {
-    loadUserThemeSettings()
-  }
-  currentActiveTheme.value = syncThemePreference();
-  applyBodyThemeClass(currentActiveTheme.value);
-
-  if (layoutDirection.value === 'rtl') {
-    setRtl();
-  } else {
-    setLtr();
-  }
-
-  if (selectedStyleSheet.value) {
-      setStyleSheet(selectedStyleSheet.value);
-    }
-  useMainContentCurrentBG()
-  window.addEventListener('ff-theme-settings-updated', onThemeSettingsUpdated)
+  applyCanonicalAppearance()
 
   mobileNavMql = window.matchMedia('(max-width: 768px)');
   syncMobileViewportState(mobileNavMql.matches);
@@ -373,7 +253,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('ff-theme-settings-updated', onThemeSettingsUpdated)
   if (mobileNavMql?.removeEventListener) {
     mobileNavMql.removeEventListener('change', onMobileViewportChange);
   } else if (mobileNavMql?.removeListener) {
@@ -392,19 +271,9 @@ watch(layoutDirection, () => {
   }
 })
 
-watch(selectedStyleSheet, () => {
-  setStyleSheet(selectedStyleSheet.value)
-})
-
 watch(currentActiveTheme, () => {
   currentActiveTheme.value = sanitizeTheme(currentActiveTheme.value);
   applyBodyThemeClass(currentActiveTheme.value);
-})
-
-watch(isAdmin, (nextIsAdmin) => {
-  if (!nextIsAdmin) {
-    closeSidebar()
-  }
 })
 
 watch(
@@ -423,7 +292,7 @@ router.afterEach((to) => {
   }
 
   if (isProtectedUiRoute(to)) {
-    loadUserThemeSettings()
+    applyCanonicalAppearance()
   }
 });
 
@@ -459,8 +328,8 @@ provide('app:layout', layout.value)
         <HeaderComponent v-if="isPartials"
           :onNavCloseClick="onNavCloseClick"
           :isExpanded="isExpanded"
-          :toggleSidebar="toggleSidebar"
-          :canUseThemeSettings="isAdmin"
+          :toggleSidebar="() => {}"
+          :canUseThemeSettings="false"
           :profileToggleSidebar="handleProfileClick"
       />
       <!-- header end -->
@@ -472,18 +341,6 @@ provide('app:layout', layout.value)
         :closeProfileSidebar="closeProfileSidebar"
       />
       <!-- profile right sidebar end -->
-
-      <div v-if="isPartials && canShowThemeControls" class="right-sidebar-btn d-lg-block d-none">
-        <button class="header-btn theme-settings-btn" @click="toggleSidebar"><i class="fa-light fa-gear"></i></button>
-      </div>
-
-      <!-- right sidebar start -->
-      <RightSidebarComponent v-if="isPartials && canShowThemeControls"
-        :isSidebarActive="isSidebarActive"
-        :closeSidebar="closeSidebar"
-        :isLightTheme="isLightTheme"
-      />
-      <!-- right sidebar end -->
 
       <!-- main sidebar start -->
         <MainSidebarComponent v-if="isPartials && (!isMobileBottomNav || isMobileMenuOpen)"
@@ -629,26 +486,7 @@ body.wa-dashboard-active .mx-calendar-header .mx-btn:hover i {
   color: var(--wa-shell-accent) !important;
 }
 
-body.wa-dashboard-active .right-sidebar-btn button {
-  background: var(--wa-shell-surface-elevated) !important;
-  color: var(--wa-shell-accent) !important;
-  border: 1px solid var(--wa-shell-border) !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3) !important;
-}
-
-body.wa-dashboard-active .right-sidebar-btn button:hover {
-  background: color-mix(in srgb, var(--wa-shell-surface-elevated) 82%, var(--wa-shell-accent-soft) 18%) !important;
-}
-
 /* ── WorkoutAtlas layout cleanup ─────────────────────────── */
-
-/* Settings gear: pull 12px inward so it never covers the scrollbar */
-.right-sidebar-btn {
-  right: 12px !important;
-}
-.right-sidebar-btn button {
-  border-radius: 6px !important;
-}
 
 /* Sidebar right border — separates sidebar from content area */
 .main-sidebar {
