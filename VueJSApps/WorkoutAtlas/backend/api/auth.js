@@ -5,6 +5,11 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const dbConfig = require('../dbConfig');
 const { sanitizeText, parseNumber } = require('../utils/sanitize.js');
+const {
+  isGoogleAuthEnabled,
+  verifyGoogleIdToken,
+  GoogleTokenVerificationError,
+} = require('../services/googleIdTokenVerificationService');
 
 // ✅ DB Connect
 const pool = require('../db.js');
@@ -219,6 +224,41 @@ router.get('/debug/login-diagnostics', (req, res) => {
       platform: process.platform,
     },
   });
+});
+
+// POST /api/auth/google/verify
+// Google-auth foundation endpoint only: verifies ID token cryptographically
+// and claim integrity. No account creation/linking/session issuance occurs here.
+router.post('/auth/google/verify', async (req, res) => {
+  if (!isGoogleAuthEnabled()) {
+    return res.status(404).json({ error: 'Feature not available.' });
+  }
+
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || !Object.prototype.hasOwnProperty.call(body, 'idToken')) {
+    return res.status(400).json({ error: 'Invalid request.' });
+  }
+
+  try {
+    const result = await verifyGoogleIdToken(body.idToken);
+    return res.status(200).json(result);
+  } catch (err) {
+    if (err instanceof GoogleTokenVerificationError) {
+      if (err.statusCode === 400) {
+        return res.status(400).json({ error: 'Invalid request.' });
+      }
+
+      if (err.statusCode === 503) {
+        return res.status(404).json({ error: 'Feature not available.' });
+      }
+
+      return res.status(401).json({ error: 'Token verification failed.' });
+    }
+
+    console.error('❌ Google token verification error:', err?.message || err);
+    return res.status(500).json({ error: 'Token verification failed.' });
+  }
 });
 
 // POST /api/login
