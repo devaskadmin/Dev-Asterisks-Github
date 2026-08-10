@@ -27,7 +27,6 @@ coverage
 *.sln
 *.sw?
 
-yarn.lock
 .vscode/extensions.json
 sync_config.jsonc
 
