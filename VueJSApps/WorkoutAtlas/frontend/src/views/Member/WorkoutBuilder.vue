@@ -42,6 +42,12 @@ const isWorkoutDetailsOpen = ref(true);
 const isSchedulePlannerOpen = ref(true);
 const openMenuDay = ref(null);
 const openMenuPlacement = ref('down');
+const aiPrompt = ref('');
+const aiResponse = ref('');
+const aiLoading = ref(false);
+const gatewayTestLoading = ref(false);
+const aiError = ref('');
+const isAdminUser = ref(false);
 
 const MENU_ESTIMATED_HEIGHT = 260;
 const MENU_SAFE_GAP = 12;
@@ -935,6 +941,74 @@ const plannerPayload = computed(() => ({
   exercises: workoutExercises.value,
 }));
 
+const sendAiSuggestion = async () => {
+  const trimmedPrompt = aiPrompt.value.trim();
+  if (!trimmedPrompt) {
+    aiError.value = 'Please enter a short message before sending.';
+    return;
+  }
+
+  aiLoading.value = true;
+  aiError.value = '';
+  aiResponse.value = '';
+
+  try {
+    const response = await fetch(`${API_BASE}/api/ai/qa-message`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: trimmedPrompt }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.error || data?.detail || 'The AI request could not be completed.');
+    }
+
+    aiResponse.value = data?.response || 'The AI gateway returned an empty response.';
+  } catch (error) {
+    aiError.value = error?.message || 'Unable to complete the AI request.';
+  } finally {
+    aiLoading.value = false;
+  }
+};
+
+const runGatewayDebugTest = async () => {
+  aiError.value = '';
+  aiResponse.value = '';
+  gatewayTestLoading.value = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/ai/qa-message`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'test' }),
+    });
+
+    const rawText = await response.text();
+    let parsedBody = rawText;
+    try {
+      parsedBody = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsedBody = rawText;
+    }
+
+    if (!response.ok) {
+      aiResponse.value = typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody, null, 2);
+      return;
+    }
+
+    aiResponse.value = typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody, null, 2);
+  } catch (error) {
+    aiError.value = error?.message || 'Gateway test failed.';
+    aiResponse.value = '';
+  } finally {
+    gatewayTestLoading.value = false;
+  }
+};
+
 const requestDeleteDay = (dayName) => {
   dayToDelete.value = dayName;
   showDeleteModal.value = true;
@@ -1024,13 +1098,18 @@ const loadExercises = async () => {
 
 const loadUserId = async () => {
   try {
-    const response = await fetch(`${API_BASE}/api/user-id`, {
+    const response = await fetch(`${API_BASE}/api/session`, {
       credentials: 'include',
     });
     const data = await response.json();
-    userId.value = data?.userId || null;
+    userId.value = data?.user?.id || null;
+    const normalizedRole = String(data?.user?.role || data?.user?.roleSlug || '').trim().toLowerCase();
+    isAdminUser.value = ['administrator', 'admin'].includes(normalizedRole);
+    canCreateFeaturedPlans.value = isAdminUser.value || Boolean(data?.canCreateFeaturedPlans || data?.user?.canCreateFeaturedPlans);
   } catch {
     userId.value = null;
+    isAdminUser.value = false;
+    canCreateFeaturedPlans.value = false;
   }
 };
 
@@ -1580,14 +1659,39 @@ watch(
 
       <!-- ── TAB 3: Suggest with AI ─────────────────────────────── -->
       <section v-show="builderTab === 'ai'" class="builder-section ai-suggest-section">
-        <div class="ai-suggest-body planner-empty">
+        <div v-if="!isAdminUser" class="ai-suggest-body planner-empty">
+          <div class="planner-empty__icon">🔒</div>
+          <h4>Administrator access required</h4>
+          <p>This AI tab is currently limited to administrators so the foundation stays secure and scoped.</p>
+        </div>
+
+        <div v-else class="ai-suggest-body ai-suggest-card">
           <div class="planner-empty__icon">🤖</div>
-          <h4>Suggest a Workout with AI</h4>
-          <p>AI workout generation is coming soon. You will be able to generate a personalized plan in this tab.</p>
-          <span class="ai-coming-soon-badge">Coming Soon</span>
-          <button type="button" class="ai-generate-btn" disabled>
-            Generate My Workout
-          </button>
+          <h4>Suggest with AI</h4>
+          <p>Send a short prompt to the backend and receive a response from the AI gateway foundation.</p>
+
+          <label class="ai-prompt-label" for="ai-prompt-input">Message</label>
+          <textarea
+            id="ai-prompt-input"
+            v-model="aiPrompt"
+            rows="4"
+            maxlength="280"
+            placeholder="Example: Suggest a simple beginner upper-body workout."
+            class="ai-prompt-input"
+          ></textarea>
+
+          <div class="ai-actions">
+            <button type="button" class="ai-generate-btn" :disabled="aiLoading" @click="sendAiSuggestion">
+              {{ aiLoading ? 'Sending...' : 'Send' }}
+            </button>
+            <button type="button" class="ai-generate-btn ai-test-btn" :disabled="aiLoading || gatewayTestLoading" @click="runGatewayDebugTest">
+              {{ gatewayTestLoading ? 'Testing...' : 'TEST GATEWAY' }}
+            </button>
+          </div>
+
+          <div v-if="aiError" class="ai-feedback ai-feedback--error">{{ aiError }}</div>
+          <div v-else-if="aiResponse" class="ai-feedback ai-feedback--success">{{ aiResponse }}</div>
+          <div v-else class="ai-feedback ai-feedback--hint">Your response will appear here once the request completes.</div>
         </div>
       </section>
           </div>
@@ -3659,26 +3763,79 @@ watch(
 /* ── AI Suggest section ──────────────────────────────────────────── */
 .ai-suggest-section {
   min-height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
 }
 
 .ai-suggest-body {
   width: 100%;
+  display: grid;
+  gap: 10px;
 }
 
-.ai-coming-soon-badge {
-  display: inline-block;
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  color: #ffffff;
-  border-radius: 999px;
-  padding: 5px 16px;
-  font-size: 0.8rem;
+.ai-suggest-card {
+  background: var(--wb-surface-2);
+  border: 1px solid var(--wb-border);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+.ai-prompt-label {
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-top: 4px;
+  color: var(--wb-text);
+  font-size: 0.9rem;
+}
+
+.ai-prompt-input {
+  width: 100%;
+  border: 1px solid var(--wb-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-height: 96px;
+  resize: vertical;
+  font: inherit;
+  color: var(--wb-text);
+  background: var(--wb-surface-1);
+}
+
+.ai-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-test-btn {
+  background: linear-gradient(135deg, #0f766e, #115e59);
+  border-color: #99f6e4;
+}
+
+.ai-feedback {
+  background: var(--wb-surface-2);
+  border: 1px solid var(--wb-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--wb-text-secondary);
+}
+
+.ai-feedback--error {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+}
+
+.ai-feedback--success {
+  border-color: rgba(134, 239, 172, 0.42);
+  color: #bbf7d0;
+}
+
+.ai-feedback--hint {
+  border-color: color-mix(in srgb, var(--wb-accent) 45%, transparent 55%);
+  color: var(--wb-text-secondary);
 }
 
 .ai-generate-btn {
@@ -3691,13 +3848,13 @@ watch(
   font-weight: 700;
   font-size: 0.9rem;
   margin-top: 6px;
-  opacity: 0.55;
-  cursor: not-allowed;
+  cursor: pointer;
   box-shadow: none;
 }
 
 .ai-generate-btn:disabled {
-  filter: saturate(0.7);
+  opacity: 0.7;
+  cursor: wait;
 }
 
 /* ── Short / long label toggle ───────────────────────────────────── */
