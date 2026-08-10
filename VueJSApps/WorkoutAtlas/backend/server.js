@@ -29,8 +29,10 @@ const DEFAULT_FRONTEND_ORIGINS = [
   'https://www.workoutatlas.com',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://localhost:5175',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
 ];
 const allowedOrigins = new Set(
   [...DEFAULT_FRONTEND_ORIGINS, CLIENT_ORIGIN, FRONTEND_URL, ...CORS_ORIGINS].filter(Boolean)
