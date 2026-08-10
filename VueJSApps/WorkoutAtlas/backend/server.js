@@ -210,6 +210,7 @@ const openFoodFactsRoutes   = require('./api/OpenFoodFactsAPI/main-api.js');
 const avatarRoutes          = require('./src/routes/avatar.js');
 const toolsRoutes           = require('./api/tools.js');
 const mediaRoutes           = require('./api/media.js');
+const aiGatewayRoutes       = require('./api/ai-gateway.js');
 
 // Import routes
 app.use('/api', require('./api/auth.js'));
@@ -225,6 +226,7 @@ app.use('/api/progress', require('./api/progress.js')); // 📊 v0.82 Progress S
 app.use('/api', require('./api/dashboard.js')); // 📊 v0.82.20 Dashboard Live Metrics
 app.use('/api', toolsRoutes); // 🧰 v0.83.5 Tools diagnostics
 app.use('/api', mediaRoutes); // 🖼️ v0.83.7 media resolver
+app.use('/api', aiGatewayRoutes); // 🤖 WorkoutAtlas AI gateway proxy
 
 // Lightweight health route for local/API reachability checks.
 app.get('/api/health', (_req, res) => {
@@ -297,6 +299,16 @@ setInterval(async () => {
 }, 300000); // 5 minutes
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backend running on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`❌ Startup failed: port ${PORT} is already in use.`);
+    process.exit(1);
+  }
+
+  console.error('❌ Startup failed:', err);
+  process.exit(1);
 });
