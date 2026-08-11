@@ -22,6 +22,8 @@ const dropdownRef = ref(null)
 const buttonRef = ref(null)
 const ignoreOutsideForOpenTick = ref(false)
 const touchOpenGuardUntil = ref(0)
+const showClickDetectedNotice = ref(false)
+let clickNoticeTimer = null
 
 const hasTouchPrimaryInput = (() => {
   if (typeof navigator === 'undefined') return false
@@ -98,6 +100,48 @@ const emitMenuDebug = ({ eventName, event = null, eventType = '', before = isOpe
   sendMenuDebug(entry)
 }
 
+const sendProfileMenuClickDebug = ({ before, after }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event: 'PROFILE_ICON_CLICK',
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    viewportWidth: typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0,
+    viewportHeight: typeof window !== 'undefined' ? Number(window.innerHeight || 0) : 0,
+    userAgent: typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '',
+    menuStateBeforeClick: Boolean(before),
+    menuStateAfterClick: Boolean(after),
+  }
+
+  fetch(`${API_BASE}/api/debug/profile-menu`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+    keepalive: true,
+  }).catch(() => {
+    // diagnostics only
+  })
+}
+
+const showProfileClickDetectedMessage = () => {
+  showClickDetectedNotice.value = true
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+  }
+  clickNoticeTimer = window.setTimeout(() => {
+    showClickDetectedNotice.value = false
+    clickNoticeTimer = null
+  }, 2200)
+}
+
+const dismissProfileClickNotice = () => {
+  showClickDetectedNotice.value = false
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+    clickNoticeTimer = null
+  }
+}
+
 // Computed avatar URL with default fallback
 const avatarUrl = computed(() => {
   if (props.avatarSrc && !props.avatarSrc.includes('admin.png')) {
@@ -111,6 +155,10 @@ const avatarUrl = computed(() => {
 const toggleDropdown = (event) => {
   const beforeState = isOpen.value
   const nextOpen = !beforeState
+
+  showProfileClickDetectedMessage()
+  sendProfileMenuClickDebug({ before: beforeState, after: nextOpen })
+
   if (nextOpen) {
     if (hasTouchPrimaryInput) {
       // iOS can emit delayed synthetic pointer/mouse events after tap.
@@ -280,6 +328,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   emitMenuDebug({ eventName: 'COMPONENT_UNMOUNT' })
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+    clickNoticeTimer = null
+  }
   removeOutsideListener()
   document.removeEventListener('keydown', handleKeyDown)
   menuLog('unmounted')
@@ -438,6 +490,21 @@ onUnmounted(() => {
         </div>
       </div>
     </transition>
+
+    <transition name="profile-click-notice">
+      <div
+        v-if="showClickDetectedNotice"
+        class="profile-click-notice"
+        @pointerdown.stop
+        @mousedown.stop
+        @touchstart.stop
+        role="status"
+        aria-live="polite"
+      >
+        <span class="profile-click-notice__text">Profile icon click detected</span>
+        <button type="button" class="profile-click-notice__close" @click.stop="dismissProfileClickNotice">Close</button>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -445,6 +512,46 @@ onUnmounted(() => {
 .profile-dropdown-wrapper {
   position: relative;
   display: inline-block;
+}
+
+.profile-click-notice {
+  position: fixed;
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  z-index: 2500;
+  background: rgba(15, 23, 42, 0.96);
+  color: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 10px;
+  padding: 10px 12px;
+  width: min(320px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 20px));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profile-click-notice__text {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.profile-click-notice__close {
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(30, 41, 59, 0.88);
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.profile-click-notice__close:hover {
+  background: rgba(51, 65, 85, 0.92);
 }
 
 /* Profile Button */
@@ -673,6 +780,16 @@ onUnmounted(() => {
     opacity: 0;
     transform: translateY(-8px);
   }
+}
+
+.profile-click-notice-enter-active,
+.profile-click-notice-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.profile-click-notice-enter-from,
+.profile-click-notice-leave-to {
+  opacity: 0;
 }
 
 /* Responsive */
