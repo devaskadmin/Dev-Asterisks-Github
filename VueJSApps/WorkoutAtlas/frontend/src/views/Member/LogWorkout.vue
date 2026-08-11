@@ -2697,7 +2697,8 @@ onUnmounted(() => {
 }
 
 .wl-page .wl-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.86);
+  filter: brightness(0) invert(1);
+  opacity: 1;
 }
 
 .wl-page .wl-btn {
