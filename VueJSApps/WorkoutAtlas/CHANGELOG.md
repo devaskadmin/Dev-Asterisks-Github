@@ -1,5 +1,17 @@
 # Changelog
 
+## Workout Atlas 0.85.b.1-8
+### August 11, 2026
+
+- 0.85.b.1 - Fixed navigation/menu closing immediately
+- 0.85.b.2 - Fixed active workout exercise values not autosaving/repopulating
+- 0.85.b.3 - Fixed global workouts appearing in personal workout views
+- 0.85.b.4 - Fixed incomplete/draft global workouts being visible to users
+- 0.85.b.5 - Fixed iPhone/mobile Workout Log scrolling issue
+- 0.85.b.6 - Fixed adding exercises to an active workout
+- 0.85.b.7 - Updated workout weight unit display from kg to lbs
+- 0.85.b.8 - Fixed logout/session termination
+
 ## [0.85.gbp.33-stage1d] - 2026-08-07 - Dashboard2 Scroll Behavior Alignment
 
 - Removed Dashboard2 route-specific scroll-lock behavior from the body.

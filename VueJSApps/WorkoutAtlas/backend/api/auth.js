@@ -20,6 +20,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_COOKIE_SECURE = isProduction;
 const SESSION_COOKIE_SAMESITE = isProduction ? 'none' : 'lax';
 const CLIENT_ORIGIN = String(process.env.CLIENT_ORIGIN || '').trim();
+const COOKIE_DOMAIN = String(process.env.COOKIE_DOMAIN || '').trim();
 
 const normalizeRoleValue = (rawValue = '') => {
   const value = String(rawValue || '').trim().toLowerCase();
@@ -446,6 +447,7 @@ router.post('/logout', (req, res) => {
         httpOnly: true,
         secure: SESSION_COOKIE_SECURE,
         sameSite: SESSION_COOKIE_SAMESITE,
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
       });
       res.json({ message: "Logged out successfully" });
     });

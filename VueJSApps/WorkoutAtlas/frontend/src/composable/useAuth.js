@@ -67,10 +67,29 @@ export function useAuth() {
     logoutInProgress.value = true;
 
     try {
-      // Clear frontend state FIRST (immediate)
-      user.value = null;
+      // Use existing backend flow and wait for completion.
+      const logoutRes = await fetch(`${API_BASE}/api/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
 
-      // Clear all auth-related storage keys
+      if (!logoutRes.ok) {
+        throw new Error(`Backend logout failed with status ${logoutRes.status}`);
+      }
+
+      // Verify session was actually cleared server-side.
+      const sessionRes = await fetch(`${API_BASE}/api/session`, {
+        credentials: 'include',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      const sessionData = await sessionRes.json();
+
+      if (sessionData?.loggedIn === true) {
+        throw new Error('Backend session is still active after logout.');
+      }
+
+      // Clear frontend auth state after backend invalidation.
+      user.value = null;
       localStorage.removeItem('token');
       localStorage.removeItem('authToken');
       localStorage.removeItem('user');
@@ -84,28 +103,9 @@ export function useAuth() {
       sessionStorage.removeItem('userRole');
       sessionStorage.removeItem('currentUser');
 
-      // Try backend logout with timeout (non-blocking)
-      // Backend endpoint is POST /api/logout (mounted via app.use('/api', auth.js))
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-      try {
-        await fetch(`${API_BASE}/api/logout`, {
-          method: 'POST',
-          credentials: 'include',
-          signal: controller.signal,
-        });
-      } catch (err) {
-        // Backend logout failed or timed out - that's OK, continue with local logout
-        if (err.name !== 'AbortError') {
-          console.error('[Logout] Backend logout error:', err.message);
-        }
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
       // Redirect to login
       await router.replace({ name: 'login' });
+      window.location.replace('/login');
 
     } finally {
       setTimeout(() => { logoutInProgress.value = false; }, 500);
