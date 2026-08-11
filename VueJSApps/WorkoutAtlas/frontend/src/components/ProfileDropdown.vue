@@ -15,7 +15,7 @@ const props = defineProps({
   }
 })
 
-const { logout: authLogout, logoutInProgress } = useAuth()
+const { logout: authLogout, logoutInProgress, user: authUser } = useAuth()
 const router = useRouter()
 const isOpen = ref(false)
 const dropdownRef = ref(null)
@@ -37,6 +37,61 @@ const menuLog = (...args) => {
   console.log('[ProfileDropdown]', ...args)
 }
 
+const getViewportLabel = () => {
+  if (typeof window === 'undefined') return 'unknown'
+  return window.matchMedia('(max-width: 768px)').matches ? 'mobile' : 'desktop'
+}
+
+const getTargetSummary = (event) => {
+  const target = event?.target
+  if (!(target instanceof Element)) {
+    return { tag: '', id: '', class: '' }
+  }
+
+  return {
+    tag: String(target.tagName || '').toLowerCase(),
+    id: String(target.id || '').slice(0, 80),
+    class: String(target.className || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+  }
+}
+
+const sendMenuDebug = (entry) => {
+  const url = `${API_BASE}/api/debug/mobile-menu`
+  const body = JSON.stringify(entry)
+
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    const blob = new Blob([body], { type: 'application/json' })
+    navigator.sendBeacon(url, blob)
+    return
+  }
+
+  fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // non-fatal diagnostics only
+  })
+}
+
+const emitMenuDebug = ({ eventName, event = null, eventType = '', before = isOpen.value, after = isOpen.value }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventName,
+    menuStateBefore: Boolean(before),
+    menuStateAfter: Boolean(after),
+    eventTarget: getTargetSummary(event),
+    eventType: String(eventType || event?.type || ''),
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    viewport: getViewportLabel(),
+  }
+
+  menuLog('debug-event', entry)
+  sendMenuDebug(entry)
+}
+
 // Computed avatar URL with default fallback
 const avatarUrl = computed(() => {
   if (props.avatarSrc && !props.avatarSrc.includes('admin.png')) {
@@ -47,8 +102,9 @@ const avatarUrl = computed(() => {
 })
 
 // Toggle dropdown open/close
-const toggleDropdown = () => {
-  const nextOpen = !isOpen.value
+const toggleDropdown = (event) => {
+  const beforeState = isOpen.value
+  const nextOpen = !beforeState
   if (nextOpen) {
     ignoreOutsideForOpenTick.value = true
     requestAnimationFrame(() => {
@@ -58,21 +114,41 @@ const toggleDropdown = () => {
     })
   }
   isOpen.value = nextOpen
+  emitMenuDebug({
+    eventName: 'MENU_TOGGLE_CLICK',
+    event,
+    before: beforeState,
+    after: nextOpen,
+  })
   menuLog('toggle', { nextOpen, ignoreOutsideForOpenTick: ignoreOutsideForOpenTick.value })
 }
 
 // Close dropdown
 const closeDropdown = (reason = 'unknown') => {
+  const beforeState = isOpen.value
   if (!isOpen.value) {
     menuLog('close ignored (already closed)', { reason })
     return
   }
   isOpen.value = false
+  emitMenuDebug({
+    eventName: 'MENU_CLOSE',
+    eventType: reason,
+    before: beforeState,
+    after: false,
+  })
   menuLog('closed', { reason })
 }
 
 // Handle pointer/touch outside so mobile taps do not immediately collapse the menu.
 const handlePointerOutside = (event) => {
+  emitMenuDebug({
+    eventName: event?.type === 'touchstart' ? 'TOUCH_START' : 'POINTER_DOWN',
+    event,
+    before: isOpen.value,
+    after: isOpen.value,
+  })
+
   if (!isOpen.value) {
     menuLog('outside ignored (menu closed)', { eventType: event?.type || 'unknown' })
     return
@@ -107,6 +183,12 @@ const handlePointerOutside = (event) => {
   }
 
   if (dropdownRef.value && buttonRef.value) {
+    emitMenuDebug({
+      eventName: 'OUTSIDE_CLICK',
+      event,
+      before: isOpen.value,
+      after: false,
+    })
     closeDropdown('outside-pointer')
   }
 }
@@ -175,10 +257,12 @@ const registerOutsideListener = () => {
 onMounted(() => {
   removeOutsideListener = registerOutsideListener()
   document.addEventListener('keydown', handleKeyDown)
+  emitMenuDebug({ eventName: 'COMPONENT_MOUNT' })
   menuLog('mounted')
 })
 
 onUnmounted(() => {
+  emitMenuDebug({ eventName: 'COMPONENT_UNMOUNT' })
   removeOutsideListener()
   document.removeEventListener('keydown', handleKeyDown)
   menuLog('unmounted')
@@ -186,8 +270,45 @@ onUnmounted(() => {
 
 // Close dropdown when route changes
 const unsubscribe = router.afterEach(() => {
+  emitMenuDebug({
+    eventName: 'ROUTE_CHANGE',
+    before: isOpen.value,
+    after: false,
+  })
   closeDropdown('route-change')
 })
+
+watch(isOpen, (next, prev) => {
+  if (next === prev) return
+  emitMenuDebug({
+    eventName: next ? 'MENU_OPEN' : 'MENU_CLOSE',
+    before: prev,
+    after: next,
+  })
+})
+
+watch(logoutInProgress, (next, prev) => {
+  if (next === prev) return
+  emitMenuDebug({
+    eventName: 'AUTH_STATE_CHANGE',
+    eventType: `logoutInProgress:${next}`,
+    before: isOpen.value,
+    after: isOpen.value,
+  })
+})
+
+watch(
+  () => Boolean(authUser?.value),
+  (next, prev) => {
+    if (next === prev) return
+    emitMenuDebug({
+      eventName: 'AUTH_STATE_CHANGE',
+      eventType: `userSessionPresent:${next}`,
+      before: isOpen.value,
+      after: isOpen.value,
+    })
+  }
+)
 
 onUnmounted(() => {
   if (unsubscribe) {
@@ -206,8 +327,8 @@ onUnmounted(() => {
       :class="{ 'is-open': isOpen }"
       @pointerdown.stop
       @mousedown.stop
-      @touchstart.stop
-      @click.stop="toggleDropdown"
+      @touchstart.stop="emitMenuDebug({ eventName: 'TOUCH_START', event: $event, before: isOpen, after: isOpen })"
+      @click.stop="toggleDropdown($event)"
       aria-haspopup="true"
       :aria-expanded="isOpen"
       aria-label="Open profile menu"
