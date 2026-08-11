@@ -36,6 +36,56 @@ const logoutInProgress = ref(false);
 export function useAuth() {
   const router = useRouter();
 
+  const clearClientAuthState = () => {
+    user.value = null;
+
+    localStorage.removeItem('token');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('currentUser');
+
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('authToken');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('role');
+    sessionStorage.removeItem('userRole');
+    sessionStorage.removeItem('currentUser');
+  };
+
+  const postLogout = async () => {
+    const response = await fetch(`${API_BASE}/api/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
+      cache: 'no-store',
+    });
+
+    return response.ok;
+  };
+
+  const verifyLoggedOut = async () => {
+    const response = await fetch(`${API_BASE}/api/session`, {
+      credentials: 'include',
+      headers: {
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      return true;
+    }
+
+    const data = await response.json().catch(() => ({}));
+    return data?.loggedIn !== true;
+  };
+
   const fetchUser = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/session`, {
@@ -62,51 +112,38 @@ export function useAuth() {
    */
   const logout = async () => {
     // Prevent duplicate logout calls
-    if (logoutInProgress.value) return;
+    if (logoutInProgress.value) return false;
 
     logoutInProgress.value = true;
 
     try {
-      // Use existing backend flow and wait for completion.
-      const logoutRes = await fetch(`${API_BASE}/api/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      let loggedOut = await postLogout();
 
-      if (!logoutRes.ok) {
-        throw new Error(`Backend logout failed with status ${logoutRes.status}`);
+      if (loggedOut) {
+        loggedOut = await verifyLoggedOut();
       }
 
-      // Verify session was actually cleared server-side.
-      const sessionRes = await fetch(`${API_BASE}/api/session`, {
-        credentials: 'include',
-        headers: { 'Cache-Control': 'no-cache' },
-      });
-      const sessionData = await sessionRes.json();
-
-      if (sessionData?.loggedIn === true) {
-        throw new Error('Backend session is still active after logout.');
+      // Retry once to handle transient/cached state on some browsers.
+      if (!loggedOut) {
+        const retried = await postLogout();
+        loggedOut = retried && await verifyLoggedOut();
       }
 
-      // Clear frontend auth state after backend invalidation.
-      user.value = null;
-      localStorage.removeItem('token');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('user');
-      localStorage.removeItem('role');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('currentUser');
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('authToken');
-      sessionStorage.removeItem('user');
-      sessionStorage.removeItem('role');
-      sessionStorage.removeItem('userRole');
-      sessionStorage.removeItem('currentUser');
+      if (!loggedOut) {
+        console.error('[Logout] Session still appears authenticated after logout attempts.');
+      }
+
+      clearClientAuthState();
 
       // Redirect to login
       await router.replace({ name: 'login' });
-      window.location.replace('/login');
+      return loggedOut;
 
+    } catch (err) {
+      console.error('[Logout] Failed to complete logout:', err?.message || err);
+      clearClientAuthState();
+      await router.replace({ name: 'login' });
+      return false;
     } finally {
       setTimeout(() => { logoutInProgress.value = false; }, 500);
     }

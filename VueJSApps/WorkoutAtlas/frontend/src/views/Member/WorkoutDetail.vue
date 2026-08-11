@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { API_BASE } from '@/config/env';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
+import { useWorkoutSessionDraft } from '@/composable/useWorkoutSessionDraft';
 
 const route  = useRoute();
 const router = useRouter();
@@ -26,6 +27,12 @@ const plan             = ref(null);
 const activeSession    = ref(null);  // in-progress workout_sessions row
 const selectedDay      = ref('');    // day name chosen on Overview
 const sessionExercises = ref([]);    // all exercises enriched with sessionSets
+const {
+  applyWorkoutDraft,
+  clearWorkoutDraftSave,
+  persistWorkoutDraft,
+  queueWorkoutDraftSave,
+} = useWorkoutSessionDraft({ activeSession, sessionExercises });
 
 /* ─── Derived: plan structure ────────────────────────────────────────────── */
 const scheduleMode = computed(() => plan.value?.scheduleMode || 'day');
@@ -112,6 +119,7 @@ const addSet = (exerciseId) => {
     duration: last.duration,
     done:     false,
   });
+  queueWorkoutDraftSave();
 };
 
 const removeSet = (exerciseId, setIndex) => {
@@ -119,6 +127,7 @@ const removeSet = (exerciseId, setIndex) => {
   if (!ex || ex.sessionSets.length <= 1) return;
   ex.sessionSets.splice(setIndex, 1);
   ex.sessionSets.forEach((s, i) => { s.setNum = i + 1; });
+  queueWorkoutDraftSave();
 };
 
 const updateSet = (exerciseId, setIndex, field, value) => {
@@ -126,6 +135,7 @@ const updateSet = (exerciseId, setIndex, field, value) => {
   if (!ex) return;
   ex.sessionSets[setIndex][field] =
     field === 'done' ? Boolean(value) : (Number(value) || 0);
+  queueWorkoutDraftSave();
 };
 
 /* ─── Load plan ──────────────────────────────────────────────────────────── */
@@ -204,6 +214,8 @@ const checkActiveSession = async () => {
       activeSession.value = data.session;
       selectedDay.value   = data.session.workoutDayName;
       activeTab.value     = 'dayDetails';
+      applyWorkoutDraft(data.session.notes);
+      queueWorkoutDraftSave(true);
     }
   } catch (_) {
     // non-fatal
@@ -222,6 +234,7 @@ watch(
 const startDayWorkout = async (dayName) => {
   conflictMessage.value = '';
   saveError.value       = '';
+  clearWorkoutDraftSave();
 
   // Already in a session for this day → just navigate
   if (activeSession.value) {
@@ -251,7 +264,10 @@ const startDayWorkout = async (dayName) => {
 
     if (res.status === 409) {
       conflictMessage.value = data.error || 'A workout is already in progress.';
-      if (data.activeSession) activeSession.value = data.activeSession;
+      if (data.activeSession) {
+        activeSession.value = data.activeSession;
+        applyWorkoutDraft(data.activeSession.notes);
+      }
       return;
     }
     if (!res.ok) throw new Error(data?.error || 'Failed to start workout session.');
@@ -259,6 +275,8 @@ const startDayWorkout = async (dayName) => {
     activeSession.value = data.session;
     selectedDay.value   = dayName;
     activeTab.value     = 'dayDetails';
+    applyWorkoutDraft(data.session.notes);
+    queueWorkoutDraftSave(true);
   } catch (err) {
     saveError.value = err?.message || 'Failed to start workout.';
   }
@@ -269,6 +287,7 @@ const completeWorkout = async () => {
   saving.value      = true;
   saveMessage.value = '';
   saveError.value   = '';
+  clearWorkoutDraftSave();
 
   try {
     // 1 ── Save logs
@@ -330,6 +349,7 @@ const completeWorkout = async () => {
 
 /* ─── End workout without saving ────────────────────────────────────────── */
 const endWithoutSaving = async () => {
+  clearWorkoutDraftSave();
   let endedDurationSeconds = 0;
   if (activeSession.value?.id) {
     try {
@@ -368,7 +388,13 @@ onMounted(async () => {
   await checkActiveSession();
 });
 
+onActivated(async () => {
+  await loadPlan();
+  await checkActiveSession();
+});
+
 onUnmounted(() => {
+  void persistWorkoutDraft();
   setWorkoutTimerRunning(false);
 });
 </script>
