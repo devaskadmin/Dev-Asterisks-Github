@@ -56,6 +56,8 @@ const FEATURED_WORKOUT_PLAN_TYPE = 'featured';
 const COMMUNITY_SHARED_WORKOUT_PLAN_TYPE = 'community_shared';
 const GLOBAL_WORKOUT_PLAN_TYPES = new Set([FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]);
 const PUBLISHED_GLOBAL_STATUSES = ['active', 'published', 'completed'];
+const GLOBAL_WORKOUT_MIN_EXERCISES = 1;
+const GLOBAL_WORKOUT_EXERCISE_VALIDATION_ERROR = 'Add at least one exercise before saving this workout.';
 const PLAN_TYPE_SURFACE_WORKOUT_BUILDER = 'workout_builder';
 const PLAN_TYPE_SURFACE_ADMIN_GLOBAL = 'admin_global';
 const ADMIN_ROLE_VALUES = ['admin', 'administrator'];
@@ -700,7 +702,8 @@ const loadGlobalWorkoutPlans = async ({
   const publishedWhere = onlyPublished
     ? `
       AND LOWER(COALESCE(ws.status, '')) IN (${statusPlaceholders})
-      AND LOWER(COALESCE(ws.visibility, '')) = 'public'`
+      AND LOWER(COALESCE(ws.visibility, '')) = 'public'
+      AND COALESCE(exercise_agg.exercise_count, 0) >= ${GLOBAL_WORKOUT_MIN_EXERCISES}`
     : '';
   const queryParams = onlyPublished
     ? [...normalizedPlanTypes, ...PUBLISHED_GLOBAL_STATUSES]
@@ -1615,6 +1618,11 @@ router.post('/featured-workout-plans/:id/clone', async (req, res) => {
          AND workout_plan_type = ?
          AND LOWER(COALESCE(status, '')) IN (?, ?, ?)
          AND LOWER(COALESCE(visibility, '')) = 'public'
+         AND EXISTS (
+           SELECT 1
+           FROM workout_schedule_exercises wse
+           WHERE wse.workout_schedule_id = workout_schedules.id
+         )
        LIMIT 1`,
       [sourcePlanId, FEATURED_WORKOUT_PLAN_TYPE, ...PUBLISHED_GLOBAL_STATUSES]
     );
@@ -1768,7 +1776,7 @@ router.post('/admin/global-workout-plans', async (req, res) => {
     const [result] = await pool.query(
       `INSERT INTO workout_schedules
         (user_id, title, description, workout_type, workout_plan_type, estimated_duration_minutes, status, visibility, schedule_mode)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', 'public', 'day')`,
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', 'private', 'day')`,
       [
         userId,
         title,
@@ -1794,7 +1802,7 @@ router.post('/admin/global-workout-plans', async (req, res) => {
     const workoutLists = await loadGlobalWorkoutPlans();
 
     return res.status(201).json({
-      message: 'Global workout plan created',
+      message: 'Global workout plan draft created',
       planner,
       workoutLists,
       hasWorkoutLists: workoutLists.length > 0,
@@ -1909,6 +1917,11 @@ router.patch('/admin/global-workout-plans/:id/schedule', async (req, res) => {
       },
     });
 
+    if (!Array.isArray(normalizedPlanner?.exercises) || normalizedPlanner.exercises.length < GLOBAL_WORKOUT_MIN_EXERCISES) {
+      connection.release();
+      return res.status(422).json({ error: GLOBAL_WORKOUT_EXERCISE_VALIDATION_ERROR });
+    }
+
     await connection.beginTransaction();
 
     const [updateResult] = await connection.query(
@@ -1918,6 +1931,8 @@ router.patch('/admin/global-workout-plans/:id/schedule', async (req, res) => {
          description = ?,
          workout_type = ?,
          estimated_duration_minutes = ?,
+         status = 'active',
+         visibility = 'public',
          schedule_mode = ?,
          updated_at = CURRENT_TIMESTAMP
        WHERE id = ?

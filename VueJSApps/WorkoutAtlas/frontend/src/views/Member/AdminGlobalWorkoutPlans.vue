@@ -399,6 +399,12 @@ const saveScheduleEditor = async () => {
     return
   }
 
+  if (!Array.isArray(scheduleEditor.exercises) || scheduleEditor.exercises.length < 1) {
+    errorMsg.value = 'Add at least one exercise before saving this workout.'
+    successMsg.value = ''
+    return
+  }
+
   scheduleEditor.saving = true
   clearMessages()
   try {
