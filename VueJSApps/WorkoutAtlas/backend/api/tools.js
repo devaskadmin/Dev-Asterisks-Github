@@ -101,6 +101,10 @@ router.post('/debug/mobile-menu', (req, res) => {
 
   const safeString = (value, maxLength = 128) => String(value || '').trim().slice(0, maxLength);
   const safeBoolean = (value) => Boolean(value);
+  const safeNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
 
   const safeEntry = {
     timestamp: safeString(payload.timestamp || new Date().toISOString(), 64),
@@ -115,9 +119,15 @@ router.post('/debug/mobile-menu', (req, res) => {
     eventType: safeString(payload.eventType || 'unknown', 48),
     currentRoute: safeString(payload.currentRoute || '', 220),
     viewport: safeString(payload.viewport || 'unknown', 24),
+    action: safeString(payload.action || '', 16),
+    reason: safeString(payload.reason || '', 64),
+    before: safeBoolean(payload.before),
+    after: safeBoolean(payload.after),
+    viewportWidth: safeNumber(payload.viewportWidth, 0),
   };
 
-  console.log('[MOBILE MENU DEBUG]', JSON.stringify(safeEntry));
+  const logPrefix = safeEntry.eventName === 'PROFILE_DEBUG_STATE' ? '[PROFILE DEBUG]' : '[MOBILE MENU DEBUG]';
+  console.log(logPrefix, JSON.stringify(safeEntry));
   return res.status(200).json({ ok: true });
 });
 

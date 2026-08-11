@@ -45,6 +45,43 @@ const menuLog = (...args) => {
   console.log('[ProfileDropdown]', ...args)
 }
 
+const mapReasonForProfileDebug = (reason = '') => {
+  const normalized = String(reason || '').trim().toLowerCase()
+  if (normalized === 'avatar-click') return 'avatar-click'
+  if (normalized === 'outside-pointer') return 'outside-click'
+  if (normalized === 'route-change') return 'route-change'
+  if (normalized.startsWith('menu-item:')) return 'menu-selection'
+  return 'other'
+}
+
+const emitProfileStateDebug = ({ action, reason, before, after, eventType = '' }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventName: 'PROFILE_DEBUG_STATE',
+    action: String(action || 'TOGGLE').toUpperCase(),
+    reason: mapReasonForProfileDebug(reason),
+    before: Boolean(before),
+    after: Boolean(after),
+    eventType: String(eventType || ''),
+    viewportWidth: typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0,
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    menuStateBefore: Boolean(before),
+    menuStateAfter: Boolean(after),
+    viewport: getViewportLabel(),
+  }
+
+  console.log('[PROFILE DEBUG]',
+    `action=${entry.action}`,
+    `reason=${entry.reason}`,
+    `before=${entry.before}`,
+    `after=${entry.after}`,
+    `eventType=${entry.eventType || 'unknown'}`,
+    `viewportWidth=${entry.viewportWidth}`,
+    `timestamp=${entry.timestamp}`
+  )
+  sendMenuDebug(entry)
+}
+
 const getViewportLabel = () => {
   if (typeof window === 'undefined') return 'unknown'
   return window.matchMedia('(max-width: 768px)').matches ? 'mobile' : 'desktop'
@@ -173,6 +210,21 @@ const toggleDropdown = (event) => {
     })
   }
   isOpen.value = nextOpen
+
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(
+      `PROFILE CLICK\nbefore: ${String(beforeState)}\nafter: ${String(nextOpen)}\nwidth: ${String(window.innerWidth || 0)}`
+    )
+  }
+
+  emitProfileStateDebug({
+    action: 'TOGGLE',
+    reason: 'avatar-click',
+    before: beforeState,
+    after: nextOpen,
+    eventType: event?.type || 'click',
+  })
+
   emitMenuDebug({
     eventName: 'MENU_TOGGLE_CLICK',
     event,
@@ -190,6 +242,13 @@ const closeDropdown = (reason = 'unknown') => {
     return
   }
   isOpen.value = false
+  emitProfileStateDebug({
+    action: 'CLOSE',
+    reason,
+    before: beforeState,
+    after: false,
+    eventType: reason,
+  })
   emitMenuDebug({
     eventName: 'MENU_CLOSE',
     eventType: reason,
