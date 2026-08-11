@@ -21,6 +21,12 @@ const isOpen = ref(false)
 const dropdownRef = ref(null)
 const buttonRef = ref(null)
 const ignoreOutsideForOpenTick = ref(false)
+const touchOpenGuardUntil = ref(0)
+
+const hasTouchPrimaryInput = (() => {
+  if (typeof navigator === 'undefined') return false
+  return Number(navigator.maxTouchPoints || 0) > 0
+})()
 
 const isMenuDebugEnabled = (() => {
   if (import.meta.env.DEV) return true
@@ -106,6 +112,11 @@ const toggleDropdown = (event) => {
   const beforeState = isOpen.value
   const nextOpen = !beforeState
   if (nextOpen) {
+    if (hasTouchPrimaryInput) {
+      // iOS can emit delayed synthetic pointer/mouse events after tap.
+      touchOpenGuardUntil.value = Date.now() + 420
+    }
+
     ignoreOutsideForOpenTick.value = true
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -151,6 +162,14 @@ const handlePointerOutside = (event) => {
 
   if (!isOpen.value) {
     menuLog('outside ignored (menu closed)', { eventType: event?.type || 'unknown' })
+    return
+  }
+
+  if (touchOpenGuardUntil.value > Date.now()) {
+    menuLog('outside ignored (touch open guard)', {
+      eventType: event?.type || 'unknown',
+      guardMsRemaining: touchOpenGuardUntil.value - Date.now(),
+    })
     return
   }
 
@@ -230,7 +249,6 @@ let removeOutsideListener = () => {}
 
 const registerOutsideListener = () => {
   window.addEventListener('pointerdown', handlePointerOutside, true)
-  window.addEventListener('mousedown', handlePointerOutside, true)
 
   // Legacy fallback for browsers that do not emit pointer events consistently.
   const needsTouchFallback = !window.PointerEvent
@@ -239,16 +257,15 @@ const registerOutsideListener = () => {
   }
 
   menuLog('listener registered', {
-    mode: needsTouchFallback ? 'pointerdown+mousedown+touchstart' : 'pointerdown+mousedown',
+    mode: needsTouchFallback ? 'pointerdown+touchstart' : 'pointerdown',
   })
   return () => {
     window.removeEventListener('pointerdown', handlePointerOutside, true)
-    window.removeEventListener('mousedown', handlePointerOutside, true)
     if (needsTouchFallback) {
       window.removeEventListener('touchstart', handlePointerOutside, true)
     }
     menuLog('listener removed', {
-      mode: needsTouchFallback ? 'pointerdown+mousedown+touchstart' : 'pointerdown+mousedown',
+      mode: needsTouchFallback ? 'pointerdown+touchstart' : 'pointerdown',
     })
   }
 }
@@ -661,8 +678,14 @@ onUnmounted(() => {
 /* Responsive */
 @media (max-width: 576px) {
   .profile-dropdown-menu {
-    min-width: 240px;
-    right: -20px;
+    min-width: 0;
+    width: min(280px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+    max-width: min(280px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+  }
+
+  .profile-dropdown-menu::before {
+    right: 18px;
   }
 
   .dropdown-user-info {
