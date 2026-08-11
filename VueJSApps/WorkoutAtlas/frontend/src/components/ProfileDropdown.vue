@@ -40,10 +40,27 @@ const closeDropdown = () => {
   isOpen.value = false
 }
 
-// Handle click outside
-const handleClickOutside = (event) => {
-  if (dropdownRef.value && !dropdownRef.value.contains(event.target) &&
-      buttonRef.value && !buttonRef.value.contains(event.target)) {
+// Handle pointer/touch outside so mobile taps do not immediately collapse the menu.
+const handlePointerOutside = (event) => {
+  if (!isOpen.value) {
+    return
+  }
+
+  const target = event.target
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : []
+
+  if (path.length > 0) {
+    if (path.includes(dropdownRef.value) || path.includes(buttonRef.value)) {
+      return
+    }
+  } else if (
+    (dropdownRef.value && dropdownRef.value.contains(target)) ||
+    (buttonRef.value && buttonRef.value.contains(target))
+  ) {
+    return
+  }
+
+  if (dropdownRef.value && buttonRef.value) {
     closeDropdown()
   }
 }
@@ -83,12 +100,14 @@ const handleSignOut = async () => {
 
 // Setup and cleanup event listeners
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
+  window.addEventListener('pointerdown', handlePointerOutside, true)
+  window.addEventListener('touchstart', handlePointerOutside, true)
   document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('pointerdown', handlePointerOutside, true)
+  window.removeEventListener('touchstart', handlePointerOutside, true)
   document.removeEventListener('keydown', handleKeyDown)
 })
 
@@ -112,6 +131,7 @@ onUnmounted(() => {
       type="button"
       class="profile-dropdown-btn"
       :class="{ 'is-open': isOpen }"
+      @pointerdown.stop
       @click.stop="toggleDropdown"
       aria-haspopup="true"
       :aria-expanded="isOpen"
@@ -126,6 +146,7 @@ onUnmounted(() => {
         v-if="isOpen"
         ref="dropdownRef"
         class="profile-dropdown-menu"
+        @pointerdown.stop
         role="menu"
         aria-label="Profile menu"
       >

@@ -364,11 +364,18 @@ const formatUpdatedAt = (value) => {
   return parsed.toLocaleDateString();
 };
 
+const isPersonalWorkoutPlan = (plan = {}) => {
+  const planType = String(plan?.planType || '').trim().toLowerCase();
+  return planType !== 'featured' && planType !== 'community_shared';
+};
+
 const syncWorkoutSchedules = (incomingLists = []) => {
-  workoutSchedules.value = (Array.isArray(incomingLists) ? incomingLists : []).map((plan) => ({
-    ...plan,
-    updatedAtLabel: formatUpdatedAt(plan.updatedAt),
-  }));
+  workoutSchedules.value = (Array.isArray(incomingLists) ? incomingLists : [])
+    .filter((plan) => isPersonalWorkoutPlan(plan))
+    .map((plan) => ({
+      ...plan,
+      updatedAtLabel: formatUpdatedAt(plan.updatedAt),
+    }));
 };
 
 const syncWorkoutPlannerCapabilities = (payload = {}) => {

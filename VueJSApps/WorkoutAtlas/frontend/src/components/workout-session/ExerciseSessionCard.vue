@@ -145,7 +145,7 @@ const handleExerciseImageError = (event) => {
           <!-- Weight row -->
           <div class="c3-row">
             <span class="c3-col-set c3-set-num">{{ set.setNum }}</span>
-            <span class="c3-col-info">Weight (kg)</span>
+            <span class="c3-col-info">Weight (lbs)</span>
             <div class="c3-col-value">
               <input
                 type="number"
@@ -207,7 +207,7 @@ const handleExerciseImageError = (event) => {
         :class="{ 'strength-mobile-row--done': set.done }"
       >
         <label class="strength-mobile-field">
-          <span>Weight (kg)</span>
+          <span>Weight (lbs)</span>
           <input
             type="number"
             :class="['set-input', prefillClass(set, 'weight')]"

@@ -34,7 +34,8 @@ router.get('/workout-sessions/active', requireAuth, async (req, res) => {
          started_at                 AS startedAt,
          ended_at                   AS endedAt,
          duration_seconds           AS durationSeconds,
-         completed_at               AS completedAt
+         completed_at               AS completedAt,
+         notes                      AS notes
        FROM workout_log_sessions
        WHERE user_id = ? AND status = 'in_progress'
        ORDER BY started_at DESC
@@ -77,7 +78,8 @@ router.post('/workout-sessions/start', requireAuth, async (req, res) => {
               started_at                 AS startedAt,
               ended_at                   AS endedAt,
               duration_seconds           AS durationSeconds,
-              completed_at               AS completedAt
+              completed_at               AS completedAt,
+              notes                      AS notes
        FROM workout_log_sessions
        WHERE user_id = ? AND status = 'in_progress'
        LIMIT 1`,
@@ -121,11 +123,52 @@ router.post('/workout-sessions/start', requireAuth, async (req, res) => {
         endedAt:        null,
         durationSeconds: 0,
         completedAt:    null,
+        notes:          '',
       },
     });
   } catch (err) {
     console.error('❌ POST /workout-sessions/start:', err);
     return res.status(500).json({ error: 'Failed to start workout session.' });
+  }
+});
+
+// ─── PUT /api/workout-sessions/:sessionId/draft ────────────────────────────
+// Saves the current in-progress workout state for restore after navigation.
+router.put('/workout-sessions/:sessionId/draft', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const sessionId = Number(req.params.sessionId);
+    const draftExercises = Array.isArray(req.body?.exercises) ? req.body.exercises : null;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Invalid sessionId.' });
+    }
+
+    if (!draftExercises) {
+      return res.status(400).json({ error: 'Draft exercises are required.' });
+    }
+
+    const draftNotes = JSON.stringify({
+      version: 1,
+      exercises: draftExercises,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const [result] = await pool.query(
+      `UPDATE workout_log_sessions
+       SET notes = ?
+       WHERE id = ? AND user_id = ? AND status = 'in_progress'`,
+      [draftNotes, sessionId, userId]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Active workout session not found.' });
+    }
+
+    return res.status(200).json({ message: 'Workout draft saved.' });
+  } catch (err) {
+    console.error('❌ PUT /workout-sessions/:sessionId/draft:', err);
+    return res.status(500).json({ error: 'Failed to save workout draft.' });
   }
 });
 

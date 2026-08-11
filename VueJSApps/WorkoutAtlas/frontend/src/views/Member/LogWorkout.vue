@@ -1,10 +1,12 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
 import { API_BASE } from '@/config/env';
+import { useWorkoutSessionDraft } from '@/composable/useWorkoutSessionDraft';
 
 const router = useRouter();
+const WORKOUT_LOG_ACTIVE_BODY_CLASS = 'wa-workout-log-active';
 
 /* ─── Tab state ───────────────────────────────────────────────── */
 const activeTab = ref('overview'); // 'overview' | 'dayDetails' | 'workoutHistory'
@@ -62,6 +64,12 @@ let workoutTimerIntervalId = null;
 
 /* ─── Accordion: active exercise ───────────────────────────────────── */
 const activeExerciseId = ref(null);
+const {
+  applyWorkoutDraft,
+  clearWorkoutDraftSave,
+  persistWorkoutDraft,
+  queueWorkoutDraftSave,
+} = useWorkoutSessionDraft({ activeSession, sessionExercises });
 
 // Helper: open the first incomplete exercise in a list, or null if all done
 function openFirstIncomplete(exercises) {
@@ -101,6 +109,11 @@ const formatUpdatedAt = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
+};
+
+const isPersonalWorkoutPlan = (plan = {}) => {
+  const planType = String(plan?.planType || '').trim().toLowerCase();
+  return planType !== 'featured' && planType !== 'community_shared';
 };
 
 const formatDurationHms = (totalSeconds) => {
@@ -709,6 +722,7 @@ const addSet = (exerciseId) => {
     prefilledFields: {},
     prefilledFromLastWorkout: false,
   });
+  queueWorkoutDraftSave();
 };
 
 const removeSet = (exerciseId, setIndex) => {
@@ -717,6 +731,7 @@ const removeSet = (exerciseId, setIndex) => {
   if (!ex || ex.sessionSets.length <= 1) return;
   ex.sessionSets.splice(setIndex, 1);
   ex.sessionSets.forEach((s, i) => { s.setNum = i + 1; });
+  queueWorkoutDraftSave();
 };
 
 const updateSet = (exerciseId, setIndex, field, value) => {
@@ -729,6 +744,7 @@ const updateSet = (exerciseId, setIndex, field, value) => {
       .some(Boolean);
   }
   ex.sessionSets[setIndex][field] = field === 'done' ? Boolean(value) : (Number(value) || 0);
+  queueWorkoutDraftSave();
 };
 
 /* ─── Load plan list ─────────────────────────────────────────────────────── */
@@ -742,6 +758,7 @@ const loadWorkoutLists = async () => {
     if (!res.ok) throw new Error('Failed to load workout plans.');
     const data = await res.json();
     workoutLists.value = (Array.isArray(data?.workoutLists) ? data.workoutLists : [])
+      .filter((plan) => isPersonalWorkoutPlan(plan))
       .map((plan) => ({ ...plan, updatedAtLabel: formatUpdatedAt(plan.updatedAt) }));
 
     if (workoutLists.value.length !== 1) {
@@ -838,11 +855,27 @@ const checkActiveSession = async () => {
       }
       // Auto-expand the plan that has an active session
       const pid = String(data.session.workoutPlanId || '');
-      if (pid && expandedPlanId.value !== pid) await togglePlan(pid);
+      if (pid) {
+        expandedPlanId.value = pid;
+        try {
+          const planRes = await fetch(`${API_BASE}/api/workout-planner?planId=${encodeURIComponent(pid)}`, { credentials: 'include' });
+          if (planRes.ok) {
+            const planData = await planRes.json();
+            expandedPlanData.value = planData?.planner || null;
+            if (expandedPlanData.value) {
+              await loadWorkoutLogDayOrder(pid);
+            }
+          }
+        } catch (_) {
+          // non-fatal: keep previously loaded plan if refresh fails
+        }
+      }
       selectedDay.value = data.session.workoutDayName;
       // Rebuild sessionExercises from expanded plan
       if (expandedPlanData.value) {
         sessionExercises.value = await buildSessionExercisesWithHistoryPrefill(expandedPlanData.value.exercises || []);
+        applyWorkoutDraft(data.session.notes);
+        queueWorkoutDraftSave(true);
       }
     } else {
       activeSession.value    = null;
@@ -909,6 +942,8 @@ const startDayWorkout = async (dayName) => {
 
     // Build session exercises from the expanded plan
     sessionExercises.value = await buildSessionExercisesWithHistoryPrefill(expandedPlanData.value?.exercises || []);
+    applyWorkoutDraft(data.session.notes);
+    queueWorkoutDraftSave(true);
 
     activeTab.value = 'dayDetails';
   } catch (err) {
@@ -921,6 +956,7 @@ const completeWorkout = async () => {
   saving.value      = true;
   saveMessage.value = '';
   saveError.value   = '';
+  clearWorkoutDraftSave();
 
   try {
     const sessionPayload = {
@@ -1164,11 +1200,19 @@ const saveHistoryWorkout = async (session) => {
 
 /* ─── Lifecycle ──────────────────────────────────────────────────────────── */
 onMounted(async () => {
+  document.body.classList.add(WORKOUT_LOG_ACTIVE_BODY_CLASS);
+  await loadWorkoutLists();
+  await checkActiveSession();
+});
+
+onActivated(async () => {
   await loadWorkoutLists();
   await checkActiveSession();
 });
 
 onUnmounted(() => {
+  document.body.classList.remove(WORKOUT_LOG_ACTIVE_BODY_CLASS);
+  void persistWorkoutDraft();
   setWorkoutTimerRunning(false);
 });
 </script>
@@ -1670,7 +1714,7 @@ onUnmounted(() => {
                   <template v-if="String(ex.workoutType || '').toLowerCase() === 'strength'">
                     <div class="wl-hist-sets-table">
                       <div class="wl-hist-sets-head wl-hist-sets-head--strength">
-                        <span>Set</span><span>Weight (kg)</span><span>Reps</span><span>Done</span>
+                        <span>Set</span><span>Weight (lbs)</span><span>Reps</span><span>Done</span>
                       </div>
                       <div
                         v-for="(set, setIdx) in ex.sets" :key="set.setNumber"
@@ -3068,6 +3112,18 @@ onUnmounted(() => {
 
 /* ── v0.84.68.5 Mobile — Workout Log Compact Rework ──────────────────────── */
 @media (max-width: 768px) {
+  :global(body.wa-workout-log-active:not(.wa-mobile-menu-open)),
+  :global(body.wa-workout-log-active:not(.wa-mobile-menu-open) #app),
+  :global(body.wa-workout-log-active:not(.wa-mobile-menu-open) .body-padding),
+  :global(body.wa-workout-log-active:not(.wa-mobile-menu-open) .main-content) {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  :global(body.wa-workout-log-active:not(.wa-mobile-menu-open) .main-content) {
+    touch-action: pan-y;
+  }
+
   .wl-page {
     --mobile-bottom-nav-height: max(
       76px,
@@ -3083,7 +3139,10 @@ onUnmounted(() => {
     );
     --wl-bottom-bar-total-height: var(--wl-active-workout-clearance);
     padding-bottom: var(--wl-bottom-bar-total-height);
-    overflow-x: clip;
+    overflow-x: hidden;
+    overflow-y: visible;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .wl-tab-panel--day-details {
@@ -3103,7 +3162,7 @@ onUnmounted(() => {
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    overflow-x: clip;
+    overflow-x: hidden;
   }
 
   .wl-bottom-bar__inner {

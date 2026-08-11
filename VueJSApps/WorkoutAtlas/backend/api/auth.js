@@ -20,6 +20,34 @@ const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_COOKIE_SECURE = isProduction;
 const SESSION_COOKIE_SAMESITE = isProduction ? 'none' : 'lax';
 const CLIENT_ORIGIN = String(process.env.CLIENT_ORIGIN || '').trim();
+const COOKIE_DOMAIN = String(process.env.COOKIE_DOMAIN || '').trim();
+
+const clearSessionCookies = (res) => {
+  const baseCookieOptions = {
+    path: '/',
+    httpOnly: true,
+    secure: SESSION_COOKIE_SECURE,
+    sameSite: SESSION_COOKIE_SAMESITE,
+  };
+
+  // Clear current session cookie regardless of whether it was set host-only or with domain.
+  res.clearCookie('flexfit.sid', baseCookieOptions);
+  if (COOKIE_DOMAIN) {
+    res.clearCookie('flexfit.sid', {
+      ...baseCookieOptions,
+      domain: COOKIE_DOMAIN,
+    });
+  }
+
+  // Clear legacy/default express-session cookie name as a defensive cleanup.
+  res.clearCookie('connect.sid', baseCookieOptions);
+  if (COOKIE_DOMAIN) {
+    res.clearCookie('connect.sid', {
+      ...baseCookieOptions,
+      domain: COOKIE_DOMAIN,
+    });
+  }
+};
 
 const normalizeRoleValue = (rawValue = '') => {
   const value = String(rawValue || '').trim().toLowerCase();
@@ -438,15 +466,13 @@ router.post('/login', async (req, res) => {
 
 //Logout
 router.post('/logout', (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
     req.session.destroy(err => {
       if (err) return res.status(500).send("Logout failed");
-      // Explicitly clear the session cookie for Safari cross-site handling.
-      res.clearCookie('flexfit.sid', {
-        path: '/',
-        httpOnly: true,
-        secure: SESSION_COOKIE_SECURE,
-        sameSite: SESSION_COOKIE_SAMESITE,
-      });
+      clearSessionCookies(res);
       res.json({ message: "Logged out successfully" });
     });
   });

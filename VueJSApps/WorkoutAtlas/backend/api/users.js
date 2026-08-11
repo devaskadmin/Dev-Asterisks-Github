@@ -55,6 +55,7 @@ const workoutPlannerSchemaState = {
 const FEATURED_WORKOUT_PLAN_TYPE = 'featured';
 const COMMUNITY_SHARED_WORKOUT_PLAN_TYPE = 'community_shared';
 const GLOBAL_WORKOUT_PLAN_TYPES = new Set([FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]);
+const PUBLISHED_GLOBAL_STATUSES = ['active', 'published', 'completed'];
 const PLAN_TYPE_SURFACE_WORKOUT_BUILDER = 'workout_builder';
 const PLAN_TYPE_SURFACE_ADMIN_GLOBAL = 'admin_global';
 const ADMIN_ROLE_VALUES = ['admin', 'administrator'];
@@ -622,6 +623,16 @@ const loadSchedulesForUser = async (userId) => {
   const planTypeSelect = schemaState.hasWorkoutPlanType
     ? 'ws.workout_plan_type,'
     : 'NULL AS workout_plan_type,';
+  const personalPlanWhere = schemaState.hasWorkoutPlanType
+    ? `
+      AND (
+        ws.workout_plan_type IS NULL
+        OR ws.workout_plan_type NOT IN (?, ?)
+      )`
+    : '';
+  const queryParams = schemaState.hasWorkoutPlanType
+    ? [userId, FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]
+    : [userId];
 
   const [rows] = await pool.query(
     `SELECT
@@ -653,8 +664,9 @@ const loadSchedulesForUser = async (userId) => {
       GROUP BY wse.workout_schedule_id
     ) exercise_agg ON exercise_agg.workout_schedule_id = ws.id
     WHERE ws.user_id = ?
+      ${personalPlanWhere}
     ORDER BY ws.updated_at DESC, ws.id DESC`,
-    [userId]
+    queryParams
   );
 
   return rows.map(serializeScheduleListItem);
@@ -669,7 +681,10 @@ const normalizeGlobalPlanTypes = (planTypes = []) => {
     .filter((value, index, source) => source.indexOf(value) === index);
 };
 
-const loadGlobalWorkoutPlans = async ({ planTypes = [FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE] } = {}) => {
+const loadGlobalWorkoutPlans = async ({
+  planTypes = [FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE],
+  onlyPublished = false,
+} = {}) => {
   const schemaState = await getWorkoutPlannerSchemaState();
   if (!schemaState.hasWorkoutPlanType) {
     return [];
@@ -681,6 +696,15 @@ const loadGlobalWorkoutPlans = async ({ planTypes = [FEATURED_WORKOUT_PLAN_TYPE,
   }
 
   const typePlaceholders = normalizedPlanTypes.map(() => '?').join(', ');
+  const statusPlaceholders = PUBLISHED_GLOBAL_STATUSES.map(() => '?').join(', ');
+  const publishedWhere = onlyPublished
+    ? `
+      AND LOWER(COALESCE(ws.status, '')) IN (${statusPlaceholders})
+      AND LOWER(COALESCE(ws.visibility, '')) = 'public'`
+    : '';
+  const queryParams = onlyPublished
+    ? [...normalizedPlanTypes, ...PUBLISHED_GLOBAL_STATUSES]
+    : normalizedPlanTypes;
 
   let rows = [];
   try {
@@ -715,8 +739,9 @@ const loadGlobalWorkoutPlans = async ({ planTypes = [FEATURED_WORKOUT_PLAN_TYPE,
         GROUP BY wse.workout_schedule_id
       ) exercise_agg ON exercise_agg.workout_schedule_id = ws.id
       WHERE ws.workout_plan_type IN (${typePlaceholders})
+      ${publishedWhere}
       ORDER BY ws.updated_at DESC, ws.id DESC`,
-      normalizedPlanTypes
+      queryParams
     );
     rows = queryRows;
   } catch (err) {
@@ -761,13 +786,26 @@ const buildGlobalWorkoutPlanById = async (scheduleId) => {
 };
 
 const hasSavedExercisesForUser = async (userId) => {
+  const schemaState = await getWorkoutPlannerSchemaState();
+  const personalPlanWhere = schemaState.hasWorkoutPlanType
+    ? `
+       AND (
+         ws.workout_plan_type IS NULL
+         OR ws.workout_plan_type NOT IN (?, ?)
+       )`
+    : '';
+  const queryParams = schemaState.hasWorkoutPlanType
+    ? [userId, FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]
+    : [userId];
+
   const [rows] = await pool.query(
     `SELECT 1
      FROM workout_schedules ws
      INNER JOIN workout_schedule_exercises wse ON wse.workout_schedule_id = ws.id
      WHERE ws.user_id = ?
+     ${personalPlanWhere}
      LIMIT 1`,
-    [userId]
+    queryParams
   );
   return rows.length > 0;
 };
@@ -1539,6 +1577,7 @@ router.get('/featured-workout-plans', async (req, res) => {
 
     const workoutLists = await loadGlobalWorkoutPlans({
       planTypes: [FEATURED_WORKOUT_PLAN_TYPE],
+      onlyPublished: true,
     });
 
     return res.json({
@@ -1574,8 +1613,10 @@ router.post('/featured-workout-plans/:id/clone', async (req, res) => {
        FROM workout_schedules
        WHERE id = ?
          AND workout_plan_type = ?
+         AND LOWER(COALESCE(status, '')) IN (?, ?, ?)
+         AND LOWER(COALESCE(visibility, '')) = 'public'
        LIMIT 1`,
-      [sourcePlanId, FEATURED_WORKOUT_PLAN_TYPE]
+      [sourcePlanId, FEATURED_WORKOUT_PLAN_TYPE, ...PUBLISHED_GLOBAL_STATUSES]
     );
 
     if (!sourceRows.length) {
@@ -1974,8 +2015,16 @@ router.get('/workout-planner', async (req, res) => {
     try {
       workoutLists = await loadSchedulesForUser(userId);
       const requestedPlanId = Number(req.query?.planId || 0);
+      const availablePlanIds = new Set(
+        workoutLists
+          .map((plan) => Number(plan?.planId || 0))
+          .filter((id) => id > 0)
+      );
+      const safeRequestedPlanId = requestedPlanId && availablePlanIds.has(requestedPlanId)
+        ? requestedPlanId
+        : 0;
       const fallbackPlanId = workoutLists.length ? Number(workoutLists[0].planId) : 0;
-      const selectedId = requestedPlanId || fallbackPlanId;
+      const selectedId = safeRequestedPlanId || fallbackPlanId;
       planner = selectedId ? await buildPlannerFromSchedule(selectedId, userId) : null;
     } catch (processingError) {
       console.error('Workout planner processing failed:', processingError);
