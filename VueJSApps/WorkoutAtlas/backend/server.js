@@ -302,31 +302,52 @@ setInterval(async () => {
 
 const START_PORT = Number(process.env.PORT || 5000);
 
-const startServer = (port, allowLocalFallback) => {
+const startServer = (port, isLocalFallbackMode) => {
   const server = app.listen(port, '0.0.0.0', () => {
-    if (allowLocalFallback) {
+    if (isLocalFallbackMode) {
       console.log(`🏠 Local backend started on port ${port}`);
+      console.log(`✅ Local backend port selected: ${port}`);
     } else {
       console.log(`🚀 Backend running on port ${port}`);
     }
   });
 
-  server.on('error', (err) => {
-    if (allowLocalFallback && err && err.code === 'EADDRINUSE' && port === 5000) {
-      console.warn('⚠️ Local port 5000 is in use, retrying on 5001...');
-      startServer(5001, true);
-      return;
-    }
+  return server;
+};
 
+const startServerWithLocalFallback = (initialPort) => {
+  const tryPort = (port) => {
+    const server = startServer(port, true);
+
+    server.on('error', (err) => {
+      if (err && err.code === 'EADDRINUSE') {
+        const nextPort = port + 1;
+        console.warn(`⚠️ Local port ${port} is in use, retrying on ${nextPort}...`);
+        tryPort(nextPort);
+        return;
+      }
+
+      console.error('❌ Startup failed:', err);
+      process.exit(1);
+    });
+  };
+
+  tryPort(initialPort);
+};
+
+const useLocalFallback = !isProduction && !process.env.PORT;
+
+if (useLocalFallback) {
+  startServerWithLocalFallback(START_PORT);
+} else {
+  const server = startServer(START_PORT, false);
+  server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-      console.error(`❌ Startup failed: port ${port} is already in use.`);
+      console.error(`❌ Startup failed: port ${START_PORT} is already in use.`);
       process.exit(1);
     }
 
     console.error('❌ Startup failed:', err);
     process.exit(1);
   });
-};
-
-const useLocalFallback = !isProduction && !process.env.PORT && START_PORT === 5000;
-startServer(START_PORT, useLocalFallback);
+}

@@ -20,6 +20,22 @@ const router = useRouter()
 const isOpen = ref(false)
 const dropdownRef = ref(null)
 const buttonRef = ref(null)
+const ignoreOutsideForOpenTick = ref(false)
+
+const isMenuDebugEnabled = (() => {
+  if (import.meta.env.DEV) return true
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage?.getItem('wa:profileMenuDebug') === '1'
+  } catch {
+    return false
+  }
+})()
+
+const menuLog = (...args) => {
+  if (!isMenuDebugEnabled) return
+  console.log('[ProfileDropdown]', ...args)
+}
 
 // Computed avatar URL with default fallback
 const avatarUrl = computed(() => {
@@ -32,59 +48,89 @@ const avatarUrl = computed(() => {
 
 // Toggle dropdown open/close
 const toggleDropdown = () => {
-  isOpen.value = !isOpen.value
+  const nextOpen = !isOpen.value
+  if (nextOpen) {
+    ignoreOutsideForOpenTick.value = true
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        ignoreOutsideForOpenTick.value = false
+      })
+    })
+  }
+  isOpen.value = nextOpen
+  menuLog('toggle', { nextOpen, ignoreOutsideForOpenTick: ignoreOutsideForOpenTick.value })
 }
 
 // Close dropdown
-const closeDropdown = () => {
+const closeDropdown = (reason = 'unknown') => {
+  if (!isOpen.value) {
+    menuLog('close ignored (already closed)', { reason })
+    return
+  }
   isOpen.value = false
+  menuLog('closed', { reason })
 }
 
 // Handle pointer/touch outside so mobile taps do not immediately collapse the menu.
 const handlePointerOutside = (event) => {
   if (!isOpen.value) {
+    menuLog('outside ignored (menu closed)', { eventType: event?.type || 'unknown' })
+    return
+  }
+
+  if (ignoreOutsideForOpenTick.value) {
+    menuLog('outside ignored (same tap guard)', {
+      eventType: event?.type || 'unknown',
+    })
     return
   }
 
   const target = event.target
+  if (target instanceof Element && target.closest('.profile-dropdown-wrapper')) {
+    menuLog('outside ignored (inside wrapper via closest)', { eventType: event?.type || 'unknown' })
+    return
+  }
+
   const path = typeof event.composedPath === 'function' ? event.composedPath() : []
 
   if (path.length > 0) {
     if (path.includes(dropdownRef.value) || path.includes(buttonRef.value)) {
+      menuLog('outside ignored (inside composedPath)', { eventType: event?.type || 'unknown' })
       return
     }
   } else if (
     (dropdownRef.value && dropdownRef.value.contains(target)) ||
     (buttonRef.value && buttonRef.value.contains(target))
   ) {
+    menuLog('outside ignored (inside contains)', { eventType: event?.type || 'unknown' })
     return
   }
 
   if (dropdownRef.value && buttonRef.value) {
-    closeDropdown()
+    closeDropdown('outside-pointer')
   }
 }
 
 // Handle keyboard escape key
 const handleKeyDown = (event) => {
   if (event.key === 'Escape' && isOpen.value) {
-    closeDropdown()
+    closeDropdown('escape')
   }
 }
 
 // Menu item handlers
 const handleViewProfile = () => {
-  closeDropdown()
+  closeDropdown('menu-item:view-profile')
   router.push({ name: 'view_profile' })
 }
 
 const handleAccountSettings = () => {
-  closeDropdown()
+  closeDropdown('menu-item:account-settings')
   router.push({ name: 'user_settings' })
 }
 
 const handleHelp = () => {
-  closeDropdown()
+  closeDropdown('menu-item:help')
   // Navigate to help page - adjust route name as needed
   router.push({ name: 'help' }).catch(() => {
     // Fallback: open help in current view or show notification
@@ -93,27 +139,54 @@ const handleHelp = () => {
 }
 
 const handleSignOut = async () => {
-  closeDropdown()
+  closeDropdown('menu-item:sign-out')
   // Use shared logout function from useAuth
   await authLogout()
 }
 
+let removeOutsideListener = () => {}
+
+const registerOutsideListener = () => {
+  window.addEventListener('pointerdown', handlePointerOutside, true)
+  window.addEventListener('mousedown', handlePointerOutside, true)
+
+  // Legacy fallback for browsers that do not emit pointer events consistently.
+  const needsTouchFallback = !window.PointerEvent
+  if (needsTouchFallback) {
+    window.addEventListener('touchstart', handlePointerOutside, true)
+  }
+
+  menuLog('listener registered', {
+    mode: needsTouchFallback ? 'pointerdown+mousedown+touchstart' : 'pointerdown+mousedown',
+  })
+  return () => {
+    window.removeEventListener('pointerdown', handlePointerOutside, true)
+    window.removeEventListener('mousedown', handlePointerOutside, true)
+    if (needsTouchFallback) {
+      window.removeEventListener('touchstart', handlePointerOutside, true)
+    }
+    menuLog('listener removed', {
+      mode: needsTouchFallback ? 'pointerdown+mousedown+touchstart' : 'pointerdown+mousedown',
+    })
+  }
+}
+
 // Setup and cleanup event listeners
 onMounted(() => {
-  window.addEventListener('pointerdown', handlePointerOutside, true)
-  window.addEventListener('touchstart', handlePointerOutside, true)
+  removeOutsideListener = registerOutsideListener()
   document.addEventListener('keydown', handleKeyDown)
+  menuLog('mounted')
 })
 
 onUnmounted(() => {
-  window.removeEventListener('pointerdown', handlePointerOutside, true)
-  window.removeEventListener('touchstart', handlePointerOutside, true)
+  removeOutsideListener()
   document.removeEventListener('keydown', handleKeyDown)
+  menuLog('unmounted')
 })
 
 // Close dropdown when route changes
 const unsubscribe = router.afterEach(() => {
-  closeDropdown()
+  closeDropdown('route-change')
 })
 
 onUnmounted(() => {
@@ -132,6 +205,8 @@ onUnmounted(() => {
       class="profile-dropdown-btn"
       :class="{ 'is-open': isOpen }"
       @pointerdown.stop
+      @mousedown.stop
+      @touchstart.stop
       @click.stop="toggleDropdown"
       aria-haspopup="true"
       :aria-expanded="isOpen"
@@ -147,6 +222,8 @@ onUnmounted(() => {
         ref="dropdownRef"
         class="profile-dropdown-menu"
         @pointerdown.stop
+        @mousedown.stop
+        @touchstart.stop
         role="menu"
         aria-label="Profile menu"
       >
