@@ -11,7 +11,7 @@ const props = defineProps({
   },
   avatarSrc: {
     type: String,
-    default: '/src/assets/images/admin.png'
+    default: '/src/asssets/images/admsin.png'
   }
 })
 
