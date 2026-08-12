@@ -11,7 +11,7 @@ const props = defineProps({
   },
   avatarSrc: {
     type: String,
-    default: '/src/asssets/images/admsin.png'
+    default: '/src/asssets/images/admin.png'
   }
 })
 
@@ -24,6 +24,14 @@ const ignoreOutsideForOpenTick = ref(false)
 const touchOpenGuardUntil = ref(0)
 const showClickDetectedNotice = ref(false)
 let clickNoticeTimer = null
+let lastAvatarOpenAt = 0
+let avatarTapSequence = 0
+let handledAvatarTapSequence = 0
+let lastAvatarTapMarkAt = 0
+let lastAvatarActivationAt = 0
+let lastAvatarActivationSource = ''
+
+const OUTSIDE_SYNTHETIC_GUARD_MS = 900
 
 const hasTouchPrimaryInput = (() => {
   if (typeof navigator === 'undefined') return false
@@ -168,6 +176,51 @@ const dismissProfileClickNotice = () => {
   }
 }
 
+const handleAvatarPress = (event) => {
+  const now = Date.now()
+  // Pointer/mouse/touch bursts from one physical tap should count as one sequence.
+  if ((now - lastAvatarTapMarkAt) <= 160) {
+    return
+  }
+  avatarTapSequence += 1
+  lastAvatarTapMarkAt = now
+  menuLog('avatar press sequence', {
+    avatarTapSequence,
+    eventType: event?.type || 'unknown',
+    viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+  })
+}
+
+const handleAvatarActivate = (event, source = 'other') => {
+  const now = Date.now()
+  const normalizedSource = String(source || 'other')
+
+  const isSyntheticClickAfterPointer =
+    normalizedSource === 'click' &&
+    lastAvatarActivationSource === 'pointerup' &&
+    (now - lastAvatarActivationAt) <= 500
+
+  if (isSyntheticClickAfterPointer) {
+    menuLog('avatar activation ignored (synthetic click after pointerup)', {
+      elapsedMs: now - lastAvatarActivationAt,
+      source: normalizedSource,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'TOGGLE',
+      reason: 'avatar-click',
+      before: isOpen.value,
+      after: isOpen.value,
+      eventType: `${event?.type || 'unknown'}:synthetic-ignored`,
+    })
+    return
+  }
+
+  lastAvatarActivationAt = now
+  lastAvatarActivationSource = normalizedSource
+  toggleDropdown(event)
+}
+
 // Computed avatar URL with default fallback
 const avatarUrl = computed(() => {
   if (props.avatarSrc && !props.avatarSrc.includes('admin.png')) {
@@ -179,7 +232,29 @@ const avatarUrl = computed(() => {
 
 // Toggle dropdown open/close
 const toggleDropdown = (event) => {
+  const now = Date.now()
   const beforeState = isOpen.value
+
+  if (avatarTapSequence > 0 && handledAvatarTapSequence === avatarTapSequence) {
+    menuLog('toggle ignored (duplicate click for same avatar tap sequence)', {
+      avatarTapSequence,
+      eventType: event?.type || 'unknown',
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'TOGGLE',
+      reason: 'avatar-click',
+      before: beforeState,
+      after: beforeState,
+      eventType: `${event?.type || 'unknown'}:duplicate-ignored`,
+    })
+    return
+  }
+
+  if (avatarTapSequence > 0) {
+    handledAvatarTapSequence = avatarTapSequence
+  }
+
   const nextOpen = !beforeState
 
   showProfileClickDetectedMessage()
@@ -199,6 +274,9 @@ const toggleDropdown = (event) => {
     })
   }
   isOpen.value = nextOpen
+  if (nextOpen) {
+    lastAvatarOpenAt = now
+  }
 
   if (typeof window !== 'undefined' && typeof window.alert === 'function') {
     window.alert(
@@ -207,7 +285,7 @@ const toggleDropdown = (event) => {
   }
 
   emitProfileStateDebug({
-    action: 'TOGGLE',
+    action: nextOpen ? 'OPEN' : 'CLOSE',
     reason: 'avatar-click',
     before: beforeState,
     after: nextOpen,
@@ -265,6 +343,22 @@ const handlePointerOutside = (event) => {
     menuLog('outside ignored (touch open guard)', {
       eventType: event?.type || 'unknown',
       guardMsRemaining: touchOpenGuardUntil.value - Date.now(),
+    })
+    return
+  }
+
+  if ((Date.now() - lastAvatarOpenAt) < OUTSIDE_SYNTHETIC_GUARD_MS) {
+    menuLog('outside ignored (post-avatar synthetic guard)', {
+      eventType: event?.type || 'unknown',
+      elapsedMs: Date.now() - lastAvatarOpenAt,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'CLOSE',
+      reason: 'outside-pointer',
+      before: isOpen.value,
+      after: isOpen.value,
+      eventType: `${event?.type || 'unknown'}:synthetic-ignored`,
     })
     return
   }
@@ -442,10 +536,11 @@ onUnmounted(() => {
       type="button"
       class="profile-dropdown-btn"
       :class="{ 'is-open': isOpen }"
-      @pointerdown.stop
+      @pointerdown.stop="handleAvatarPress($event)"
       @mousedown.stop
-      @touchstart.stop="emitMenuDebug({ eventName: 'TOUCH_START', event: $event, before: isOpen, after: isOpen })"
-      @click.stop="toggleDropdown($event)"
+      @touchstart.stop="handleAvatarPress($event); emitMenuDebug({ eventName: 'TOUCH_START', event: $event, before: isOpen, after: isOpen })"
+      @pointerup.stop="handleAvatarActivate($event, 'pointerup')"
+      @click.stop="handleAvatarActivate($event, 'click')"
       aria-haspopup="true"
       :aria-expanded="isOpen"
       aria-label="Open profile menu"

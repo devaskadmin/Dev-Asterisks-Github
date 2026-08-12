@@ -80,13 +80,23 @@ onMounted(fetchUserSession);
 
 <style scoped>
 .logout-container {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100vw;
   min-height: 100vh;
   height: 100dvh;
-  padding: 24px 16px;
+  padding:
+    max(24px, calc(24px + env(safe-area-inset-top, 0px)))
+    max(16px, calc(16px + env(safe-area-inset-right, 0px)))
+    max(24px, calc(24px + env(safe-area-inset-bottom, 0px)))
+    max(16px, calc(16px + env(safe-area-inset-left, 0px)));
   background: rgba(5, 7, 12, 0.62);
+  box-sizing: border-box;
+  overflow: auto;
 }
 
 .logout-body {
