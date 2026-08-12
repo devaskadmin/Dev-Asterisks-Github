@@ -30,18 +30,7 @@ const hasTouchPrimaryInput = (() => {
   return Number(navigator.maxTouchPoints || 0) > 0
 })()
 
-const isMenuDebugEnabled = (() => {
-  if (import.meta.env.DEV) return true
-  if (typeof window === 'undefined') return false
-  try {
-    return window.localStorage?.getItem('wa:profileMenuDebug') === '1'
-  } catch {
-    return false
-  }
-})()
-
 const menuLog = (...args) => {
-  if (!isMenuDebugEnabled) return
   console.log('[ProfileDropdown]', ...args)
 }
 
