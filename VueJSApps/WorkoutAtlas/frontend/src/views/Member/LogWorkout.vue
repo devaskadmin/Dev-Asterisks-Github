@@ -116,6 +116,19 @@ const isPersonalWorkoutPlan = (plan = {}) => {
   return planType !== 'featured' && planType !== 'community_shared';
 };
 
+const canDeleteWorkoutPlan = (plan = {}) => {
+  if (!isPersonalWorkoutPlan(plan)) {
+    return false;
+  }
+
+  const planId = String(plan?.planId || '').trim();
+  if (!planId) {
+    return false;
+  }
+
+  return String(activeSession.value?.workoutPlanId || '').trim() !== planId;
+};
+
 const formatDurationHms = (totalSeconds) => {
   const safeSeconds = Math.max(Number(totalSeconds || 0), 0);
   const hours = Math.floor(safeSeconds / 3600);
@@ -1033,6 +1046,68 @@ const openInBuilder = (planId) => {
     : { name: 'workout_builder', query: { tab: 'create' } });
 };
 
+const removePlanFromUi = (planId) => {
+  const pid = String(planId || '').trim();
+  if (!pid) {
+    return;
+  }
+
+  workoutLists.value = workoutLists.value.filter((plan) => String(plan?.planId || '').trim() !== pid);
+
+  if (expandedPlanId.value === pid) {
+    expandedPlanId.value = null;
+    expandedPlanData.value = null;
+    selectedDay.value = '';
+    activeTab.value = 'overview';
+  }
+
+  const nextDayOrderStateByPlanId = { ...dayOrderStateByPlanId.value };
+  delete nextDayOrderStateByPlanId[pid];
+  dayOrderStateByPlanId.value = nextDayOrderStateByPlanId;
+
+  const nextReorderPanelOpenByPlanId = { ...reorderPanelOpenByPlanId.value };
+  delete nextReorderPanelOpenByPlanId[pid];
+  reorderPanelOpenByPlanId.value = nextReorderPanelOpenByPlanId;
+
+  if (workoutLists.value.length !== 1) {
+    didAutoExpandSinglePlan.value = false;
+  }
+};
+
+const deleteWorkoutPlan = async (plan) => {
+  const planId = String(plan?.planId || '').trim();
+  if (!planId || !canDeleteWorkoutPlan(plan)) {
+    return;
+  }
+
+  const planName = String(plan?.name || plan?.planName || 'this workout plan').trim();
+  const confirmed = window.confirm(`Delete ${planName}? This will permanently remove this workout plan.`);
+  if (!confirmed) {
+    return;
+  }
+
+  saveError.value = '';
+  saveMessage.value = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/workout-schedules/${encodeURIComponent(planId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body?.error || 'Failed to delete workout plan.');
+    }
+
+    removePlanFromUi(planId);
+    saveMessage.value = 'Workout plan deleted.';
+    await autoExpandSinglePlanIfNeeded();
+  } catch (err) {
+    saveError.value = err?.message || 'Failed to delete workout plan.';
+  }
+};
+
 const goToInProgress = () => {
   if (hasActiveWorkout.value && activeSession.value) {
     // Restore the date picker to the locked workout start date.
@@ -1373,6 +1448,14 @@ onUnmounted(() => {
                 </button>
                 <button type="button" class="wl-btn-edit" @click="openInBuilder(plan.planId)">
                   <i class="fa-solid fa-pencil"></i> Edit Plan
+                </button>
+                <button
+                  v-if="canDeleteWorkoutPlan(plan)"
+                  type="button"
+                  class="wl-btn-plan-delete"
+                  @click="deleteWorkoutPlan(plan)"
+                >
+                  <i class="fa-solid fa-trash"></i> Delete
                 </button>
               </div>
             </div>
@@ -2192,6 +2275,25 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: 5px; transition: background 0.12s;
 }
 .wl-btn-edit:hover { background: #e0e7ef; }
+
+.wl-btn-plan-delete {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s;
+}
+
+.wl-btn-plan-delete:hover {
+  background: #ffe4e6;
+}
 
 .wl-btn-reorder {
   background: #eaf2ff;
@@ -3345,6 +3447,13 @@ onUnmounted(() => {
     color: #f8fafc;
   }
   .wl-btn-edit {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.62rem;
+    border-radius: 8px;
+    gap: 3px;
+  }
+  .wl-btn-plan-delete {
     min-height: 26px;
     padding: 3px 8px;
     font-size: 0.62rem;

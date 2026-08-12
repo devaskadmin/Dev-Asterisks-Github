@@ -1549,6 +1549,29 @@ router.delete('/workout-schedules/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule id' });
     }
 
+    const [scheduleRows] = await pool.query(
+      'SELECT id, user_id, workout_plan_type FROM workout_schedules WHERE id = ? LIMIT 1',
+      [scheduleId]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Workout schedule not found' });
+    }
+
+    const schedule = scheduleRows[0] || {};
+    if (Number(schedule.user_id || 0) !== Number(userId)) {
+      return res.status(404).json({ error: 'Workout schedule not found' });
+    }
+
+    const parsedPlanType = parseWorkoutPlanType(schedule.workout_plan_type);
+    const isGlobalPlanType = Boolean(
+      parsedPlanType?.isSet && parsedPlanType?.isValid && GLOBAL_WORKOUT_PLAN_TYPES.has(parsedPlanType.value)
+    );
+
+    if (isGlobalPlanType && !isAdminUser(req)) {
+      return res.status(403).json({ error: 'You are not allowed to delete global workout templates.' });
+    }
+
     const [result] = await pool.query(
       'DELETE FROM workout_schedules WHERE id = ? AND user_id = ?',
       [scheduleId, userId]
@@ -2208,6 +2231,29 @@ router.delete('/workout-planner/:planId', async (req, res) => {
     const scheduleId = Number(req.params?.planId || 0);
     if (!scheduleId) {
       return res.status(400).json({ error: 'planId is required' });
+    }
+
+    const [scheduleRows] = await pool.query(
+      'SELECT id, user_id, workout_plan_type FROM workout_schedules WHERE id = ? LIMIT 1',
+      [scheduleId]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Workout plan not found' });
+    }
+
+    const schedule = scheduleRows[0] || {};
+    if (Number(schedule.user_id || 0) !== Number(userId)) {
+      return res.status(404).json({ error: 'Workout plan not found' });
+    }
+
+    const parsedPlanType = parseWorkoutPlanType(schedule.workout_plan_type);
+    const isGlobalPlanType = Boolean(
+      parsedPlanType?.isSet && parsedPlanType?.isValid && GLOBAL_WORKOUT_PLAN_TYPES.has(parsedPlanType.value)
+    );
+
+    if (isGlobalPlanType && !isAdminUser(req)) {
+      return res.status(403).json({ error: 'You are not allowed to delete global workout templates.' });
     }
 
     const [result] = await pool.query(
