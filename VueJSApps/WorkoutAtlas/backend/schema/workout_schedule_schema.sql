@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS workout_schedule_exercises (
   target_reps INT(11) DEFAULT NULL,
   target_weight DECIMAL(8,2) DEFAULT NULL,
   target_duration_minutes INT(11) DEFAULT NULL,
+  target_distance_miles DECIMAL(8,2) DEFAULT NULL,
   target_rest_seconds INT(11) DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

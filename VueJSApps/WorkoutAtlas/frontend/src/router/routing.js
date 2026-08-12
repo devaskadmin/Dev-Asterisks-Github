@@ -234,6 +234,12 @@ export const pagesRoutes = [
         meta: { layout: 'AppLayout', isPartials: true },
     },
     {
+        path: '/find-plans',
+        component: () => import('@/views/Member/FindPlans.vue'),
+        name: 'find_plans',
+        meta: { layout: 'AppLayout', isPartials: true },
+    },
+    {
         path: '/workouts/:planId',
         component: () => import('@/views/Member/WorkoutDetail.vue'),
         name: 'workout_detail',

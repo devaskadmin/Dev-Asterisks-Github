@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
 import { API_BASE } from '@/config/env';
 import { useWorkoutSessionDraft } from '@/composable/useWorkoutSessionDraft';
 
 const router = useRouter();
+const route = useRoute();
 const WORKOUT_LOG_ACTIVE_BODY_CLASS = 'wa-workout-log-active';
 
 /* ─── Tab state ───────────────────────────────────────────────── */
@@ -1046,6 +1047,35 @@ const openInBuilder = (planId) => {
     : { name: 'workout_builder', query: { tab: 'create' } });
 };
 
+const openRequestedPlanFromQuery = async () => {
+  if (hasActiveWorkout.value) {
+    return;
+  }
+
+  const requestedPlanId = String(route.query?.planId || '').trim();
+  if (!requestedPlanId) {
+    return;
+  }
+
+  const existsInList = workoutLists.value.some((plan) => String(plan?.planId || '').trim() === requestedPlanId);
+  if (!existsInList) {
+    return;
+  }
+
+  activeTab.value = 'overview';
+  if (expandedPlanId.value !== requestedPlanId) {
+    await togglePlan(requestedPlanId);
+  }
+};
+
+const openFindPlans = () => {
+  router.push({ name: 'find_plans' });
+};
+
+const openBuildMyOwnWorkout = () => {
+  openInBuilder('');
+};
+
 const removePlanFromUi = (planId) => {
   const pid = String(planId || '').trim();
   if (!pid) {
@@ -1278,11 +1308,13 @@ onMounted(async () => {
   document.body.classList.add(WORKOUT_LOG_ACTIVE_BODY_CLASS);
   await loadWorkoutLists();
   await checkActiveSession();
+  await openRequestedPlanFromQuery();
 });
 
 onActivated(async () => {
   await loadWorkoutLists();
   await checkActiveSession();
+  await openRequestedPlanFromQuery();
 });
 
 onUnmounted(() => {
@@ -1405,8 +1437,11 @@ onUnmounted(() => {
         <div v-else-if="workoutLists.length === 0" class="wl-empty app-section-card">
           <i class="fa-solid fa-dumbbell wl-empty-icon"></i>
           <h6>No workout plans yet</h6>
-          <p>Create your first plan in Workout Builder.</p>
-          <button type="button" class="wl-btn" @click="startBuilder">Create Workout</button>
+          <p>Select a starter plan or build your own workout.</p>
+          <div class="d-flex flex-wrap gap-2 justify-content-center">
+            <button type="button" class="wl-btn" @click="openFindPlans">Find a Workout Plan</button>
+            <button type="button" class="wl-btn wl-btn-secondary" @click="openBuildMyOwnWorkout">Build My Own Workout</button>
+          </div>
         </div>
 
         <!-- ── Accordion plan list ──────────────────────────────────────── -->

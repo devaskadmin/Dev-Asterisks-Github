@@ -2,97 +2,135 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { API_BASE } from '@/config/env'
+import ExercisePickerModal from '@/components/workout-builder/ExercisePickerModal.vue'
 
 const loading = ref(false)
 const saving = ref(false)
 const deletingId = ref('')
+const builderVisible = ref(false)
 const plans = ref([])
-const selectedPlan = ref(null)
-const editingId = ref('')
 const errorMsg = ref('')
 const successMsg = ref('')
 
-const scheduleEditor = reactive({
-  open: false,
-  loading: false,
-  saving: false,
-  planId: '',
-  planName: '',
-  metadata: {
-    name: '',
-    description: '',
-    type: 'Strength',
-    planType: 'featured',
-    estimatedDuration: 45,
-  },
-  scheduleMode: 'day',
-  dayGroups: ['Any Day'],
-  weekGroups: ['Week 1'],
+const exercisePickerOpen = ref(false)
+const exerciseLibrary = ref([])
+const exerciseLibraryLoading = ref(false)
+const currentUserId = ref(null)
+const pickerTargetDayId = ref('')
+const CATEGORY_OPTIONS = ['Weight Loss', 'Strength', 'Muscle Building', 'Cardio', 'General Fitness', 'Beginner']
+const ACCESS_OPTIONS = ['Free', 'Premium']
+const CATEGORY_ALIASES = {
+  'weight loss': 'Weight Loss',
+  strength: 'Strength',
+  'muscle building': 'Muscle Building',
+  cardio: 'Cardio',
+  'general fitness': 'General Fitness',
+  beginner: 'Beginner',
+  featured: 'General Fitness',
+  community_shared: 'General Fitness',
+  'community shared': 'General Fitness',
+}
+
+const normalizeCategory = (value) => {
+  const raw = String(value || '').trim()
+  if (CATEGORY_OPTIONS.includes(raw)) {
+    return raw
+  }
+
+  const mapped = CATEGORY_ALIASES[raw.toLowerCase()]
+  if (mapped && CATEGORY_OPTIONS.includes(mapped)) {
+    return mapped
+  }
+
+  return CATEGORY_OPTIONS[0]
+}
+
+const DEFAULT_DAY_LABELS = ['Monday', 'Wednesday', 'Friday']
+const DAY_PRESET_OPTIONS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const CUSTOM_DAY_OPTION_VALUE = '__custom__'
+
+const createDayLabel = (index) => `DAY ${index + 1}`
+const createDay = (index = 0, label = '') => ({
+  id: `day-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  label: String(label || createDayLabel(index)).trim(),
   exercises: [],
 })
 
-const form = reactive({
+const createInitialDays = () => DEFAULT_DAY_LABELS.map((label, index) => createDay(index, label))
+
+const getNextDayDefaultLabel = () => {
+  const usedLabels = new Set(
+    builder.days
+      .map((day) => String(day?.label || '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+  const nextPreset = DAY_PRESET_OPTIONS.find((label) => !usedLabels.has(label.toLowerCase()))
+  if (nextPreset) {
+    return nextPreset
+  }
+  return createDayLabel(builder.days.length)
+}
+
+const isPresetDayLabel = (label) => {
+  const value = String(label || '').trim().toLowerCase()
+  return DAY_PRESET_OPTIONS.some((item) => item.toLowerCase() === value)
+}
+
+const handleDayPresetSelect = (dayId, value) => {
+  const day = builder.days.find((item) => item.id === dayId)
+  if (!day) return
+  if (value === CUSTOM_DAY_OPTION_VALUE) {
+    return
+  }
+  day.label = String(value || '').trim() || day.label
+}
+
+const builder = reactive({
+  planId: '',
+  planType: 'featured',
+  category: normalizeCategory(''),
   name: '',
   description: '',
-  planType: 'featured',
-  estimatedDuration: 45,
+  estimatedDuration: 0,
+  access: 'Free',
+  days: createInitialDays(),
 })
 
-const isEditing = computed(() => Boolean(String(editingId.value || '').trim()))
-const activeScheduleGroups = computed(() => {
-  const groups = scheduleEditor.scheduleMode === 'week' ? scheduleEditor.weekGroups : scheduleEditor.dayGroups
-  return Array.isArray(groups) && groups.length ? groups : [scheduleEditor.scheduleMode === 'week' ? 'Week 1' : 'Any Day']
-})
+const isEditing = computed(() => Boolean(String(builder.planId || '').trim()))
 
 const clearMessages = () => {
   errorMsg.value = ''
   successMsg.value = ''
 }
 
-const sanitizeGroupLabels = (labels = [], fallbackLabel = 'Any Day') => {
-  const normalized = labels
-    .map((label) => String(label || '').trim())
-    .filter(Boolean)
-    .filter((label, index, source) => source.findIndex((entry) => entry.toLowerCase() === label.toLowerCase()) === index)
-  return normalized.length ? normalized : [fallbackLabel]
-}
-
-const normalizeEditorExercise = (exercise = {}, fallbackGroup = 'Any Day') => ({
-  id: String(exercise?.id || `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-  exerciseId: Number(exercise?.exerciseId || 0),
-  name: String(exercise?.name || '').trim(),
-  image: String(exercise?.image || '').trim(),
-  workoutType: String(exercise?.workoutType || 'Strength').trim() || 'Strength',
-  muscleGroup: String(exercise?.muscleGroup || '').trim(),
-  equipment: String(exercise?.equipment || '').trim(),
-  sets: Number(exercise?.sets || 0),
-  reps: Number(exercise?.reps || 0),
-  weight: Number(exercise?.weight || 0),
-  duration: Number(exercise?.duration || 0),
-  restTime: Number(exercise?.restTime || 0),
-  notes: String(exercise?.notes || '').trim(),
-  scheduleGroup: String(exercise?.scheduleGroup || fallbackGroup).trim() || fallbackGroup,
-})
-
-const ensureEditorExerciseGroups = () => {
-  const fallbackGroup = activeScheduleGroups.value[0]
-  scheduleEditor.exercises = scheduleEditor.exercises.map((exercise) => {
-    if (activeScheduleGroups.value.includes(exercise.scheduleGroup)) {
-      return exercise
-    }
-    return { ...exercise, scheduleGroup: fallbackGroup }
-  })
-}
-
 const normalizePlan = (plan = {}) => ({
   planId: String(plan.planId || '').trim(),
   name: String(plan.name || '').trim() || 'Untitled Workout',
+  category: normalizeCategory(plan.type),
   description: String(plan.description || '').trim(),
   planType: String(plan.planType || 'featured').trim() || 'featured',
   estimatedDuration: Number(plan.estimatedDuration || 0),
+  dayCount: Number(plan.dayCount || 0),
   updatedAt: plan.updatedAt || null,
   exerciseCount: Number(plan.exerciseCount || 0),
+  visibility: String(plan.visibility || 'private').trim() || 'private',
 })
+
+const formatAccess = (plan = {}) => {
+  const visibility = String(plan?.visibility || '').trim().toLowerCase()
+  if (visibility === 'private' || visibility === 'unlisted') {
+    return 'Premium'
+  }
+  return 'Free'
+}
+
+const normalizeBuilderAccess = (value) => {
+  const visibility = String(value || '').trim().toLowerCase()
+  if (visibility === 'private' || visibility === 'unlisted' || visibility === 'premium') {
+    return 'Premium'
+  }
+  return 'Free'
+}
 
 const formatDate = (value) => {
   if (!value) return '—'
@@ -101,18 +139,76 @@ const formatDate = (value) => {
   return parsed.toLocaleDateString()
 }
 
-const planTypeLabel = (value) => {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'community_shared') return 'Community Shared'
-  return 'Featured'
+const normalizeExerciseRecordingType = (exercise = {}) => {
+  const workoutType = String(exercise?.workoutType || '').trim().toLowerCase()
+  if (workoutType === 'cardio') return 'cardio'
+  if (workoutType === 'strength' || !workoutType) return 'strength'
+  return 'other'
 }
 
-const resetForm = () => {
-  form.name = ''
-  form.description = ''
-  form.planType = 'featured'
-  form.estimatedDuration = 45
-  editingId.value = ''
+const isStrengthExercise = (exercise = {}) => normalizeExerciseRecordingType(exercise) === 'strength'
+const supportsDistance = (exercise = {}) => {
+  const recordingType = normalizeExerciseRecordingType(exercise)
+  return recordingType === 'cardio' || recordingType === 'other'
+}
+
+const normalizeExerciseFromPlanner = (exercise = {}) => ({
+  id: String(exercise?.id || `wse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+  exerciseId: Number(exercise?.exerciseId || 0),
+  name: String(exercise?.name || '').trim() || 'Untitled Exercise',
+  image: String(exercise?.image || '').trim(),
+  workoutType: String(exercise?.workoutType || 'Strength').trim() || 'Strength',
+  muscleGroup: String(exercise?.muscleGroup || '').trim(),
+  equipment: String(exercise?.equipment || '').trim(),
+  sets: Number(exercise?.sets || 0),
+  reps: Number(exercise?.reps || 0),
+  weight: Number(exercise?.weight || 0),
+  duration: Number(exercise?.duration || 0),
+  distance: Number(exercise?.distance || 0),
+  restTime: Number(exercise?.restTime || 0),
+  notes: String(exercise?.notes || '').trim(),
+})
+
+const normalizeExerciseFromPicker = (exercise = {}) => ({
+  id: `picker-${Number(exercise?.ExerciseID || 0)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  exerciseId: Number(exercise?.ExerciseID || 0),
+  name: String(exercise?.ExerciseTitle || '').trim(),
+  image: String(exercise?.image || '').trim(),
+  workoutType: String(exercise?.WorkoutType || 'Strength').trim() || 'Strength',
+  muscleGroup: String(exercise?.MuscleGroup || '').trim(),
+  equipment: String(exercise?.Equipment || '').trim(),
+  sets: 0,
+  reps: 0,
+  weight: 0,
+  duration: 0,
+  distance: 0,
+  restTime: 0,
+  notes: '',
+})
+
+const recalculateDayLabels = () => {
+  builder.days = builder.days.map((day, index) => ({
+    ...day,
+    label: String(day?.label || '').trim() || createDayLabel(index),
+  }))
+}
+
+const resetBuilder = () => {
+  builder.planId = ''
+  builder.planType = 'featured'
+  builder.category = normalizeCategory('')
+  builder.name = ''
+  builder.description = ''
+  builder.estimatedDuration = 0
+  builder.access = 'Free'
+  builder.days = createInitialDays()
+  pickerTargetDayId.value = ''
+  clearMessages()
+}
+
+const startAddPlan = () => {
+  resetBuilder()
+  builderVisible.value = true
 }
 
 const loadPlans = async () => {
@@ -126,176 +222,332 @@ const loadPlans = async () => {
   } catch (err) {
     const status = Number(err?.response?.status || 0)
     const apiError = String(err?.response?.data?.error || '').trim().toLowerCase()
-
-    // Backward-compatible no-data handling: if the API path returns a not-found/no-data shape,
-    // keep the table visible with an empty list instead of showing a failure banner.
     if (status === 404 || apiError.includes('no global workout plans')) {
       plans.value = []
-      errorMsg.value = ''
       return
     }
-
     errorMsg.value = err.response?.data?.error || 'Failed to load global workout plans.'
   } finally {
     loading.value = false
   }
 }
 
-const createPlan = async () => {
-  if (!form.name.trim()) {
-    errorMsg.value = 'Plan Name is required.'
+const loadExerciseLibrary = async () => {
+  if (exerciseLibraryLoading.value || exerciseLibrary.value.length) {
     return
   }
 
-  saving.value = true
-  clearMessages()
+  exerciseLibraryLoading.value = true
   try {
-    const res = await axios.post(
-      `${API_BASE}/api/admin/global-workout-plans`,
-      {
-        title: form.name,
-        description: form.description,
-        planType: form.planType,
-        estimatedDurationMinutes: Number(form.estimatedDuration || 0),
-      },
-      { withCredentials: true }
-    )
+    const [exerciseRes, sessionRes] = await Promise.all([
+      axios.get(`${API_BASE}/api/exercises?view=all`, { withCredentials: true }),
+      axios.get(`${API_BASE}/api/session`, { withCredentials: true }),
+    ])
 
-    plans.value = Array.isArray(res.data?.workoutLists)
-      ? res.data.workoutLists.map(normalizePlan)
-      : plans.value
-
-    const newPlanId = String(res.data?.planner?.planId || '').trim()
-    if (newPlanId) {
-      await viewPlan(newPlanId)
-    }
-
-    successMsg.value = 'Global workout plan created.'
-    resetForm()
+    exerciseLibrary.value = Array.isArray(exerciseRes.data) ? exerciseRes.data : []
+    currentUserId.value = Number(sessionRes?.data?.user?.id || 0) || null
   } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Failed to create global workout plan.'
+    errorMsg.value = err.response?.data?.error || 'Failed to load exercise library.'
   } finally {
-    saving.value = false
+    exerciseLibraryLoading.value = false
   }
 }
 
-const updatePlan = async () => {
-  const targetId = String(editingId.value || '').trim()
-  if (!targetId) {
-    errorMsg.value = 'No plan selected for edit.'
-    return
-  }
-
-  if (!form.name.trim()) {
-    errorMsg.value = 'Plan Name is required.'
-    return
-  }
-
-  saving.value = true
-  clearMessages()
-  try {
-    const res = await axios.patch(
-      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`,
-      {
-        title: form.name,
-        description: form.description,
-        planType: form.planType,
-        estimatedDurationMinutes: Number(form.estimatedDuration || 0),
-      },
-      { withCredentials: true }
-    )
-
-    plans.value = Array.isArray(res.data?.workoutLists)
-      ? res.data.workoutLists.map(normalizePlan)
-      : plans.value
-
-    await viewPlan(targetId)
-    successMsg.value = 'Global workout plan updated.'
-    resetForm()
-  } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Failed to update global workout plan.'
-  } finally {
-    saving.value = false
-  }
-}
-
-const savePlan = async () => {
-  if (isEditing.value) {
-    await updatePlan()
-    return
-  }
-  await createPlan()
-}
-
-const viewPlan = async (planId) => {
+const loadPlanIntoBuilder = async (planId) => {
   const targetId = String(planId || '').trim()
-  if (!targetId) {
-    selectedPlan.value = null
-    return
-  }
+  if (!targetId) return
 
+  saving.value = true
   clearMessages()
   try {
-    const res = await axios.get(
-      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`,
-      { withCredentials: true }
-    )
+    const res = await axios.get(`${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`, {
+      withCredentials: true,
+    })
 
     const planner = res.data?.planner || {}
     const metadata = planner?.metadata || {}
 
-    selectedPlan.value = {
-      planId: String(planner.planId || targetId),
-      name: String(metadata.name || '').trim() || 'Untitled Workout',
-      description: String(metadata.description || '').trim(),
-      planType: String(metadata.planType || 'featured').trim() || 'featured',
-      estimatedDuration: Number(metadata.estimatedDuration || 0),
-      exerciseCount: Array.isArray(planner.exercises) ? planner.exercises.length : 0,
-      updatedAt: planner.updatedAt || null,
+    const dayGroups = Array.isArray(planner?.dayGroups)
+      ? planner.dayGroups.map((group) => String(group || '').trim()).filter(Boolean)
+      : []
+
+    const effectiveGroups = dayGroups.length ? dayGroups : ['Day 1']
+    const dayMap = new Map()
+    for (const [index, groupLabel] of effectiveGroups.entries()) {
+      dayMap.set(groupLabel, {
+        id: `day-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
+        label: groupLabel,
+        exercises: [],
+      })
     }
+
+    const plannerExercises = Array.isArray(planner?.exercises) ? planner.exercises : []
+    for (const rawExercise of plannerExercises) {
+      const normalized = normalizeExerciseFromPlanner(rawExercise)
+      const targetLabel = String(rawExercise?.scheduleGroup || effectiveGroups[0] || 'Day 1').trim() || 'Day 1'
+      if (!dayMap.has(targetLabel)) {
+        dayMap.set(targetLabel, {
+          id: `day-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dayMap.size}`,
+          label: targetLabel,
+          exercises: [],
+        })
+      }
+      dayMap.get(targetLabel)?.exercises.push(normalized)
+    }
+
+    builder.planId = targetId
+    builder.planType = String(metadata?.planType || 'featured').trim() || 'featured'
+    builder.category = normalizeCategory(metadata?.type)
+    builder.name = String(metadata?.name || '').trim()
+    builder.description = String(metadata?.description || '').trim()
+    builder.estimatedDuration = Math.max(0, Number(metadata?.estimatedDuration || 0))
+    builder.access = normalizeBuilderAccess(planner?.visibility)
+    builder.days = Array.from(dayMap.values())
+    recalculateDayLabels()
+
+    successMsg.value = `Loaded ${builder.name || 'global workout'} for editing.`
   } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Failed to load plan details.'
+    errorMsg.value = err.response?.data?.error || 'Failed to load global workout plan.'
+  } finally {
+    saving.value = false
   }
 }
 
-const editPlan = (plan) => {
-  const planData = normalizePlan(plan)
-  editingId.value = planData.planId
-  form.name = planData.name
-  form.description = planData.description
-  form.planType = planData.planType === 'community_shared' ? 'community_shared' : 'featured'
-  form.estimatedDuration = Number(planData.estimatedDuration || 0)
+const addDay = () => {
+  builder.days.push(createDay(builder.days.length, getNextDayDefaultLabel()))
+  recalculateDayLabels()
+}
+
+const removeDay = (dayId) => {
+  if (builder.days.length <= 1) {
+    return
+  }
+
+  const index = builder.days.findIndex((day) => day.id === dayId)
+  if (index < 0) return
+
+  const targetDay = builder.days[index]
+  if (Array.isArray(targetDay?.exercises) && targetDay.exercises.length > 0) {
+    const confirmed = window.confirm('This day has exercises. Remove the day and all exercises in it?')
+    if (!confirmed) return
+  }
+
+  builder.days.splice(index, 1)
+  recalculateDayLabels()
+}
+
+const removeExercise = (dayId, exerciseIndex) => {
+  const day = builder.days.find((item) => item.id === dayId)
+  if (!day || !Array.isArray(day.exercises)) return
+  day.exercises.splice(exerciseIndex, 1)
+}
+
+const moveExercise = (dayId, exerciseIndex, direction) => {
+  const day = builder.days.find((item) => item.id === dayId)
+  if (!day || !Array.isArray(day.exercises)) return
+
+  const targetIndex = direction === 'up' ? exerciseIndex - 1 : exerciseIndex + 1
+  if (targetIndex < 0 || targetIndex >= day.exercises.length) {
+    return
+  }
+
+  const reordered = [...day.exercises]
+  const [item] = reordered.splice(exerciseIndex, 1)
+  reordered.splice(targetIndex, 0, item)
+  day.exercises = reordered
+}
+
+const openExercisePickerForDay = async (dayId) => {
+  const day = builder.days.find((item) => item.id === dayId)
+  if (!day) return
+
   clearMessages()
+  await loadExerciseLibrary()
+  if (!exerciseLibrary.value.length) {
+    errorMsg.value = 'No exercises available to add right now.'
+    return
+  }
+
+  pickerTargetDayId.value = dayId
+  exercisePickerOpen.value = true
+}
+
+const handleAddExercisesFromPicker = (incomingExercises) => {
+  const targetDayId = String(pickerTargetDayId.value || '').trim()
+  const targetDay = builder.days.find((day) => day.id === targetDayId)
+  if (!targetDay) {
+    exercisePickerOpen.value = false
+    pickerTargetDayId.value = ''
+    return
+  }
+
+  const exercises = Array.isArray(incomingExercises) ? incomingExercises : [incomingExercises]
+  const validExercises = exercises.filter((exercise) => Number(exercise?.ExerciseID || 0) > 0)
+  if (!validExercises.length) {
+    exercisePickerOpen.value = false
+    pickerTargetDayId.value = ''
+    return
+  }
+
+  targetDay.exercises.push(...validExercises.map((exercise) => normalizeExerciseFromPicker(exercise)))
+  exercisePickerOpen.value = false
+  pickerTargetDayId.value = ''
+  successMsg.value = validExercises.length > 1
+    ? `${validExercises.length} exercises added to ${targetDay.label}.`
+    : `Exercise added to ${targetDay.label}.`
+}
+
+const validateBuilder = () => {
+  const missing = []
+  if (!String(builder.category || '').trim()) missing.push('category')
+  if (!String(builder.name || '').trim()) missing.push('plan name')
+  const normalizedDays = builder.days
+    .map((day) => String(day?.label || '').trim())
+    .filter(Boolean)
+  if (!normalizedDays.length) missing.push('at least one workout day')
+
+  const exerciseCount = builder.days.reduce((total, day) => {
+    return total + (Array.isArray(day?.exercises) ? day.exercises.length : 0)
+  }, 0)
+  if (exerciseCount < 1) missing.push('at least one exercise')
+
+  if (missing.length) {
+    return {
+      ok: false,
+      message: `This global starter workout is incomplete. Missing: ${missing.join(', ')}.`,
+    }
+  }
+
+  return { ok: true }
+}
+
+const ensureDraftPlanId = async () => {
+  if (String(builder.planId || '').trim()) {
+    return builder.planId
+  }
+
+  const createRes = await axios.post(
+    `${API_BASE}/api/admin/global-workout-plans`,
+    {
+      title: builder.name,
+      description: builder.description,
+      planType: builder.planType,
+      estimatedDurationMinutes: Math.max(0, Number(builder.estimatedDuration || 0)),
+      accessLevel: String(builder.access || 'Free').trim(),
+    },
+    { withCredentials: true }
+  )
+
+  const newPlanId = String(createRes.data?.planner?.planId || '').trim()
+  if (!newPlanId) {
+    throw new Error('Could not create global workout plan draft.')
+  }
+
+  builder.planId = newPlanId
+
+  if (Array.isArray(createRes.data?.workoutLists)) {
+    plans.value = createRes.data.workoutLists.map(normalizePlan)
+  }
+
+  return newPlanId
+}
+
+const saveGlobalWorkout = async () => {
+  clearMessages()
+
+  const validation = validateBuilder()
+  if (!validation.ok) {
+    errorMsg.value = validation.message
+    return
+  }
+
+  saving.value = true
+  try {
+    const planId = await ensureDraftPlanId()
+    const dayGroups = builder.days.map((day, index) => String(day?.label || '').trim() || createDayLabel(index))
+
+    const exercises = []
+    for (const day of builder.days) {
+      const dayLabel = String(day?.label || '').trim()
+      const dayExercises = Array.isArray(day?.exercises) ? day.exercises : []
+      for (const exercise of dayExercises) {
+        exercises.push({
+          id: exercise.id,
+          exerciseId: Number(exercise.exerciseId || 0),
+          name: String(exercise.name || '').trim(),
+          image: String(exercise.image || '').trim(),
+          workoutType: String(exercise.workoutType || 'Strength').trim() || 'Strength',
+          muscleGroup: String(exercise.muscleGroup || '').trim(),
+          equipment: String(exercise.equipment || '').trim(),
+          sets: Number(exercise.sets || 0),
+          reps: Number(exercise.reps || 0),
+          weight: Number(exercise.weight || 0),
+          duration: Number(exercise.duration || 0),
+          distance: Number(exercise.distance || 0),
+          restTime: Number(exercise.restTime || 0),
+          notes: String(exercise.notes || '').trim(),
+          scheduleGroup: dayLabel,
+        })
+      }
+    }
+
+    const plannerPayload = {
+      planId,
+      scheduleMode: 'day',
+      dayGroups,
+      weekGroups: ['Week 1'],
+      metadata: {
+        name: String(builder.name || '').trim(),
+        description: String(builder.description || '').trim(),
+        type: normalizeCategory(builder.category),
+        planType: builder.planType,
+        estimatedDuration: Math.max(0, Number(builder.estimatedDuration || 0)),
+        accessLevel: String(builder.access || 'Free').trim(),
+      },
+      exercises,
+    }
+
+    const saveRes = await axios.patch(
+      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(planId)}/schedule`,
+      { planner: plannerPayload },
+      { withCredentials: true }
+    )
+
+    if (Array.isArray(saveRes.data?.workoutLists)) {
+      plans.value = saveRes.data.workoutLists.map(normalizePlan)
+    } else {
+      await loadPlans()
+    }
+
+    successMsg.value = 'Global workout saved.'
+    await loadPlanIntoBuilder(planId)
+  } catch (err) {
+    errorMsg.value = err.response?.data?.error || err.message || 'Failed to save global workout.'
+  } finally {
+    saving.value = false
+  }
 }
 
 const deletePlan = async (plan) => {
   const targetId = String(plan?.planId || '').trim()
-  if (!targetId) {
-    return
-  }
+  if (!targetId) return
 
   const confirmed = window.confirm(`Delete ${plan?.name || 'this plan'}?`)
-  if (!confirmed) {
-    return
-  }
+  if (!confirmed) return
 
   deletingId.value = targetId
   clearMessages()
   try {
-    const res = await axios.delete(
-      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`,
-      { withCredentials: true }
-    )
+    const res = await axios.delete(`${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`, {
+      withCredentials: true,
+    })
 
     plans.value = Array.isArray(res.data?.workoutLists)
       ? res.data.workoutLists.map(normalizePlan)
       : plans.value.filter((item) => String(item.planId) !== targetId)
 
-    if (String(selectedPlan.value?.planId || '') === targetId) {
-      selectedPlan.value = null
-    }
-    if (String(editingId.value || '') === targetId) {
-      resetForm()
+    if (String(builder.planId || '') === targetId) {
+      resetBuilder()
     }
 
     successMsg.value = 'Global workout plan deleted.'
@@ -306,158 +558,18 @@ const deletePlan = async (plan) => {
   }
 }
 
-const openInWorkoutBuilder = (plan) => {
-  const planId = String(plan?.planId || selectedPlan.value?.planId || '').trim()
-  if (!planId) {
-    return
-  }
-
-  void openScheduleEditor(planId)
+const viewPlan = (plan) => {
+  const targetId = String(plan?.planId || '').trim()
+  if (!targetId) return
+  builderVisible.value = true
+  void loadPlanIntoBuilder(targetId)
 }
 
-const openScheduleEditor = async (planOrId) => {
-  const planId = String(planOrId?.planId || planOrId || '').trim()
-  if (!planId) {
-    return
-  }
-
-  scheduleEditor.open = true
-  scheduleEditor.loading = true
-  clearMessages()
-
-  try {
-    const res = await axios.get(
-      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(planId)}`,
-      { withCredentials: true }
-    )
-
-    const planner = res.data?.planner || {}
-    const metadata = planner?.metadata || {}
-    const mode = String(planner?.scheduleMode || 'day').trim() === 'week' ? 'week' : 'day'
-
-    const dayGroups = sanitizeGroupLabels(planner?.dayGroups || [], 'Any Day')
-    const weekGroups = sanitizeGroupLabels(planner?.weekGroups || [], 'Week 1')
-    const fallbackGroup = mode === 'week' ? weekGroups[0] : dayGroups[0]
-
-    scheduleEditor.planId = planId
-    scheduleEditor.planName = String(metadata?.name || '').trim() || 'Untitled Workout'
-    scheduleEditor.metadata = {
-      name: String(metadata?.name || '').trim() || 'Untitled Workout',
-      description: String(metadata?.description || '').trim(),
-      type: String(metadata?.type || 'Strength').trim() || 'Strength',
-      planType: String(metadata?.planType || 'featured').trim() || 'featured',
-      estimatedDuration: Number(metadata?.estimatedDuration || 0),
-    }
-    scheduleEditor.scheduleMode = mode
-    scheduleEditor.dayGroups = dayGroups
-    scheduleEditor.weekGroups = weekGroups
-    scheduleEditor.exercises = Array.isArray(planner?.exercises)
-      ? planner.exercises.map((exercise) => normalizeEditorExercise(exercise, fallbackGroup))
-      : []
-
-    ensureEditorExerciseGroups()
-  } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Failed to load global workout plan schedule.'
-    scheduleEditor.open = false
-  } finally {
-    scheduleEditor.loading = false
-  }
-}
-
-const addScheduleGroup = () => {
-  if (scheduleEditor.scheduleMode === 'week') {
-    const nextLabel = `Week ${scheduleEditor.weekGroups.length + 1}`
-    scheduleEditor.weekGroups = sanitizeGroupLabels([...scheduleEditor.weekGroups, nextLabel], 'Week 1')
-  } else {
-    const nextLabel = `Day ${scheduleEditor.dayGroups.length + 1}`
-    scheduleEditor.dayGroups = sanitizeGroupLabels([...scheduleEditor.dayGroups, nextLabel], 'Any Day')
-  }
-  ensureEditorExerciseGroups()
-}
-
-const removeScheduleGroup = (index) => {
-  if (scheduleEditor.scheduleMode === 'week') {
-    if (scheduleEditor.weekGroups.length <= 1) return
-    scheduleEditor.weekGroups.splice(index, 1)
-    scheduleEditor.weekGroups = sanitizeGroupLabels(scheduleEditor.weekGroups, 'Week 1')
-  } else {
-    if (scheduleEditor.dayGroups.length <= 1) return
-    scheduleEditor.dayGroups.splice(index, 1)
-    scheduleEditor.dayGroups = sanitizeGroupLabels(scheduleEditor.dayGroups, 'Any Day')
-  }
-  ensureEditorExerciseGroups()
-}
-
-const removeEditorExercise = (index) => {
-  scheduleEditor.exercises.splice(index, 1)
-}
-
-const saveScheduleEditor = async () => {
-  const targetPlanId = String(scheduleEditor.planId || '').trim()
-  if (!targetPlanId) {
-    errorMsg.value = 'No global workout plan selected for schedule editing.'
-    return
-  }
-
-  if (!Array.isArray(scheduleEditor.exercises) || scheduleEditor.exercises.length < 1) {
-    errorMsg.value = 'Add at least one exercise before saving this workout.'
-    successMsg.value = ''
-    return
-  }
-
-  scheduleEditor.saving = true
-  clearMessages()
-  try {
-    const dayGroups = sanitizeGroupLabels(scheduleEditor.dayGroups, 'Any Day')
-    const weekGroups = sanitizeGroupLabels(scheduleEditor.weekGroups, 'Week 1')
-    const mode = scheduleEditor.scheduleMode === 'week' ? 'week' : 'day'
-    const fallbackGroup = mode === 'week' ? weekGroups[0] : dayGroups[0]
-
-    const planner = {
-      planId: targetPlanId,
-      scheduleMode: mode,
-      dayGroups,
-      weekGroups,
-      metadata: {
-        ...scheduleEditor.metadata,
-      },
-      exercises: scheduleEditor.exercises.map((exercise) => ({
-        ...exercise,
-        scheduleGroup: activeScheduleGroups.value.includes(exercise.scheduleGroup)
-          ? exercise.scheduleGroup
-          : fallbackGroup,
-      })),
-    }
-
-    const res = await axios.patch(
-      `${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetPlanId)}/schedule`,
-      { planner },
-      { withCredentials: true }
-    )
-
-    plans.value = Array.isArray(res.data?.workoutLists)
-      ? res.data.workoutLists.map(normalizePlan)
-      : plans.value
-
-    const savedPlanner = res.data?.planner || planner
-    const savedMetadata = savedPlanner?.metadata || scheduleEditor.metadata
-    selectedPlan.value = {
-      planId: String(savedPlanner?.planId || targetPlanId),
-      name: String(savedMetadata?.name || scheduleEditor.planName || '').trim() || 'Untitled Workout',
-      description: String(savedMetadata?.description || '').trim(),
-      planType: String(savedMetadata?.planType || 'featured').trim() || 'featured',
-      estimatedDuration: Number(savedMetadata?.estimatedDuration || 0),
-      exerciseCount: Array.isArray(savedPlanner?.exercises) ? savedPlanner.exercises.length : scheduleEditor.exercises.length,
-      updatedAt: savedPlanner?.updatedAt || new Date().toISOString(),
-    }
-
-    scheduleEditor.planName = selectedPlan.value.name
-    successMsg.value = 'Global workout plan schedule updated.'
-  } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Failed to save global workout plan schedule.'
-  } finally {
-    scheduleEditor.saving = false
-  }
+const editPlan = (plan) => {
+  const targetId = String(plan?.planId || '').trim()
+  if (!targetId) return
+  builderVisible.value = true
+  void loadPlanIntoBuilder(targetId)
 }
 
 onMounted(loadPlans)
@@ -466,210 +578,218 @@ onMounted(loadPlans)
 <template>
   <div class="app-page-shell admin-global-workout-plans">
     <div class="app-page-canvas app-inner-shell admin-global-workout-plans__canvas">
-    <section class="ff-page-header app-header-gradient admin-global-workout-plans__hero mb-20">
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div>
-        <h2 class="mb-0">Global Workout Plans</h2>
-        <small class="admin-global-workout-plans__hero-subtitle">Administrator workspace for global Featured and Community Shared plans.</small>
-      </div>
-      <button type="button" class="btn btn-primary admin-primary-btn" @click="resetForm">New Plan</button>
-      </div>
-    </section>
-
-    <div v-if="errorMsg" class="alert alert-danger">{{ errorMsg }}</div>
-    <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-
-    <div class="panel-bg admin-panel admin-panel--form mb-20">
-      <div class="row g-3 align-items-end">
-        <div class="col-md-4">
-          <label class="form-label">Plan Name</label>
-          <input v-model="form.name" class="form-control" placeholder="e.g., Summer Strength Foundation" />
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Workout Plan Type</label>
-          <select v-model="form.planType" class="form-select">
-            <option value="featured">Featured</option>
-            <option value="community_shared">Community Shared</option>
-          </select>
-        </div>
-        <div class="col-md-2">
-          <label class="form-label">Estimated Duration</label>
-          <input v-model.number="form.estimatedDuration" class="form-control" type="number" min="0" />
-        </div>
-        <div class="col-md-3 d-flex justify-content-end">
-          <button type="button" class="btn btn-primary admin-primary-btn" :disabled="saving" @click="savePlan">
-            <i v-if="saving" class="fa-solid fa-spinner fa-spin me-2"></i>
-            {{ isEditing ? 'Update Plan' : 'Create Plan' }}
-          </button>
-        </div>
-      </div>
-
-      <div class="mt-3">
-        <label class="form-label">Description</label>
-        <textarea v-model="form.description" class="form-control" rows="3" placeholder="Plan summary and intended audience"></textarea>
-      </div>
-    </div>
-
-    <div class="panel-bg admin-panel admin-panel--table mobile-table">
-      <div v-if="loading" class="p-3 text-muted">Loading global workout plans...</div>
-      <div v-else class="table-responsive">
-        <table class="table align-middle mb-0 admin-table">
-          <thead>
-            <tr>
-              <th>Plan Name</th>
-              <th>Type</th>
-              <th>Duration</th>
-              <th>Exercises</th>
-              <th>Updated</th>
-              <th class="text-end">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="plan in plans" :key="plan.planId">
-              <td data-label="Plan Name" class="fw-semibold admin-table__value admin-table__value--name">{{ plan.name }}</td>
-              <td data-label="Type">
-                <span class="badge plan-type-badge" :class="plan.planType === 'community_shared' ? 'plan-type-badge--community' : 'plan-type-badge--featured'">
-                  {{ planTypeLabel(plan.planType) }}
-                </span>
-              </td>
-              <td data-label="Duration" class="admin-table__value">{{ plan.estimatedDuration }} min</td>
-              <td data-label="Exercises" class="admin-table__value">{{ plan.exerciseCount }}</td>
-              <td data-label="Updated" class="admin-table__value">{{ formatDate(plan.updatedAt) }}</td>
-              <td data-label="Actions" class="text-end">
-                <div class="d-flex gap-2 justify-content-end flex-wrap">
-                  <button type="button" class="btn btn-sm btn-outline-info" @click="viewPlan(plan.planId)">View</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" @click="editPlan(plan)">Edit</button>
-                  <button type="button" class="btn btn-sm admin-action-btn" @click="openInWorkoutBuilder(plan)">Edit Schedule</button>
-                  <button type="button" class="btn btn-sm btn-outline-danger" :disabled="deletingId === plan.planId" @click="deletePlan(plan)">
-                    <i v-if="deletingId === plan.planId" class="fa-solid fa-spinner fa-spin me-1"></i>
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="!plans.length">
-              <td colspan="6" class="text-center text-muted py-4">No global workout plans found.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div v-if="selectedPlan" class="panel-bg admin-panel mt-20">
-      <div class="d-flex justify-content-between align-items-center mb-12">
-        <h4 class="mb-0">Plan Details</h4>
-        <button type="button" class="btn btn-sm btn-outline-secondary" @click="openInWorkoutBuilder(selectedPlan)">Open Schedule Builder</button>
-      </div>
-
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Plan Name</label>
-          <div class="details-value">{{ selectedPlan.name }}</div>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Workout Plan Type</label>
-          <div class="details-value">{{ planTypeLabel(selectedPlan.planType) }}</div>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Estimated Duration</label>
-          <div class="details-value">{{ selectedPlan.estimatedDuration }} min</div>
-        </div>
-        <div class="col-12">
-          <label class="form-label">Description</label>
-          <div class="details-value">{{ selectedPlan.description || '—' }}</div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="scheduleEditor.open" class="panel-bg admin-panel mt-20">
-      <div class="d-flex justify-content-between align-items-center mb-12">
-        <h4 class="mb-0">Edit Global Plan Schedule: {{ scheduleEditor.planName }}</h4>
-        <button type="button" class="btn btn-sm btn-outline-secondary" @click="scheduleEditor.open = false">Close Editor</button>
-      </div>
-
-      <div v-if="scheduleEditor.loading" class="p-3 text-muted">Loading schedule editor...</div>
-
-      <div v-else class="schedule-editor-grid">
-        <div class="row g-3 align-items-end">
-          <div class="col-md-4">
-            <label class="form-label">Schedule Mode</label>
-            <select v-model="scheduleEditor.scheduleMode" class="form-select" @change="ensureEditorExerciseGroups">
-              <option value="day">By Day</option>
-              <option value="week">By Week</option>
-            </select>
+      <section class="ff-page-header app-header-gradient admin-global-workout-plans__hero mb-20">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h2 class="mb-0">GLOBAL WORKOUT PLANS</h2>
+            <small class="admin-global-workout-plans__hero-subtitle">Starter plans created by admins and trainers for members who do not want to build their own workouts.</small>
           </div>
-          <div class="col-md-8">
-            <div class="d-flex justify-content-end">
-              <button type="button" class="btn btn-sm admin-action-btn" @click="addScheduleGroup">Add Group</button>
+          <button type="button" class="btn btn-primary admin-primary-btn" @click="startAddPlan">+ Add Plan</button>
+        </div>
+      </section>
+
+      <div v-if="errorMsg" class="alert alert-danger">{{ errorMsg }}</div>
+      <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
+
+      <div class="global-builder-layout">
+        <section class="panel-bg admin-panel admin-panel--table mobile-table">
+          <h4 class="mb-12">Global Workout Plans</h4>
+          <div v-if="loading" class="p-3 text-muted">Loading global workout plans...</div>
+          <div v-else class="table-responsive">
+            <table class="table align-middle mb-0 admin-table">
+              <thead>
+                <tr>
+                  <th>Plan Name</th>
+                  <th>Category</th>
+                  <th>Days</th>
+                  <th>Exercises</th>
+                  <th>Access</th>
+                  <th>Updated</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="plan in plans" :key="plan.planId">
+                  <td class="fw-semibold admin-table__value admin-table__value--name">{{ plan.name }}</td>
+                  <td class="admin-table__value">{{ plan.category }}</td>
+                  <td class="admin-table__value">{{ plan.dayCount }}</td>
+                  <td class="admin-table__value">{{ plan.exerciseCount }}</td>
+                  <td class="admin-table__value">{{ formatAccess(plan) }}</td>
+                  <td class="admin-table__value">{{ formatDate(plan.updatedAt) }}</td>
+                  <td class="text-end">
+                    <div class="d-flex gap-2 justify-content-end flex-wrap">
+                      <button type="button" class="btn btn-sm btn-outline-info" :disabled="saving" @click="viewPlan(plan)">View</button>
+                      <button type="button" class="btn btn-sm btn-outline-primary" :disabled="saving" @click="editPlan(plan)">Edit</button>
+                      <button type="button" class="btn btn-sm btn-outline-danger" :disabled="deletingId === plan.planId" @click="deletePlan(plan)">
+                        <i v-if="deletingId === plan.planId" class="fa-solid fa-spinner fa-spin me-1"></i>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!plans.length">
+                  <td colspan="7" class="text-center text-muted py-4">No global workout plans found.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section v-if="builderVisible" class="panel-bg admin-panel">
+          <div class="d-flex justify-content-between align-items-center mb-12">
+            <h4 class="mb-0">Global Workout Builder</h4>
+            <div class="d-flex align-items-center gap-2">
+              <span class="builder-mode-badge">{{ isEditing ? 'Editing Existing Plan' : 'New Plan' }}</span>
+              <button type="button" class="btn btn-sm btn-outline-light" :disabled="saving" @click="builderVisible = false">Close</button>
             </div>
           </div>
-        </div>
 
-        <div class="schedule-group-editor mt-3">
-          <label class="form-label">{{ scheduleEditor.scheduleMode === 'week' ? 'Week Groups' : 'Day Groups' }}</label>
-          <div class="schedule-group-editor__list">
-            <div v-for="(group, index) in activeScheduleGroups" :key="`${group}-${index}`" class="schedule-group-editor__item">
-              <input
-                v-if="scheduleEditor.scheduleMode === 'week'"
-                v-model="scheduleEditor.weekGroups[index]"
-                class="form-control form-control-sm"
-                @blur="scheduleEditor.weekGroups = sanitizeGroupLabels(scheduleEditor.weekGroups, 'Week 1'); ensureEditorExerciseGroups()"
-              />
-              <input
-                v-else
-                v-model="scheduleEditor.dayGroups[index]"
-                class="form-control form-control-sm"
-                @blur="scheduleEditor.dayGroups = sanitizeGroupLabels(scheduleEditor.dayGroups, 'Any Day'); ensureEditorExerciseGroups()"
-              />
-              <button type="button" class="btn btn-sm btn-outline-danger" @click="removeScheduleGroup(index)">Remove</button>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Category</label>
+              <select v-model="builder.category" class="form-select">
+                <option v-for="option in CATEGORY_OPTIONS" :key="option" :value="option">{{ option }}</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Plan Name</label>
+              <input v-model="builder.name" class="form-control" placeholder="e.g., Lose 10 Pounds" />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <textarea v-model="builder.description" class="form-control" rows="3" placeholder="Plan summary and intended audience"></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Estimated Duration (minutes)</label>
+              <input v-model.number="builder.estimatedDuration" type="number" min="0" class="form-control" placeholder="e.g., 45" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Free / Premium</label>
+              <select v-model="builder.access" class="form-select">
+                <option v-for="option in ACCESS_OPTIONS" :key="option" :value="option">{{ option }}</option>
+              </select>
             </div>
           </div>
-        </div>
 
-        <div class="table-responsive mt-3">
-          <table class="table align-middle mb-0 admin-table admin-table--editor">
-            <thead>
-              <tr>
-                <th>Exercise</th>
-                <th>Group</th>
-                <th>Sets</th>
-                <th>Reps</th>
-                <th>Duration</th>
-                <th>Rest</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(exercise, index) in scheduleEditor.exercises" :key="exercise.id || index">
-                <td class="admin-table__value">{{ exercise.name || 'Untitled Exercise' }}</td>
-                <td>
-                  <select v-model="exercise.scheduleGroup" class="form-select form-select-sm">
-                    <option v-for="group in activeScheduleGroups" :key="group" :value="group">{{ group }}</option>
+          <div class="builder-days mt-20">
+            <div class="d-flex justify-content-start align-items-center mb-12">
+              <h5 class="mb-0">Workout Days</h5>
+            </div>
+
+            <article v-for="day in builder.days" :key="day.id" class="day-card">
+              <div class="day-card__head">
+                <div class="day-card__title-wrap">
+                  <label class="form-label mb-1">Day</label>
+                  <select
+                    class="form-select form-select-sm mb-2"
+                    :value="isPresetDayLabel(day.label) ? day.label : CUSTOM_DAY_OPTION_VALUE"
+                    @change="handleDayPresetSelect(day.id, $event.target.value)"
+                  >
+                    <option v-for="option in DAY_PRESET_OPTIONS" :key="option" :value="option">{{ option }}</option>
+                    <option :value="CUSTOM_DAY_OPTION_VALUE">Custom</option>
                   </select>
-                </td>
-                <td><input v-model.number="exercise.sets" type="number" min="0" class="form-control form-control-sm" /></td>
-                <td><input v-model.number="exercise.reps" type="number" min="0" class="form-control form-control-sm" /></td>
-                <td><input v-model.number="exercise.duration" type="number" min="0" class="form-control form-control-sm" /></td>
-                <td><input v-model.number="exercise.restTime" type="number" min="0" class="form-control form-control-sm" /></td>
-                <td>
-                  <button type="button" class="btn btn-sm btn-outline-danger" @click="removeEditorExercise(index)">Remove</button>
-                </td>
-              </tr>
-              <tr v-if="!scheduleEditor.exercises.length">
-                <td colspan="7" class="text-center text-muted py-4">No exercises in this global plan schedule.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                  <input v-model="day.label" class="form-control form-control-sm day-card__label" placeholder="MONDAY" />
+                </div>
+                <div class="day-card__actions">
+                  <button type="button" class="btn btn-sm btn-outline-danger" :disabled="builder.days.length <= 1" @click="removeDay(day.id)">Remove Day</button>
+                </div>
+              </div>
 
-        <div class="d-flex justify-content-end mt-3">
-          <button type="button" class="btn btn-primary admin-primary-btn" :disabled="scheduleEditor.saving" @click="saveScheduleEditor">
-            <i v-if="scheduleEditor.saving" class="fa-solid fa-spinner fa-spin me-2"></i>
-            Save Global Schedule
-          </button>
-        </div>
+              <div v-if="!day.exercises.length" class="day-empty-state mt-2">No exercises yet</div>
+
+              <div v-else class="table-responsive mt-2">
+                <table class="table align-middle mb-0 admin-table admin-table--editor">
+                  <thead>
+                    <tr>
+                      <th>Exercise</th>
+                      <th>Sets</th>
+                      <th>Reps</th>
+                      <th>Weight</th>
+                      <th>Time</th>
+                      <th>Distance</th>
+                      <th>Rest</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(exercise, exerciseIndex) in day.exercises" :key="exercise.id || exerciseIndex">
+                      <td>
+                        <div class="admin-table__value">{{ exercise.name || 'Untitled Exercise' }}</div>
+                        <small class="text-muted">{{ exercise.workoutType || 'General' }}</small>
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.sets" type="number" min="0" class="form-control form-control-sm" :disabled="!isStrengthExercise(exercise)" />
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.reps" type="number" min="0" class="form-control form-control-sm" :disabled="!isStrengthExercise(exercise)" />
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.weight" type="number" min="0" class="form-control form-control-sm" :disabled="!isStrengthExercise(exercise)" />
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.duration" type="number" min="0" class="form-control form-control-sm" :disabled="isStrengthExercise(exercise)" />
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.distance" type="number" min="0" step="0.1" class="form-control form-control-sm" :disabled="!supportsDistance(exercise)" />
+                      </td>
+                      <td>
+                        <input v-model.number="exercise.restTime" type="number" min="0" class="form-control form-control-sm" />
+                      </td>
+                      <td>
+                        <div class="d-flex flex-column gap-1">
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            :disabled="exerciseIndex === 0"
+                            @click="moveExercise(day.id, exerciseIndex, 'up')"
+                          >
+                            Move Up
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            :disabled="exerciseIndex === day.exercises.length - 1"
+                            @click="moveExercise(day.id, exerciseIndex, 'down')"
+                          >
+                            Move Down
+                          </button>
+                          <button type="button" class="btn btn-sm btn-outline-danger" @click="removeExercise(day.id, exerciseIndex)">Remove</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="day-card__footer mt-2">
+                <button type="button" class="btn btn-sm admin-action-btn" :disabled="exerciseLibraryLoading" @click="openExercisePickerForDay(day.id)">
+                  <i v-if="exerciseLibraryLoading" class="fa-solid fa-spinner fa-spin me-1"></i>
+                  + Add Exercise
+                </button>
+              </div>
+            </article>
+
+            <div class="builder-days__add-day mt-2">
+              <button type="button" class="btn btn-sm admin-action-btn" @click="addDay">+ Add Day</button>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end mt-3">
+            <button type="button" class="btn btn-primary admin-primary-btn" :disabled="saving" @click="saveGlobalWorkout">
+              <i v-if="saving" class="fa-solid fa-spinner fa-spin me-2"></i>
+              Save Global Plan
+            </button>
+          </div>
+        </section>
       </div>
-    </div>
+
+      <ExercisePickerModal
+        :is-open="exercisePickerOpen"
+        :exercises="exerciseLibrary"
+        :user-id="currentUserId"
+        @close="exercisePickerOpen = false"
+        @add="handleAddExercisesFromPicker"
+      />
     </div>
   </div>
 </template>
@@ -688,7 +808,7 @@ onMounted(loadPlans)
 }
 
 .admin-global-workout-plans__canvas {
-  width: min(1200px, 100%);
+  width: min(1280px, 100%);
   margin: 0 auto;
 }
 
@@ -708,6 +828,12 @@ onMounted(loadPlans)
 
 .admin-global-workout-plans__hero-subtitle {
   color: #cde0f8;
+}
+
+.global-builder-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
 }
 
 .admin-panel {
@@ -753,7 +879,6 @@ onMounted(loadPlans)
 
 .admin-primary-btn {
   background: #2563eb !important;
-  background-image: none !important;
   border-color: #2563eb !important;
   color: #ffffff !important;
   box-shadow: none !important;
@@ -762,18 +887,20 @@ onMounted(loadPlans)
 .admin-primary-btn:hover,
 .admin-primary-btn:focus {
   background: #1d4ed8 !important;
-  background-image: none !important;
   border-color: #1d4ed8 !important;
+}
+
+.admin-action-btn {
+  background: #2563eb !important;
   color: #ffffff !important;
+  border: 1px solid #2563eb !important;
   box-shadow: none !important;
 }
 
-.admin-primary-btn:disabled {
-  background: #31569f !important;
-  background-image: none !important;
-  border-color: #31569f !important;
-  color: #d6e2f5 !important;
-  box-shadow: none !important;
+.admin-action-btn:hover,
+.admin-action-btn:focus {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
 }
 
 .admin-table thead th {
@@ -798,67 +925,69 @@ onMounted(loadPlans)
   color: #f5f9ff !important;
 }
 
-.plan-type-badge {
-  color: #f8fbff;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+.builder-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--agwp-border);
+  background: color-mix(in srgb, var(--agwp-surface-soft) 75%, #10203a 25%);
+  color: var(--agwp-text-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.plan-type-badge--featured {
-  background: rgba(37, 99, 235, 0.25);
-}
-
-.plan-type-badge--community {
-  background: rgba(56, 189, 248, 0.2);
-}
-
-.admin-action-btn {
-  background: #2563eb !important;
-  color: #ffffff !important;
-  border: 1px solid #2563eb !important;
-  box-shadow: none !important;
-}
-
-.admin-action-btn:hover,
-.admin-action-btn:focus {
-  background: #1d4ed8 !important;
-  color: #ffffff !important;
-  border-color: #1d4ed8 !important;
-}
-
-.schedule-editor-grid {
+.builder-days {
   display: grid;
+  gap: 12px;
 }
 
-.schedule-group-editor__list {
-  display: grid;
-  gap: 8px;
-}
-
-.schedule-group-editor__item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-}
-
-.admin-table--editor td {
-  color: #e9f2ff;
-}
-
-.admin-global-workout-plans .text-muted {
-  color: #bad0ea !important;
-}
-
-.admin-global-workout-plans .badge {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-}
-
-.details-value {
-  min-height: 42px;
+.day-card {
   border: 1px solid var(--agwp-border);
   border-radius: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--agwp-surface-soft) 75%, #10203a 25%);
+}
+
+.day-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.day-card__title-wrap {
+  min-width: 220px;
+}
+
+.day-card__label {
+  max-width: 240px;
+  text-transform: uppercase;
+}
+
+.day-card__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-card__footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.builder-days__add-day {
+  display: flex;
+  justify-content: center;
+}
+
+.day-empty-state {
+  border: 1px dashed var(--agwp-border);
+  border-radius: 8px;
   padding: 10px 12px;
-  background: var(--agwp-input);
-  color: var(--agwp-text);
+  color: var(--agwp-text-muted);
+  background: color-mix(in srgb, var(--agwp-surface-soft) 70%, #10203a 30%);
 }
 
 .panel-bg {
@@ -880,6 +1009,10 @@ onMounted(loadPlans)
   vertical-align: middle;
 }
 
+.admin-global-workout-plans .text-muted {
+  color: #bad0ea !important;
+}
+
 @media (max-width: 767px) {
   .admin-global-workout-plans__hero {
     padding: 16px;
@@ -893,23 +1026,21 @@ onMounted(loadPlans)
     padding: 14px;
   }
 
-  .admin-panel--form .row > [class*='col-'],
-  .admin-panel--form .row > [class*='col-md-'] {
-    width: 100%;
+  .day-card__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .day-card__label {
     max-width: 100%;
-    flex: 1 1 100%;
   }
 
-  .admin-panel--form .col-md-3.d-flex.justify-content-end {
-    justify-content: stretch !important;
+  .day-card__actions {
+    justify-content: stretch;
   }
 
-  .admin-panel--form .admin-primary-btn {
+  .day-card__actions .btn {
     width: 100%;
-  }
-
-  .details-value {
-    font-size: 0.92rem;
   }
 }
 </style>
