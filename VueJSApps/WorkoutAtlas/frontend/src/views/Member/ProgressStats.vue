@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import { API_BASE } from '@/config/env';
 import vueApexcharts from 'vue3-apexcharts';
@@ -44,6 +44,12 @@ const chartLoading = ref(false);
 const chartError   = ref('');
 const chartData    = ref([]);
 
+const activeGoals        = ref([]);
+const goalsLoading       = ref(false);
+const selectedGoalId     = ref('');
+const selectedGoalDetail = ref(null);
+const goalInsightLoading = ref(false);
+
 // Chart type: 'bar' | 'line'
 const chartType = ref('bar');
 
@@ -52,6 +58,37 @@ const activeExChip = ref('');
 
 // Filter panel — expanded by default in 0.82.4
 const filtersOpen = ref(true);
+
+function formatGoalOptionLabel(goal) {
+  if (!goal) return 'Goal';
+  if (goal.goalType === 'exercise_weight') {
+    const exName = goal.exerciseName || 'Exercise';
+    return `${exName}: ${goal.targetValue} ${goal.targetUnit}`;
+  }
+  return `Body Weight: ${goal.targetValue} ${goal.targetUnit}`;
+}
+
+const selectedGoalSummary = computed(() => {
+  if (!selectedGoalDetail.value?.goal) return null;
+  const g = selectedGoalDetail.value.goal;
+  const targetValue = Number(g.targetValue || 0);
+  const currentValue = g.goalType === 'exercise_weight'
+    ? Number(selectedGoalDetail.value.currentBest ?? 0)
+    : Number(selectedGoalDetail.value.currentBodyWeight ?? g.currentValue ?? 0);
+
+  const hasCurrent = Number.isFinite(currentValue) && currentValue > 0;
+  const progressPercent = hasCurrent && targetValue > 0
+    ? Math.max(0, Math.min(100, (currentValue / targetValue) * 100))
+    : 0;
+
+  return {
+    goal: g,
+    currentValue: hasCurrent ? currentValue : null,
+    targetValue,
+    progressPercent,
+    reachedTarget: hasCurrent && currentValue >= targetValue,
+  };
+});
 
 // ─── Y1 metric options — RAW workout log data only ──────────────────────────
 // Only values stored directly in workout_log rows. No formulas, no aggregates.
@@ -169,7 +206,10 @@ const chartSubtitle = computed(() => {
     ? (exercises.value.find((e) => e.exerciseId == exerciseId.value)?.exerciseTitle || 'Selected Exercise')
     : 'All Exercises';
   const gLabel = groupBy.value === 'day' ? 'Daily' : groupBy.value === 'month' ? 'Monthly' : 'Yearly';
-  return `${exLabel} · ${gLabel} View`;
+  const goalDate = selectedGoalSummary.value?.goal?.targetDate;
+  return goalDate
+    ? `${exLabel} · ${gLabel} View · Goal Date ${goalDate}`
+    : `${exLabel} · ${gLabel} View`;
 });
 
 // (mini-stats and limited-data removed in 0.82.3 chart-first redesign)
@@ -375,6 +415,120 @@ async function loadChart() {
   }
 }
 
+async function loadActiveGoals() {
+  goalsLoading.value = true;
+  try {
+    const { data } = await axios.get(`${API_BASE}/api/goals`, {
+      params: { status: 'active' },
+      withCredentials: true,
+    });
+    activeGoals.value = Array.isArray(data?.goals) ? data.goals : [];
+    if (selectedGoalId.value && !activeGoals.value.some((g) => String(g.id) === String(selectedGoalId.value))) {
+      selectedGoalId.value = '';
+      selectedGoalDetail.value = null;
+    }
+  } catch (err) {
+    console.error('Progress active goals error', err);
+    activeGoals.value = [];
+    selectedGoalId.value = '';
+    selectedGoalDetail.value = null;
+  } finally {
+    goalsLoading.value = false;
+  }
+}
+
+async function loadSelectedGoalDetail() {
+  if (!selectedGoalId.value) {
+    selectedGoalDetail.value = null;
+    return;
+  }
+  goalInsightLoading.value = true;
+  try {
+    const { data } = await axios.get(`${API_BASE}/api/progress/goal-insight`, {
+      params: { goalId: selectedGoalId.value },
+      withCredentials: true,
+    });
+    selectedGoalDetail.value = data || null;
+
+    const goal = selectedGoalDetail.value?.goal;
+    if (goal?.goalType === 'exercise_weight' && goal.exerciseId) {
+      exerciseId.value = String(goal.exerciseId);
+      workoutType.value = 'strength';
+      metricPrimary.value = 'weight';
+      activeExChip.value = goal.exerciseId;
+      scheduleChartReload();
+    }
+  } catch (err) {
+    const status = err?.response?.status;
+    if (status === 404) {
+      try {
+        const { data: goalData } = await axios.get(`${API_BASE}/api/goals/${selectedGoalId.value}`, {
+          withCredentials: true,
+        });
+        const goal = goalData?.goal || null;
+        if (!goal || goal.status !== 'active') {
+          selectedGoalDetail.value = null;
+          return;
+        }
+
+        if (goal.goalType === 'exercise_weight' && goal.exerciseId) {
+          const bestLogged = await loadBestExerciseWeight(goal.exerciseId);
+          selectedGoalDetail.value = {
+            goal,
+            currentBest: bestLogged,
+          };
+          exerciseId.value = String(goal.exerciseId);
+          workoutType.value = 'strength';
+          metricPrimary.value = 'weight';
+          activeExChip.value = goal.exerciseId;
+          scheduleChartReload();
+        } else {
+          selectedGoalDetail.value = {
+            goal,
+            currentBodyWeight: goal.currentValue,
+          };
+        }
+      } catch (fallbackErr) {
+        console.error('Progress goal insight fallback error', fallbackErr);
+        selectedGoalDetail.value = null;
+      }
+    } else {
+      console.error('Progress goal insight error', err);
+      selectedGoalDetail.value = null;
+    }
+  } finally {
+    goalInsightLoading.value = false;
+  }
+}
+
+async function loadBestExerciseWeight(exId) {
+  try {
+    const params = {
+      startDate: '2000-01-01',
+      endDate: toDateStr(new Date()),
+      groupBy: 'day',
+      workoutType: 'strength',
+      metricPrimary: 'weight',
+      metric: 'weight',
+      exerciseId: exId,
+    };
+    const { data } = await axios.get(`${API_BASE}/api/progress/chart`, {
+      params,
+      withCredentials: true,
+    });
+    const points = Array.isArray(data) ? data : [];
+    if (!points.length) return null;
+    return points.reduce((max, row) => Math.max(max, Number(row.value || 0)), 0);
+  } catch (err) {
+    console.error('Progress best exercise weight error', err);
+    return null;
+  }
+}
+
+watch(selectedGoalId, () => {
+  loadSelectedGoalDetail();
+});
+
 function resetFilters() {
   const d = last30Days();
   startDate.value       = d.start;
@@ -477,6 +631,26 @@ const chartOptions = computed(() => ({
           formatter: (v) => Number(v).toLocaleString(),
         },
       },
+  annotations: selectedGoalSummary.value
+    ? {
+        yaxis: [
+          {
+            y: Number(selectedGoalSummary.value.targetValue || 0),
+            borderColor: '#ef4444',
+            strokeDashArray: 6,
+            label: {
+              borderColor: '#ef4444',
+              style: {
+                color: '#fff',
+                background: '#ef4444',
+                fontSize: '10px',
+              },
+              text: `Goal Target ${selectedGoalSummary.value.targetValue} ${selectedGoalSummary.value.goal.targetUnit || ''}`,
+            },
+          },
+        ],
+      }
+    : undefined,
   grid: {
     borderColor: '#f1f5f9',
     strokeDashArray: 5,
@@ -534,11 +708,28 @@ function onDateChange([start, end]) {
   endDate.value   = end;
 }
 
+async function refreshGoalState() {
+  await loadActiveGoals();
+  if (selectedGoalId.value) {
+    await loadSelectedGoalDetail();
+  }
+}
+
+function handleWindowFocus() {
+  refreshGoalState();
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadSummary();
   loadExercises();
   loadChart();
+  loadActiveGoals();
+  window.addEventListener('focus', handleWindowFocus);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('focus', handleWindowFocus);
 });
 </script>
 
@@ -575,6 +766,15 @@ onMounted(() => {
           <div v-if="filtersOpen" class="ps-filter-body">
             <!-- Row 1: primary filters -->
             <div class="ps-filter-grid">
+              <div class="ps-filter-field">
+                <label>Active Goal (Optional)</label>
+                <select v-model="selectedGoalId" class="ps-select" :disabled="goalsLoading">
+                  <option value="">No Goal Selected</option>
+                  <option v-for="goal in activeGoals" :key="goal.id" :value="goal.id">
+                    {{ formatGoalOptionLabel(goal) }}
+                  </option>
+                </select>
+              </div>
               <div class="ps-filter-field">
                 <label>Workout Type</label>
                 <select v-model="workoutType" class="ps-select">
@@ -619,6 +819,70 @@ onMounted(() => {
                 <button class="ps-reset-btn" @click="resetFilters">
                   <i class="fa-solid fa-rotate-left"></i> Reset
                 </button>
+              </div>
+            </div>
+
+            <div v-if="selectedGoalSummary || goalInsightLoading" class="ps-goal-summary-row">
+              <div class="ps-goal-summary-card ps-goal-summary-card--primary">
+                <div class="ps-goal-summary-card__title">
+                  <i class="fa-solid fa-bullseye"></i>
+                  Goal Progress
+                </div>
+                <div v-if="goalInsightLoading" class="ps-state">
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                  <span>Loading goal insight…</span>
+                </div>
+                <div v-else-if="selectedGoalSummary" class="ps-goal-summary-card__body">
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Current</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.currentValue != null ? selectedGoalSummary.currentValue : '—' }} {{ selectedGoalSummary.goal.targetUnit }}</span>
+                  </div>
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Target</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.targetValue }} {{ selectedGoalSummary.goal.targetUnit }}</span>
+                  </div>
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Target Date</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.goal.targetDate || '—' }}</span>
+                  </div>
+                  <div class="ps-goal-progress-track" aria-hidden="true">
+                    <div class="ps-goal-progress-fill" :style="{ width: `${selectedGoalSummary.progressPercent}%` }"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="selectedGoalSummary?.goal?.goalType === 'exercise_weight'" class="ps-goal-summary-card">
+                <div class="ps-goal-summary-card__title">
+                  <i class="fa-solid fa-dumbbell"></i>
+                  Exercise Goal Detail
+                </div>
+                <div class="ps-goal-summary-card__body">
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Exercise</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.goal.exerciseName || 'Selected Exercise' }}</span>
+                  </div>
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Best Logged</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.currentValue != null ? selectedGoalSummary.currentValue : '—' }} {{ selectedGoalSummary.goal.targetUnit }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="selectedGoalSummary?.goal?.goalType === 'body_weight'" class="ps-goal-summary-card">
+                <div class="ps-goal-summary-card__title">
+                  <i class="fa-solid fa-weight-scale"></i>
+                  Body Weight Goal Detail
+                </div>
+                <div class="ps-goal-summary-card__body">
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Current Body Weight</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.currentValue != null ? selectedGoalSummary.currentValue : '—' }} {{ selectedGoalSummary.goal.targetUnit }}</span>
+                  </div>
+                  <div class="ps-goal-summary-card__line">
+                    <span class="ps-goal-k">Goal Status</span>
+                    <span class="ps-goal-v">{{ selectedGoalSummary.reachedTarget ? 'Target Reached' : 'In Progress' }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -677,6 +941,9 @@ onMounted(() => {
                   <div class="ps-chart-header__left">
                     <h5>{{ chartTitle }}</h5>
                     <span class="ps-chart-sub">{{ chartSubtitle }}</span>
+                    <span v-if="selectedGoalSummary" class="ps-chart-goal-marker">
+                      Goal: {{ selectedGoalSummary.currentValue != null ? selectedGoalSummary.currentValue : '—' }} / {{ selectedGoalSummary.targetValue }} {{ selectedGoalSummary.goal.targetUnit }} · Target Date {{ selectedGoalSummary.goal.targetDate || '—' }}
+                    </span>
                   </div>
                   <div class="ps-chart-controls">
                     <div class="ps-group-btns">
@@ -904,6 +1171,78 @@ onMounted(() => {
   display: grid;
   gap: 14px;
   padding-block: 4px !important;
+}
+
+.ps-goal-summary-row {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ps-goal-summary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+
+.ps-goal-summary-card--primary {
+  grid-column: span 2;
+}
+
+.ps-goal-summary-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.ps-goal-summary-card__body {
+  display: grid;
+  gap: 8px;
+}
+
+.ps-goal-summary-card__line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ps-goal-k {
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+.ps-goal-v {
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.ps-goal-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.ps-goal-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6, #22c55e);
+}
+
+.ps-chart-goal-marker {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: #475569;
+  font-weight: 600;
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
@@ -1213,10 +1552,10 @@ onMounted(() => {
 
 .ps-chip__remove:hover { color: #2563eb; }
 
-/* Row 1: Workout Type | Exercise | Primary Metric | Show Range | Reset */
+/* Row 1: Goal | Workout Type | Exercise | Primary Metric | Show Range | Reset */
 .ps-filter-grid {
   display: grid;
-  grid-template-columns: 1.5fr 1.5fr 1.5fr 1.2fr auto;
+  grid-template-columns: 1.6fr 1.2fr 1.5fr 1.5fr 1.2fr auto;
   gap: 10px;
   padding: 12px 18px 12px;
   align-items: end;
@@ -1499,10 +1838,14 @@ onMounted(() => {
 
 .ps-chart-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
+}
+
+.ps-chart-header__left {
+  min-width: 0;
 }
 
 .ps-chart-header__left h5 {
@@ -1521,69 +1864,92 @@ onMounted(() => {
 /* Week / Month / Year quick buttons */
 .ps-chart-controls {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .ps-group-btns {
   display: flex;
-  gap: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  overflow: hidden;
+  gap: 6px;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
 }
 
 .ps-group-btn {
-  border: none;
-  background: #f8fafc;
-  padding: 5px 12px;
+  appearance: none;
+  border: 1px solid #2b4568;
+  background: #172b46;
+  padding: 0 12px;
+  min-height: 36px;
+  height: 36px;
+  min-width: 68px;
   font-size: 0.78rem;
-  font-weight: 600;
-  color: #64748b;
+  font-weight: 700;
+  color: #ffffff;
   cursor: pointer;
-  border-right: 1px solid #e2e8f0;
-  transition: background 0.15s, color 0.15s;
+  border-radius: 4px !important;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
   font-family: inherit;
-  line-height: 1.4;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.ps-group-btn:last-child { border-right: none; }
-.ps-group-btn:hover { background: #eff6ff; color: #3b82f6; }
+.ps-group-btn:last-child { border-right: 1px solid #2b4568; }
+.ps-group-btn:hover { background: #203955; color: #ffffff; border-color: #37557a; }
 
 .ps-group-btn--active {
-  background: #3b82f6;
+  background: #2563eb;
   color: #fff;
+  border-color: #2563eb;
 }
 
-.ps-group-btn--active:hover { background: #2563eb; color: #fff; }
+.ps-group-btn--active:hover { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
 
 /* Bar / Line type switcher */
 .ps-chart-type-btns {
   display: flex;
-  gap: 4px;
-  background: #f1f5f9;
-  border-radius: 8px;
-  padding: 3px;
+  gap: 6px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
 }
 
 .ps-type-btn {
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-size: 0.8rem;
-  color: #94a3b8;
+  appearance: none;
+  border: 1px solid #2b4568;
+  background: #172b46;
+  border-radius: 4px !important;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-size: 0.9rem;
+  color: #ffffff;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.ps-type-btn:hover { color: #3b82f6; }
+.ps-type-btn i {
+  color: currentColor;
+  line-height: 1;
+}
+
+.ps-type-btn:hover { background: #203955; color: #ffffff; border-color: #37557a; }
 
 .ps-type-btn--active {
-  background: #fff;
-  color: #3b82f6;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+  box-shadow: none;
 }
 
 /* Chart body states */
@@ -1940,6 +2306,36 @@ onMounted(() => {
   color: var(--ps-text-secondary);
 }
 
+.ps-container .ps-group-btn {
+  background: #172b46;
+  border: 1px solid #2b4568;
+  color: #ffffff;
+  border-radius: 4px !important;
+}
+
+.ps-container .ps-chart-type-btns {
+  background: transparent;
+}
+
+.ps-container .ps-type-btn {
+  background: #172b46;
+  border: 1px solid #2b4568;
+  border-radius: 4px !important;
+  color: #ffffff;
+}
+
+.ps-container .ps-type-btn:hover {
+  background: #203955;
+  border-color: #37557a;
+  color: #ffffff;
+}
+
+.ps-container .ps-group-btn:hover {
+  background: #203955;
+  border-color: #37557a;
+  color: #ffffff;
+}
+
 .ps-container .ps-group-btn--active,
 .ps-container .ps-type-btn--active {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -2109,7 +2505,7 @@ onMounted(() => {
 
 @media (max-width: 1100px) {
   .ps-row3 { grid-template-columns: 1fr 1fr; }
-  .ps-filter-grid { grid-template-columns: 1fr 1fr 1fr 1fr auto; }
+  .ps-filter-grid { grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; }
 }
 
 @media (max-width: 960px) {
@@ -2118,6 +2514,8 @@ onMounted(() => {
   .ps-right-col .ps-mini-widget { flex: 1 1 140px; }
   .ps-chart-wrap { height: 260px !important; }
   .ps-filter-grid { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .ps-goal-summary-row { grid-template-columns: 1fr; }
+  .ps-goal-summary-card--primary { grid-column: span 1; }
 }
 
 @media (max-width: 768px) {
@@ -2142,14 +2540,24 @@ onMounted(() => {
   .ps-reset-btn { min-height: 44px; }
   .header-picker :deep(.mx-input) { font-size: 16px !important; min-height: 44px !important; }
   .ps-chart-wrap { height: 260px; }
-  .ps-group-btn { padding: 5px 9px; font-size: 0.73rem; }
+  .ps-chart-controls {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .ps-group-btn {
+    padding: 0 9px;
+    font-size: 0.73rem;
+    min-height: 36px;
+    height: 36px;
+    min-width: 62px;
+  }
 }
 
 @media (max-width: 560px) {
   .ps-canvas { gap: 8px; }
   .ps-chart-wrap { height: 220px !important; }
   .ps-hero__inner { flex-direction: column; }
-  .ps-chart-controls { gap: 6px; }
+  .ps-chart-controls { gap: 6px; flex-wrap: wrap; }
   .ps-filter-grid { grid-template-columns: 1fr; }
   .ps-right-col { flex-direction: column; }
   .header-picker { width: 100%; min-width: 0; max-width: 100%; }

@@ -117,6 +117,18 @@ const isPersonalWorkoutPlan = (plan = {}) => {
   return planType !== 'featured' && planType !== 'community_shared';
 };
 
+const hasGlobalSourcePlan = (plan = {}) => Number(plan?.sourceGlobalPlanId || 0) > 0;
+
+const getGlobalSourcePlanLabel = (plan = {}) => {
+  const fallback = 'Global Plan';
+  if (!hasGlobalSourcePlan(plan)) {
+    return '';
+  }
+
+  const sourceName = String(plan?.sourceGlobalPlanName || '').trim();
+  return sourceName || fallback;
+};
+
 const canDeleteWorkoutPlan = (plan = {}) => {
   if (!isPersonalWorkoutPlan(plan)) {
     return false;
@@ -1463,6 +1475,10 @@ onUnmounted(() => {
                     <span v-if="plan.estimatedDuration"><i class="fa-solid fa-clock"></i> {{ plan.estimatedDuration }} min</span>
                     <span v-if="plan.exerciseCount"><i class="fa-solid fa-list-check"></i> {{ plan.exerciseCount }} exercises</span>
                     <span v-if="plan.type || plan.workoutType" class="wl-plan__tag">{{ plan.type || plan.workoutType }}</span>
+                    <span v-if="hasGlobalSourcePlan(plan)" class="wl-plan__source-tag" :title="`Based on ${getGlobalSourcePlanLabel(plan)}`">
+                      <i class="fa-solid fa-diagram-project"></i>
+                      Based on {{ getGlobalSourcePlanLabel(plan) }}
+                    </span>
                     <span v-if="plan.updatedAtLabel"><i class="fa-solid fa-calendar"></i> {{ plan.updatedAtLabel }}</span>
                   </div>
                 </div>
@@ -2294,6 +2310,15 @@ onUnmounted(() => {
   background: #dbeafe; color: #1e40af;
   border-radius: 999px; padding: 1px 9px;
   font-size: 0.75rem; font-weight: 700;
+}
+.wl-plan__source-tag {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .wl-plan__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }

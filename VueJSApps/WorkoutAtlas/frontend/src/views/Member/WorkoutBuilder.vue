@@ -15,6 +15,8 @@ const metadata = ref({
   type: 'Strength',
   planType: '',
   estimatedDuration: 45,
+  goalId: '',
+  goalContext: null,
   goals: [],
   otherGoal: '',
 });
@@ -26,6 +28,7 @@ const loadingExercises = ref(false);
 const loadingPlanner = ref(false);
 const loadingFeaturedPlans = ref(false);
 const cloningFeaturedPlanId = ref('');
+const loadingGoals = ref(false);
 const saving = ref(false);
 const saveMessage = ref('');
 const plannerMessage = ref('');
@@ -111,6 +114,97 @@ const featuredWorkoutPlans = ref([]);
 const currentWorkoutPlanSlide = ref(0);
 const selectedTemplatePlanId = ref('');
 const selectedTemplatePlanName = ref('');
+const personalGoals = ref([]);
+
+const formatGoalDateLabel = (dateStr) => {
+  if (!dateStr) return '';
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(dateStr);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatGoalOptionLabel = (goal) => {
+  const targetValue = Number(goal?.targetValue || 0);
+  const targetUnit = String(goal?.targetUnit || 'lb').trim() || 'lb';
+  const dateLabel = formatGoalDateLabel(goal?.targetDate);
+  if (String(goal?.goalType || '').trim() === 'exercise_weight') {
+    const exName = String(goal?.exerciseName || 'Exercise').trim() || 'Exercise';
+    return `${exName} -- ${targetValue} ${targetUnit} by ${dateLabel}`;
+  }
+  return `Reach ${targetValue} ${targetUnit} by ${dateLabel}`;
+};
+
+const formatGoalContextOptionLabel = (goalContext) => {
+  if (!goalContext || typeof goalContext !== 'object') {
+    return 'Linked goal (unavailable)';
+  }
+
+  const goalType = String(goalContext?.goalType || '').trim();
+  const targetValue = Number(goalContext?.targetValue || 0);
+  const targetUnit = String(goalContext?.targetUnit || 'lb').trim() || 'lb';
+  const rawTargetDate = String(goalContext?.targetDate || '').trim();
+  const parsedDate = rawTargetDate ? new Date(rawTargetDate) : null;
+  const dateLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : (rawTargetDate || 'N/A');
+
+  if (goalType === 'exercise_weight') {
+    const exerciseName = String(goalContext?.exerciseName || 'Exercise').trim() || 'Exercise';
+    return `${exerciseName} -- ${targetValue} ${targetUnit} by ${dateLabel}`;
+  }
+
+  return `Reach ${targetValue} ${targetUnit} by ${dateLabel}`;
+};
+
+const goalOptionsForSelect = computed(() => {
+  const activeGoalOptions = personalGoals.value.map((goal) => ({
+    value: String(goal?.id || ''),
+    label: formatGoalOptionLabel(goal),
+    goalType: String(goal?.goalType || '').trim(),
+    exerciseName: String(goal?.exerciseName || '').trim(),
+    targetValue: Number(goal?.targetValue || 0),
+    targetUnit: String(goal?.targetUnit || 'lb').trim() || 'lb',
+    targetDate: String(goal?.targetDate || '').trim(),
+  })).filter((entry) => entry.value);
+
+  const selectedGoalId = String(metadata.value?.goalId || '').trim();
+  const hasSelectedGoalInActiveOptions = !!selectedGoalId
+    && activeGoalOptions.some((entry) => entry.value === selectedGoalId);
+
+  const unavailableSelectedGoalOption = (!selectedGoalId || hasSelectedGoalInActiveOptions)
+    ? null
+    : {
+        value: selectedGoalId,
+        label: `${formatGoalContextOptionLabel(metadata.value?.goalContext)} (Archived or unavailable)`,
+      };
+
+  return [
+    { value: '', label: 'No Goal' },
+    ...activeGoalOptions,
+    ...(unavailableSelectedGoalOption ? [unavailableSelectedGoalOption] : []),
+  ];
+});
+
+const loadActiveGoals = async () => {
+  loadingGoals.value = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/goals?status=active`, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      personalGoals.value = [];
+      return;
+    }
+
+    const data = await response.json().catch(() => ({}));
+    personalGoals.value = Array.isArray(data?.goals) ? data.goals : [];
+
+  } catch {
+    personalGoals.value = [];
+  } finally {
+    loadingGoals.value = false;
+  }
+};
 
 const featuredWorkoutPlanSlides = computed(() => {
   if (!Array.isArray(featuredWorkoutPlans.value) || !featuredWorkoutPlans.value.length) {
@@ -389,6 +483,8 @@ const resetPlannerDraft = () => {
     type: 'Strength',
     planType: '',
     estimatedDuration: 45,
+    goalId: '',
+    goalContext: null,
     goals: [],
     otherGoal: '',
   };
@@ -436,6 +532,10 @@ const hydratePlanner = (planner = {}, { markSaved = true } = {}) => {
     type: planner?.metadata?.type || 'Strength',
     planType: String(planner?.metadata?.planType || '').trim(),
     estimatedDuration: Number(planner?.metadata?.estimatedDuration || 45),
+    goalId: String(planner?.metadata?.goalId || '').trim(),
+    goalContext: planner?.metadata?.goalContext && typeof planner.metadata.goalContext === 'object'
+      ? planner.metadata.goalContext
+      : null,
     goals: incomingGoals,
     otherGoal: String(planner?.metadata?.otherGoal || '').trim(),
   };
@@ -561,6 +661,10 @@ const createWorkoutPlan = async () => {
       type: planner?.metadata?.type || 'Strength',
       planType: String(planner?.metadata?.planType || '').trim(),
       estimatedDuration: Number(planner?.metadata?.estimatedDuration || 45),
+      goalId: String(planner?.metadata?.goalId || '').trim(),
+      goalContext: planner?.metadata?.goalContext && typeof planner.metadata.goalContext === 'object'
+        ? planner.metadata.goalContext
+        : null,
       goals: Array.isArray(planner?.metadata?.goals)
         ? planner.metadata.goals.map((goal) => String(goal || '').trim()).filter(Boolean)
         : [],
@@ -1254,7 +1358,7 @@ const deleteWorkoutSchedule = async (schedule) => {
 
 onMounted(async () => {
   const requestedPlanId = String(route.query?.planId || '').trim();
-  await Promise.all([loadExercises(), loadUserId(), loadWorkoutPlanner(requestedPlanId), loadFeaturedWorkoutPlans()]);
+  await Promise.all([loadExercises(), loadUserId(), loadWorkoutPlanner(requestedPlanId), loadFeaturedWorkoutPlans(), loadActiveGoals()]);
   document.addEventListener('click', closeDayMenu);
 });
 
@@ -1476,6 +1580,8 @@ watch(
             <WorkoutMetadataForm
               :metadata="metadata"
               :can-create-featured-plans="canCreateFeaturedPlans"
+              :goal-options="goalOptionsForSelect"
+              :loading-goals="loadingGoals"
               @update:metadata="metadata = $event"
             />
           </div>

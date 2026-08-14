@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS workout_schedules (
   description TEXT DEFAULT NULL,
   workout_type VARCHAR(50) NOT NULL DEFAULT 'Strength',
   workout_plan_type ENUM('featured', 'community_shared') DEFAULT NULL,
+  source_global_plan_id BIGINT UNSIGNED DEFAULT NULL,
+  global_plan_adopted_at DATETIME DEFAULT NULL,
+  goal_type ENUM('none', 'body_weight', 'exercise_weight') DEFAULT NULL,
+  linked_goal_id BIGINT UNSIGNED DEFAULT NULL,
   estimated_duration_minutes INT(11) NOT NULL DEFAULT 0,
   status ENUM('draft', 'active', 'archived') NOT NULL DEFAULT 'draft',
   visibility ENUM('private', 'unlisted', 'public') NOT NULL DEFAULT 'private',
@@ -26,10 +30,18 @@ CREATE TABLE IF NOT EXISTS workout_schedules (
   KEY idx_workout_schedules_user (user_id),
   KEY idx_workout_schedules_status (status),
   KEY idx_workout_schedules_visibility (visibility),
+  KEY idx_workout_schedules_source_global (source_global_plan_id),
+  KEY idx_workout_schedules_goal_id (linked_goal_id),
   KEY idx_workout_schedules_updated (updated_at),
   CONSTRAINT fk_workout_schedules_user
     FOREIGN KEY (user_id) REFERENCES users (id)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_workout_schedules_source_global
+    FOREIGN KEY (source_global_plan_id) REFERENCES workout_schedules (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_workout_schedules_goal
+    FOREIGN KEY (linked_goal_id) REFERENCES user_goals (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS workout_schedule_groups (

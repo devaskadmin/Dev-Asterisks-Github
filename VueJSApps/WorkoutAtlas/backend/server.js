@@ -61,7 +61,7 @@ app.use(cors({
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma'],
 }));
 
@@ -229,6 +229,7 @@ app.use('/api', require('./api/dashboard.js')); // 📊 v0.82.20 Dashboard Live 
 app.use('/api', toolsRoutes); // 🧰 v0.83.5 Tools diagnostics
 app.use('/api', mediaRoutes); // 🖼️ v0.83.7 media resolver
 app.use('/api', aiGatewayRoutes); // 🤖 WorkoutAtlas AI gateway proxy
+app.use('/api', require('./api/goals.js')); // 🎯 v0.85.40.2 Goals System
 
 // Lightweight health route for local/API reachability checks.
 app.get('/api/health', (_req, res) => {

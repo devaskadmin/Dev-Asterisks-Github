@@ -16,6 +16,7 @@ const pool    = require('../db.js');
 // ─── Allowed values for validation ────────────────────────────────────────────
 const VALID_GROUP_BY     = new Set(['day', 'month', 'year']);
 const VALID_WORKOUT_TYPE = new Set(['all', 'strength', 'cardio', 'other']);
+const VALID_GOAL_TYPES   = new Set(['body_weight', 'exercise_weight']);
 
 // v0.82.15: Y1 raw-only metrics. Pro metrics remain in getMetricExpr() for future unlock.
 const VALID_METRICS_BY_TYPE = {
@@ -328,6 +329,78 @@ router.get('/exercises', async (req, res) => {
   } catch (err) {
     console.error('❌ [progress/exercises]', err);
     return res.status(500).json({ error: 'Failed to load exercises.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/progress/goal-insight
+// Query params: goalId (required)
+// Returns selected active goal + real progress values sourced from stored data.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/goal-insight', async (req, res) => {
+  if (!requireAuth(req, res)) return;
+
+  const userId = req.session.user.id;
+  const goalId = Number(req.query?.goalId || 0);
+
+  if (!goalId) {
+    return res.status(400).json({ error: 'goalId is required.' });
+  }
+
+  try {
+    const [[goalRow]] = await pool.query(
+      `SELECT id, goal_type, exercise_id, exercise_name, current_value, target_value, target_unit, target_date, status
+       FROM user_goals
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [goalId, userId]
+    );
+
+    if (!goalRow) {
+      return res.status(404).json({ error: 'Goal not found.' });
+    }
+
+    const goalType = String(goalRow.goal_type || '').trim().toLowerCase();
+    if (!VALID_GOAL_TYPES.has(goalType)) {
+      return res.status(400).json({ error: 'Unsupported goal type.' });
+    }
+
+    const goal = {
+      id: Number(goalRow.id || 0),
+      goalType,
+      exerciseId: goalRow.exercise_id != null ? Number(goalRow.exercise_id) : null,
+      exerciseName: String(goalRow.exercise_name || '').trim() || null,
+      currentValue: goalRow.current_value != null ? Number(goalRow.current_value) : null,
+      targetValue: Number(goalRow.target_value || 0),
+      targetUnit: String(goalRow.target_unit || 'lb').trim() || 'lb',
+      targetDate: goalRow.target_date ? String(goalRow.target_date).slice(0, 10) : '',
+      status: String(goalRow.status || '').trim().toLowerCase(),
+    };
+
+    if (goal.goalType === 'exercise_weight' && goal.exerciseId) {
+      const [[bestRow]] = await pool.query(
+        `SELECT MAX(wl.Weight) AS currentBest
+         FROM workout_log wl
+         LEFT JOIN workout_log_sessions wls ON wl.workout_log_session_id = wls.id
+         WHERE wl.UserID = ?
+           AND wl.ExerciseID = ?
+           AND (wl.workout_log_session_id IS NULL OR wls.status = 'completed')`,
+        [userId, goal.exerciseId]
+      );
+
+      return res.json({
+        goal,
+        currentBest: bestRow?.currentBest != null ? Number(bestRow.currentBest) : null,
+      });
+    }
+
+    return res.json({
+      goal,
+      currentBodyWeight: goal.currentValue,
+    });
+  } catch (err) {
+    console.error('❌ [progress/goal-insight]', err);
+    return res.status(500).json({ error: 'Failed to load goal insight.' });
   }
 });
 

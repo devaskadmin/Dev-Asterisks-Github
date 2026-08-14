@@ -10,13 +10,21 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  goalOptions: {
+    type: Array,
+    default: () => [],
+  },
+  loadingGoals: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['update:metadata']);
 
 const isAdminPlanTypeEnabled = computed(() => Boolean(props.canCreateFeaturedPlans));
 
-const goalOptions = [
+const workoutGoalChips = [
   'Lose Weight',
   'Build Muscle',
   'Gain Strength',
@@ -28,6 +36,47 @@ const goalOptions = [
 ];
 
 const selectedGoals = computed(() => (Array.isArray(props.metadata?.goals) ? props.metadata.goals : []));
+
+const formatGoalContextDate = (rawDate) => {
+  const raw = String(rawDate || '').trim();
+  if (!raw) return 'N/A';
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T00:00:00`)
+    : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const selectedGoalContext = computed(() => {
+  const selectedGoalId = String(props.metadata?.goalId || '').trim();
+  if (!selectedGoalId) return null;
+
+  const selectedOption = (Array.isArray(props.goalOptions) ? props.goalOptions : [])
+    .find((option) => String(option?.value || '').trim() === selectedGoalId);
+
+  if (String(selectedOption?.goalType || '').trim() === 'exercise_weight') {
+    return {
+      exerciseName: String(selectedOption?.exerciseName || 'Exercise').trim() || 'Exercise',
+      targetValue: Number(selectedOption?.targetValue || 0),
+      targetUnit: String(selectedOption?.targetUnit || 'lb').trim() || 'lb',
+      targetDate: String(selectedOption?.targetDate || '').trim(),
+      status: 'active',
+    };
+  }
+
+  const fallback = props.metadata?.goalContext;
+  if (fallback && typeof fallback === 'object' && String(fallback?.goalType || '').trim() === 'exercise_weight') {
+    return {
+      exerciseName: String(fallback?.exerciseName || 'Exercise').trim() || 'Exercise',
+      targetValue: Number(fallback?.targetValue || 0),
+      targetUnit: String(fallback?.targetUnit || 'lb').trim() || 'lb',
+      targetDate: String(fallback?.targetDate || '').trim(),
+      status: String(fallback?.status || '').trim().toLowerCase(),
+    };
+  }
+
+  return null;
+});
 
 const updateMetadata = (patch) => {
   emit('update:metadata', {
@@ -73,7 +122,7 @@ watch(
 <template>
   <div class="builder-metadata-layout">
     <div class="builder-grid">
-      <label class="builder-field">
+      <label class="builder-field builder-field--row">
         <span>Plan Name</span>
         <input
           :value="metadata.name"
@@ -83,7 +132,7 @@ watch(
         />
       </label>
 
-      <label class="builder-field builder-field--duration">
+      <label class="builder-field builder-field--duration builder-field--row">
         <span>Est. Time (min)</span>
         <input
           :value="metadata.estimatedDuration"
@@ -94,7 +143,7 @@ watch(
         />
       </label>
 
-      <label class="builder-field">
+      <label class="builder-field builder-field--row">
         <span>Workout Type</span>
         <select :value="metadata.type" @change="updateField('type', $event.target.value)">
           <option value="Strength">Strength</option>
@@ -104,7 +153,33 @@ watch(
         </select>
       </label>
 
-      <label v-if="isAdminPlanTypeEnabled" class="builder-field">
+      <label class="builder-field builder-field--row">
+        <span>Goal</span>
+        <select
+          :value="String(metadata.goalId || '')"
+          :disabled="loadingGoals"
+          @change="updateField('goalId', String($event.target.value || ''))"
+        >
+          <option
+            v-for="option in goalOptions"
+            :key="`goal-${String(option.value)}`"
+            :value="String(option.value)"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+        <small class="builder-field__hint">
+          {{ loadingGoals ? 'Loading active goals...' : 'Manage goal details in Profile > My Goals.' }}
+        </small>
+        <div v-if="selectedGoalContext" class="goal-context-note" role="note" aria-live="polite">
+          <strong>Exercise Goal Context:</strong>
+          {{ selectedGoalContext.exerciseName }} target {{ selectedGoalContext.targetValue }} {{ selectedGoalContext.targetUnit }} by {{ formatGoalContextDate(selectedGoalContext.targetDate) }}.
+          <span v-if="selectedGoalContext.status === 'archived'"> This linked goal is archived.</span>
+          <span class="goal-context-note__subtle"> This does not modify per-exercise Target Weight values in the schedule.</span>
+        </div>
+      </label>
+
+      <label v-if="isAdminPlanTypeEnabled" class="builder-field builder-field--row">
         <span>Workout Plan Type</span>
         <select :value="metadata.planType || ''" @change="updateField('planType', $event.target.value)">
           <option value="">Standard (Personal)</option>
@@ -127,7 +202,7 @@ watch(
         <span>Workout Goals</span>
         <div class="goal-chip-grid" role="group" aria-label="Workout goals">
           <button
-            v-for="goal in goalOptions"
+            v-for="goal in workoutGoalChips"
             :key="goal"
             type="button"
             class="goal-chip"
@@ -169,6 +244,10 @@ watch(
   gap: 5px;
 }
 
+.builder-field--row {
+  grid-column: span 2;
+}
+
 .builder-field--wide {
   grid-column: span 2;
 }
@@ -184,6 +263,35 @@ watch(
   width: 100%;
 }
 
+@media (min-width: 769px) {
+  .builder-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .builder-field--row {
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 0;
+  }
+
+  .builder-field--row > span {
+    margin: 0;
+    align-self: center;
+  }
+
+  .builder-field--row > input,
+  .builder-field--row > select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .builder-field--duration {
+    width: auto;
+  }
+}
+
 .builder-field span {
   font-size: 0.8rem;
   font-weight: 700;
@@ -191,9 +299,26 @@ watch(
 }
 
 .builder-field__hint {
+  font-size: 0.7rem;
+  color: #8fa1bd;
+  line-height: 1.25;
+}
+
+.goal-context-note {
+  margin-top: 4px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 8px;
+  padding: 7px 9px;
   font-size: 0.74rem;
-  color: #64748b;
-  line-height: 1.35;
+  line-height: 1.4;
+}
+
+.goal-context-note__subtle {
+  display: block;
+  margin-top: 2px;
+  color: #1d4ed8;
 }
 
 .builder-field input,
@@ -265,17 +390,41 @@ watch(
 .builder-field--other-goal .builder-field__hint {
   margin-top: 2px;
 }
+
+@media (min-width: 769px) {
+  .builder-field--row > .builder-field__hint,
+  .builder-field--row > .goal-context-note {
+    grid-column: 2;
+    margin-top: 2px;
+  }
+}
+
 @media (max-width: 768px) {
   .builder-metadata-layout {
     gap: 6px;
+    min-width: 0;
   }
 
   .builder-grid {
     grid-template-columns: 1fr;
     gap: 6px;
+    min-width: 0;
   }
+
+  .builder-field--row,
   .builder-field--wide {
     grid-column: span 1;
+    grid-template-columns: 1fr;
+  }
+
+  .builder-field--row > span,
+  .builder-field--row > input,
+  .builder-field--row > select,
+  .builder-field--row > .builder-field__hint,
+  .builder-field--row > .goal-context-note {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
   }
 
   .builder-field--duration {
