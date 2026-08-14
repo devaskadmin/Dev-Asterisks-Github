@@ -96,4 +96,63 @@ router.get('/tools/status', async (req, res) => {
   });
 });
 
+router.post('/debug/mobile-menu', (req, res) => {
+  const payload = req.body && typeof req.body === 'object' ? req.body : {};
+
+  const safeString = (value, maxLength = 128) => String(value || '').trim().slice(0, maxLength);
+  const safeBoolean = (value) => Boolean(value);
+  const safeNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const safeEntry = {
+    timestamp: safeString(payload.timestamp || new Date().toISOString(), 64),
+    eventName: safeString(payload.eventName || 'UNKNOWN_EVENT', 64),
+    menuStateBefore: safeBoolean(payload.menuStateBefore),
+    menuStateAfter: safeBoolean(payload.menuStateAfter),
+    eventTarget: {
+      tag: safeString(payload?.eventTarget?.tag || '', 40),
+      id: safeString(payload?.eventTarget?.id || '', 80),
+      class: safeString(payload?.eventTarget?.class || '', 160),
+    },
+    eventType: safeString(payload.eventType || 'unknown', 48),
+    currentRoute: safeString(payload.currentRoute || '', 220),
+    viewport: safeString(payload.viewport || 'unknown', 24),
+    action: safeString(payload.action || '', 16),
+    reason: safeString(payload.reason || '', 64),
+    before: safeBoolean(payload.before),
+    after: safeBoolean(payload.after),
+    viewportWidth: safeNumber(payload.viewportWidth, 0),
+  };
+
+  const logPrefix = safeEntry.eventName === 'PROFILE_DEBUG_STATE' ? '[PROFILE DEBUG]' : '[MOBILE MENU DEBUG]';
+  console.log(logPrefix, JSON.stringify(safeEntry));
+  return res.status(200).json({ ok: true });
+});
+
+router.post('/debug/profile-menu', (req, res) => {
+  const payload = req.body && typeof req.body === 'object' ? req.body : {};
+  const safeString = (value, maxLength = 256) => String(value || '').trim().slice(0, maxLength);
+  const safeNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const safeBoolean = (value) => Boolean(value);
+
+  const safeEntry = {
+    timestamp: safeString(payload.timestamp || new Date().toISOString(), 64),
+    event: 'PROFILE_ICON_CLICK',
+    currentRoute: safeString(payload.currentRoute || '', 220),
+    viewportWidth: safeNumber(payload.viewportWidth, 0),
+    viewportHeight: safeNumber(payload.viewportHeight, 0),
+    userAgent: safeString(payload.userAgent || '', 320),
+    menuStateBeforeClick: safeBoolean(payload.menuStateBeforeClick),
+    menuStateAfterClick: safeBoolean(payload.menuStateAfterClick),
+  };
+
+  console.log('[PROFILE MENU TEST]', JSON.stringify(safeEntry));
+  return res.status(200).json({ ok: true });
+});
+
 module.exports = router;

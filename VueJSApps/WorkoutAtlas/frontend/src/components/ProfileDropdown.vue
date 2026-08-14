@@ -11,15 +11,215 @@ const props = defineProps({
   },
   avatarSrc: {
     type: String,
-    default: '/src/assets/images/admin.png'
+    default: '/src/asssets/images/admin.png'
   }
 })
 
-const { logout: authLogout, logoutInProgress } = useAuth()
+const { logout: authLogout, logoutInProgress, user: authUser } = useAuth()
 const router = useRouter()
 const isOpen = ref(false)
 const dropdownRef = ref(null)
 const buttonRef = ref(null)
+const ignoreOutsideForOpenTick = ref(false)
+const touchOpenGuardUntil = ref(0)
+const showClickDetectedNotice = ref(false)
+let clickNoticeTimer = null
+let lastAvatarOpenAt = 0
+let avatarTapSequence = 0
+let handledAvatarTapSequence = 0
+let lastAvatarTapMarkAt = 0
+let lastAvatarActivationAt = 0
+let lastAvatarActivationSource = ''
+
+const OUTSIDE_SYNTHETIC_GUARD_MS = 900
+
+const hasTouchPrimaryInput = (() => {
+  if (typeof navigator === 'undefined') return false
+  return Number(navigator.maxTouchPoints || 0) > 0
+})()
+
+const menuLog = (...args) => {
+  console.log('[ProfileDropdown]', ...args)
+}
+
+const mapReasonForProfileDebug = (reason = '') => {
+  const normalized = String(reason || '').trim().toLowerCase()
+  if (normalized === 'avatar-click') return 'avatar-click'
+  if (normalized === 'outside-pointer') return 'outside-click'
+  if (normalized === 'route-change') return 'route-change'
+  if (normalized.startsWith('menu-item:')) return 'menu-selection'
+  return 'other'
+}
+
+const emitProfileStateDebug = ({ action, reason, before, after, eventType = '' }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventName: 'PROFILE_DEBUG_STATE',
+    action: String(action || 'TOGGLE').toUpperCase(),
+    reason: mapReasonForProfileDebug(reason),
+    before: Boolean(before),
+    after: Boolean(after),
+    eventType: String(eventType || ''),
+    viewportWidth: typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0,
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    menuStateBefore: Boolean(before),
+    menuStateAfter: Boolean(after),
+    viewport: getViewportLabel(),
+  }
+
+  console.log('[PROFILE DEBUG]',
+    `action=${entry.action}`,
+    `reason=${entry.reason}`,
+    `before=${entry.before}`,
+    `after=${entry.after}`,
+    `eventType=${entry.eventType || 'unknown'}`,
+    `viewportWidth=${entry.viewportWidth}`,
+    `timestamp=${entry.timestamp}`
+  )
+  sendMenuDebug(entry)
+}
+
+const getViewportLabel = () => {
+  if (typeof window === 'undefined') return 'unknown'
+  return window.matchMedia('(max-width: 768px)').matches ? 'mobile' : 'desktop'
+}
+
+const getTargetSummary = (event) => {
+  const target = event?.target
+  if (!(target instanceof Element)) {
+    return { tag: '', id: '', class: '' }
+  }
+
+  return {
+    tag: String(target.tagName || '').toLowerCase(),
+    id: String(target.id || '').slice(0, 80),
+    class: String(target.className || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+  }
+}
+
+const sendMenuDebug = (entry) => {
+  const url = `${API_BASE}/api/debug/mobile-menu`
+  const body = JSON.stringify(entry)
+
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    const blob = new Blob([body], { type: 'application/json' })
+    navigator.sendBeacon(url, blob)
+    return
+  }
+
+  fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // non-fatal diagnostics only
+  })
+}
+
+const emitMenuDebug = ({ eventName, event = null, eventType = '', before = isOpen.value, after = isOpen.value }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventName,
+    menuStateBefore: Boolean(before),
+    menuStateAfter: Boolean(after),
+    eventTarget: getTargetSummary(event),
+    eventType: String(eventType || event?.type || ''),
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    viewport: getViewportLabel(),
+  }
+
+  menuLog('debug-event', entry)
+  sendMenuDebug(entry)
+}
+
+const sendProfileMenuClickDebug = ({ before, after }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event: 'PROFILE_ICON_CLICK',
+    currentRoute: String(router.currentRoute.value?.fullPath || ''),
+    viewportWidth: typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0,
+    viewportHeight: typeof window !== 'undefined' ? Number(window.innerHeight || 0) : 0,
+    userAgent: typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '',
+    menuStateBeforeClick: Boolean(before),
+    menuStateAfterClick: Boolean(after),
+  }
+
+  fetch(`${API_BASE}/api/debug/profile-menu`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+    keepalive: true,
+  }).catch(() => {
+    // diagnostics only
+  })
+}
+
+const showProfileClickDetectedMessage = () => {
+  showClickDetectedNotice.value = true
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+  }
+  clickNoticeTimer = window.setTimeout(() => {
+    showClickDetectedNotice.value = false
+    clickNoticeTimer = null
+  }, 2200)
+}
+
+const dismissProfileClickNotice = () => {
+  showClickDetectedNotice.value = false
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+    clickNoticeTimer = null
+  }
+}
+
+const handleAvatarPress = (event) => {
+  const now = Date.now()
+  // Pointer/mouse/touch bursts from one physical tap should count as one sequence.
+  if ((now - lastAvatarTapMarkAt) <= 160) {
+    return
+  }
+  avatarTapSequence += 1
+  lastAvatarTapMarkAt = now
+  menuLog('avatar press sequence', {
+    avatarTapSequence,
+    eventType: event?.type || 'unknown',
+    viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+  })
+}
+
+const handleAvatarActivate = (event, source = 'other') => {
+  const now = Date.now()
+  const normalizedSource = String(source || 'other')
+
+  const isSyntheticClickAfterPointer =
+    normalizedSource === 'click' &&
+    lastAvatarActivationSource === 'pointerup' &&
+    (now - lastAvatarActivationAt) <= 500
+
+  if (isSyntheticClickAfterPointer) {
+    menuLog('avatar activation ignored (synthetic click after pointerup)', {
+      elapsedMs: now - lastAvatarActivationAt,
+      source: normalizedSource,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'TOGGLE',
+      reason: 'avatar-click',
+      before: isOpen.value,
+      after: isOpen.value,
+      eventType: `${event?.type || 'unknown'}:synthetic-ignored`,
+    })
+    return
+  }
+
+  lastAvatarActivationAt = now
+  lastAvatarActivationSource = normalizedSource
+  toggleDropdown(event)
+}
 
 // Computed avatar URL with default fallback
 const avatarUrl = computed(() => {
@@ -31,60 +231,197 @@ const avatarUrl = computed(() => {
 })
 
 // Toggle dropdown open/close
-const toggleDropdown = () => {
-  isOpen.value = !isOpen.value
+const toggleDropdown = (event) => {
+  const now = Date.now()
+  const beforeState = isOpen.value
+
+  if (avatarTapSequence > 0 && handledAvatarTapSequence === avatarTapSequence) {
+    menuLog('toggle ignored (duplicate click for same avatar tap sequence)', {
+      avatarTapSequence,
+      eventType: event?.type || 'unknown',
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'TOGGLE',
+      reason: 'avatar-click',
+      before: beforeState,
+      after: beforeState,
+      eventType: `${event?.type || 'unknown'}:duplicate-ignored`,
+    })
+    return
+  }
+
+  if (avatarTapSequence > 0) {
+    handledAvatarTapSequence = avatarTapSequence
+  }
+
+  const nextOpen = !beforeState
+
+  showProfileClickDetectedMessage()
+  sendProfileMenuClickDebug({ before: beforeState, after: nextOpen })
+
+  if (nextOpen) {
+    if (hasTouchPrimaryInput) {
+      // iOS can emit delayed synthetic pointer/mouse events after tap.
+      touchOpenGuardUntil.value = Date.now() + 420
+    }
+
+    ignoreOutsideForOpenTick.value = true
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        ignoreOutsideForOpenTick.value = false
+      })
+    })
+  }
+  isOpen.value = nextOpen
+  if (nextOpen) {
+    lastAvatarOpenAt = now
+  }
+
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(
+      `PROFILE CLICK\nbefore: ${String(beforeState)}\nafter: ${String(nextOpen)}\nwidth: ${String(window.innerWidth || 0)}`
+    )
+  }
+
+  emitProfileStateDebug({
+    action: nextOpen ? 'OPEN' : 'CLOSE',
+    reason: 'avatar-click',
+    before: beforeState,
+    after: nextOpen,
+    eventType: event?.type || 'click',
+  })
+
+  emitMenuDebug({
+    eventName: 'MENU_TOGGLE_CLICK',
+    event,
+    before: beforeState,
+    after: nextOpen,
+  })
+  menuLog('toggle', { nextOpen, ignoreOutsideForOpenTick: ignoreOutsideForOpenTick.value })
 }
 
 // Close dropdown
-const closeDropdown = () => {
+const closeDropdown = (reason = 'unknown') => {
+  const beforeState = isOpen.value
+  if (!isOpen.value) {
+    menuLog('close ignored (already closed)', { reason })
+    return
+  }
   isOpen.value = false
+  emitProfileStateDebug({
+    action: 'CLOSE',
+    reason,
+    before: beforeState,
+    after: false,
+    eventType: reason,
+  })
+  emitMenuDebug({
+    eventName: 'MENU_CLOSE',
+    eventType: reason,
+    before: beforeState,
+    after: false,
+  })
+  menuLog('closed', { reason })
 }
 
 // Handle pointer/touch outside so mobile taps do not immediately collapse the menu.
 const handlePointerOutside = (event) => {
+  emitMenuDebug({
+    eventName: event?.type === 'touchstart' ? 'TOUCH_START' : 'POINTER_DOWN',
+    event,
+    before: isOpen.value,
+    after: isOpen.value,
+  })
+
   if (!isOpen.value) {
+    menuLog('outside ignored (menu closed)', { eventType: event?.type || 'unknown' })
+    return
+  }
+
+  if (touchOpenGuardUntil.value > Date.now()) {
+    menuLog('outside ignored (touch open guard)', {
+      eventType: event?.type || 'unknown',
+      guardMsRemaining: touchOpenGuardUntil.value - Date.now(),
+    })
+    return
+  }
+
+  if ((Date.now() - lastAvatarOpenAt) < OUTSIDE_SYNTHETIC_GUARD_MS) {
+    menuLog('outside ignored (post-avatar synthetic guard)', {
+      eventType: event?.type || 'unknown',
+      elapsedMs: Date.now() - lastAvatarOpenAt,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    })
+    emitProfileStateDebug({
+      action: 'CLOSE',
+      reason: 'outside-pointer',
+      before: isOpen.value,
+      after: isOpen.value,
+      eventType: `${event?.type || 'unknown'}:synthetic-ignored`,
+    })
+    return
+  }
+
+  if (ignoreOutsideForOpenTick.value) {
+    menuLog('outside ignored (same tap guard)', {
+      eventType: event?.type || 'unknown',
+    })
     return
   }
 
   const target = event.target
+  if (target instanceof Element && target.closest('.profile-dropdown-wrapper')) {
+    menuLog('outside ignored (inside wrapper via closest)', { eventType: event?.type || 'unknown' })
+    return
+  }
+
   const path = typeof event.composedPath === 'function' ? event.composedPath() : []
 
   if (path.length > 0) {
     if (path.includes(dropdownRef.value) || path.includes(buttonRef.value)) {
+      menuLog('outside ignored (inside composedPath)', { eventType: event?.type || 'unknown' })
       return
     }
   } else if (
     (dropdownRef.value && dropdownRef.value.contains(target)) ||
     (buttonRef.value && buttonRef.value.contains(target))
   ) {
+    menuLog('outside ignored (inside contains)', { eventType: event?.type || 'unknown' })
     return
   }
 
   if (dropdownRef.value && buttonRef.value) {
-    closeDropdown()
+    emitMenuDebug({
+      eventName: 'OUTSIDE_CLICK',
+      event,
+      before: isOpen.value,
+      after: false,
+    })
+    closeDropdown('outside-pointer')
   }
 }
 
 // Handle keyboard escape key
 const handleKeyDown = (event) => {
   if (event.key === 'Escape' && isOpen.value) {
-    closeDropdown()
+    closeDropdown('escape')
   }
 }
 
 // Menu item handlers
 const handleViewProfile = () => {
-  closeDropdown()
+  closeDropdown('menu-item:view-profile')
   router.push({ name: 'view_profile' })
 }
 
 const handleAccountSettings = () => {
-  closeDropdown()
+  closeDropdown('menu-item:account-settings')
   router.push({ name: 'user_settings' })
 }
 
 const handleHelp = () => {
-  closeDropdown()
+  closeDropdown('menu-item:help')
   // Navigate to help page - adjust route name as needed
   router.push({ name: 'help' }).catch(() => {
     // Fallback: open help in current view or show notification
@@ -93,28 +430,96 @@ const handleHelp = () => {
 }
 
 const handleSignOut = async () => {
-  closeDropdown()
+  closeDropdown('menu-item:sign-out')
   // Use shared logout function from useAuth
   await authLogout()
 }
 
+let removeOutsideListener = () => {}
+
+const registerOutsideListener = () => {
+  window.addEventListener('pointerdown', handlePointerOutside, true)
+
+  // Legacy fallback for browsers that do not emit pointer events consistently.
+  const needsTouchFallback = !window.PointerEvent
+  if (needsTouchFallback) {
+    window.addEventListener('touchstart', handlePointerOutside, true)
+  }
+
+  menuLog('listener registered', {
+    mode: needsTouchFallback ? 'pointerdown+touchstart' : 'pointerdown',
+  })
+  return () => {
+    window.removeEventListener('pointerdown', handlePointerOutside, true)
+    if (needsTouchFallback) {
+      window.removeEventListener('touchstart', handlePointerOutside, true)
+    }
+    menuLog('listener removed', {
+      mode: needsTouchFallback ? 'pointerdown+touchstart' : 'pointerdown',
+    })
+  }
+}
+
 // Setup and cleanup event listeners
 onMounted(() => {
-  window.addEventListener('pointerdown', handlePointerOutside, true)
-  window.addEventListener('touchstart', handlePointerOutside, true)
+  removeOutsideListener = registerOutsideListener()
   document.addEventListener('keydown', handleKeyDown)
+  emitMenuDebug({ eventName: 'COMPONENT_MOUNT' })
+  menuLog('mounted')
 })
 
 onUnmounted(() => {
-  window.removeEventListener('pointerdown', handlePointerOutside, true)
-  window.removeEventListener('touchstart', handlePointerOutside, true)
+  emitMenuDebug({ eventName: 'COMPONENT_UNMOUNT' })
+  if (clickNoticeTimer) {
+    clearTimeout(clickNoticeTimer)
+    clickNoticeTimer = null
+  }
+  removeOutsideListener()
   document.removeEventListener('keydown', handleKeyDown)
+  menuLog('unmounted')
 })
 
 // Close dropdown when route changes
 const unsubscribe = router.afterEach(() => {
-  closeDropdown()
+  emitMenuDebug({
+    eventName: 'ROUTE_CHANGE',
+    before: isOpen.value,
+    after: false,
+  })
+  closeDropdown('route-change')
 })
+
+watch(isOpen, (next, prev) => {
+  if (next === prev) return
+  emitMenuDebug({
+    eventName: next ? 'MENU_OPEN' : 'MENU_CLOSE',
+    before: prev,
+    after: next,
+  })
+})
+
+watch(logoutInProgress, (next, prev) => {
+  if (next === prev) return
+  emitMenuDebug({
+    eventName: 'AUTH_STATE_CHANGE',
+    eventType: `logoutInProgress:${next}`,
+    before: isOpen.value,
+    after: isOpen.value,
+  })
+})
+
+watch(
+  () => Boolean(authUser?.value),
+  (next, prev) => {
+    if (next === prev) return
+    emitMenuDebug({
+      eventName: 'AUTH_STATE_CHANGE',
+      eventType: `userSessionPresent:${next}`,
+      before: isOpen.value,
+      after: isOpen.value,
+    })
+  }
+)
 
 onUnmounted(() => {
   if (unsubscribe) {
@@ -131,8 +536,11 @@ onUnmounted(() => {
       type="button"
       class="profile-dropdown-btn"
       :class="{ 'is-open': isOpen }"
-      @pointerdown.stop
-      @click.stop="toggleDropdown"
+      @pointerdown.stop="handleAvatarPress($event)"
+      @mousedown.stop
+      @touchstart.stop="handleAvatarPress($event); emitMenuDebug({ eventName: 'TOUCH_START', event: $event, before: isOpen, after: isOpen })"
+      @pointerup.stop="handleAvatarActivate($event, 'pointerup')"
+      @click.stop="handleAvatarActivate($event, 'click')"
       aria-haspopup="true"
       :aria-expanded="isOpen"
       aria-label="Open profile menu"
@@ -147,6 +555,8 @@ onUnmounted(() => {
         ref="dropdownRef"
         class="profile-dropdown-menu"
         @pointerdown.stop
+        @mousedown.stop
+        @touchstart.stop
         role="menu"
         aria-label="Profile menu"
       >
@@ -223,6 +633,21 @@ onUnmounted(() => {
         </div>
       </div>
     </transition>
+
+    <transition name="profile-click-notice">
+      <div
+        v-if="showClickDetectedNotice"
+        class="profile-click-notice"
+        @pointerdown.stop
+        @mousedown.stop
+        @touchstart.stop
+        role="status"
+        aria-live="polite"
+      >
+        <span class="profile-click-notice__text">Profile icon click detected</span>
+        <button type="button" class="profile-click-notice__close" @click.stop="dismissProfileClickNotice">Close</button>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -230,6 +655,46 @@ onUnmounted(() => {
 .profile-dropdown-wrapper {
   position: relative;
   display: inline-block;
+}
+
+.profile-click-notice {
+  position: fixed;
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  z-index: 2500;
+  background: rgba(15, 23, 42, 0.96);
+  color: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 10px;
+  padding: 10px 12px;
+  width: min(320px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 20px));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profile-click-notice__text {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.profile-click-notice__close {
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(30, 41, 59, 0.88);
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.profile-click-notice__close:hover {
+  background: rgba(51, 65, 85, 0.92);
 }
 
 /* Profile Button */
@@ -460,11 +925,27 @@ onUnmounted(() => {
   }
 }
 
+.profile-click-notice-enter-active,
+.profile-click-notice-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.profile-click-notice-enter-from,
+.profile-click-notice-leave-to {
+  opacity: 0;
+}
+
 /* Responsive */
 @media (max-width: 576px) {
   .profile-dropdown-menu {
-    min-width: 240px;
-    right: -20px;
+    min-width: 0;
+    width: min(280px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+    max-width: min(280px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+  }
+
+  .profile-dropdown-menu::before {
+    right: 18px;
   }
 
   .dropdown-user-info {

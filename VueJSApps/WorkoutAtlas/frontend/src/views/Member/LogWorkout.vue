@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
 import { API_BASE } from '@/config/env';
 import { useWorkoutSessionDraft } from '@/composable/useWorkoutSessionDraft';
 
 const router = useRouter();
+const route = useRoute();
 const WORKOUT_LOG_ACTIVE_BODY_CLASS = 'wa-workout-log-active';
 
 /* ─── Tab state ───────────────────────────────────────────────── */
@@ -114,6 +115,31 @@ const formatUpdatedAt = (value) => {
 const isPersonalWorkoutPlan = (plan = {}) => {
   const planType = String(plan?.planType || '').trim().toLowerCase();
   return planType !== 'featured' && planType !== 'community_shared';
+};
+
+const hasGlobalSourcePlan = (plan = {}) => Number(plan?.sourceGlobalPlanId || 0) > 0;
+
+const getGlobalSourcePlanLabel = (plan = {}) => {
+  const fallback = 'Global Plan';
+  if (!hasGlobalSourcePlan(plan)) {
+    return '';
+  }
+
+  const sourceName = String(plan?.sourceGlobalPlanName || '').trim();
+  return sourceName || fallback;
+};
+
+const canDeleteWorkoutPlan = (plan = {}) => {
+  if (!isPersonalWorkoutPlan(plan)) {
+    return false;
+  }
+
+  const planId = String(plan?.planId || '').trim();
+  if (!planId) {
+    return false;
+  }
+
+  return String(activeSession.value?.workoutPlanId || '').trim() !== planId;
 };
 
 const formatDurationHms = (totalSeconds) => {
@@ -1033,6 +1059,97 @@ const openInBuilder = (planId) => {
     : { name: 'workout_builder', query: { tab: 'create' } });
 };
 
+const openRequestedPlanFromQuery = async () => {
+  if (hasActiveWorkout.value) {
+    return;
+  }
+
+  const requestedPlanId = String(route.query?.planId || '').trim();
+  if (!requestedPlanId) {
+    return;
+  }
+
+  const existsInList = workoutLists.value.some((plan) => String(plan?.planId || '').trim() === requestedPlanId);
+  if (!existsInList) {
+    return;
+  }
+
+  activeTab.value = 'overview';
+  if (expandedPlanId.value !== requestedPlanId) {
+    await togglePlan(requestedPlanId);
+  }
+};
+
+const openFindPlans = () => {
+  router.push({ name: 'find_plans' });
+};
+
+const openBuildMyOwnWorkout = () => {
+  openInBuilder('');
+};
+
+const removePlanFromUi = (planId) => {
+  const pid = String(planId || '').trim();
+  if (!pid) {
+    return;
+  }
+
+  workoutLists.value = workoutLists.value.filter((plan) => String(plan?.planId || '').trim() !== pid);
+
+  if (expandedPlanId.value === pid) {
+    expandedPlanId.value = null;
+    expandedPlanData.value = null;
+    selectedDay.value = '';
+    activeTab.value = 'overview';
+  }
+
+  const nextDayOrderStateByPlanId = { ...dayOrderStateByPlanId.value };
+  delete nextDayOrderStateByPlanId[pid];
+  dayOrderStateByPlanId.value = nextDayOrderStateByPlanId;
+
+  const nextReorderPanelOpenByPlanId = { ...reorderPanelOpenByPlanId.value };
+  delete nextReorderPanelOpenByPlanId[pid];
+  reorderPanelOpenByPlanId.value = nextReorderPanelOpenByPlanId;
+
+  if (workoutLists.value.length !== 1) {
+    didAutoExpandSinglePlan.value = false;
+  }
+};
+
+const deleteWorkoutPlan = async (plan) => {
+  const planId = String(plan?.planId || '').trim();
+  if (!planId || !canDeleteWorkoutPlan(plan)) {
+    return;
+  }
+
+  const planName = String(plan?.name || plan?.planName || 'this workout plan').trim();
+  const confirmed = window.confirm(`Delete ${planName}? This will permanently remove this workout plan.`);
+  if (!confirmed) {
+    return;
+  }
+
+  saveError.value = '';
+  saveMessage.value = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/workout-schedules/${encodeURIComponent(planId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body?.error || 'Failed to delete workout plan.');
+    }
+
+    removePlanFromUi(planId);
+    saveMessage.value = 'Workout plan deleted.';
+    await autoExpandSinglePlanIfNeeded();
+  } catch (err) {
+    saveError.value = err?.message || 'Failed to delete workout plan.';
+  }
+};
+
 const goToInProgress = () => {
   if (hasActiveWorkout.value && activeSession.value) {
     // Restore the date picker to the locked workout start date.
@@ -1203,11 +1320,13 @@ onMounted(async () => {
   document.body.classList.add(WORKOUT_LOG_ACTIVE_BODY_CLASS);
   await loadWorkoutLists();
   await checkActiveSession();
+  await openRequestedPlanFromQuery();
 });
 
 onActivated(async () => {
   await loadWorkoutLists();
   await checkActiveSession();
+  await openRequestedPlanFromQuery();
 });
 
 onUnmounted(() => {
@@ -1330,8 +1449,11 @@ onUnmounted(() => {
         <div v-else-if="workoutLists.length === 0" class="wl-empty app-section-card">
           <i class="fa-solid fa-dumbbell wl-empty-icon"></i>
           <h6>No workout plans yet</h6>
-          <p>Create your first plan in Workout Builder.</p>
-          <button type="button" class="wl-btn" @click="startBuilder">Create Workout</button>
+          <p>Select a starter plan or build your own workout.</p>
+          <div class="d-flex flex-wrap gap-2 justify-content-center">
+            <button type="button" class="wl-btn" @click="openFindPlans">Find a Workout Plan</button>
+            <button type="button" class="wl-btn wl-btn-secondary" @click="openBuildMyOwnWorkout">Build My Own Workout</button>
+          </div>
         </div>
 
         <!-- ── Accordion plan list ──────────────────────────────────────── -->
@@ -1353,6 +1475,10 @@ onUnmounted(() => {
                     <span v-if="plan.estimatedDuration"><i class="fa-solid fa-clock"></i> {{ plan.estimatedDuration }} min</span>
                     <span v-if="plan.exerciseCount"><i class="fa-solid fa-list-check"></i> {{ plan.exerciseCount }} exercises</span>
                     <span v-if="plan.type || plan.workoutType" class="wl-plan__tag">{{ plan.type || plan.workoutType }}</span>
+                    <span v-if="hasGlobalSourcePlan(plan)" class="wl-plan__source-tag" :title="`Based on ${getGlobalSourcePlanLabel(plan)}`">
+                      <i class="fa-solid fa-diagram-project"></i>
+                      Based on {{ getGlobalSourcePlanLabel(plan) }}
+                    </span>
                     <span v-if="plan.updatedAtLabel"><i class="fa-solid fa-calendar"></i> {{ plan.updatedAtLabel }}</span>
                   </div>
                 </div>
@@ -1373,6 +1499,14 @@ onUnmounted(() => {
                 </button>
                 <button type="button" class="wl-btn-edit" @click="openInBuilder(plan.planId)">
                   <i class="fa-solid fa-pencil"></i> Edit Plan
+                </button>
+                <button
+                  v-if="canDeleteWorkoutPlan(plan)"
+                  type="button"
+                  class="wl-btn-plan-delete"
+                  @click="deleteWorkoutPlan(plan)"
+                >
+                  <i class="fa-solid fa-trash"></i> Delete
                 </button>
               </div>
             </div>
@@ -2177,6 +2311,15 @@ onUnmounted(() => {
   border-radius: 999px; padding: 1px 9px;
   font-size: 0.75rem; font-weight: 700;
 }
+.wl-plan__source-tag {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
 
 .wl-plan__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .wl-plan__selected-badge {
@@ -2192,6 +2335,25 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: 5px; transition: background 0.12s;
 }
 .wl-btn-edit:hover { background: #e0e7ef; }
+
+.wl-btn-plan-delete {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s;
+}
+
+.wl-btn-plan-delete:hover {
+  background: #ffe4e6;
+}
 
 .wl-btn-reorder {
   background: #eaf2ff;
@@ -2697,7 +2859,8 @@ onUnmounted(() => {
 }
 
 .wl-page .wl-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.86);
+  filter: brightness(0) invert(1);
+  opacity: 1;
 }
 
 .wl-page .wl-btn {
@@ -3344,6 +3507,13 @@ onUnmounted(() => {
     color: #f8fafc;
   }
   .wl-btn-edit {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.62rem;
+    border-radius: 8px;
+    gap: 3px;
+  }
+  .wl-btn-plan-delete {
     min-height: 26px;
     padding: 3px 8px;
     font-size: 0.62rem;

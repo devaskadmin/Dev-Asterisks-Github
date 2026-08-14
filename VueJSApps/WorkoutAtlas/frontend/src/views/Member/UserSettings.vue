@@ -3,6 +3,7 @@ import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { API_BASE } from '@/config/env';
 import { useAuth } from '@/composable/useAuth';
 import AvatarModal from '@/components/AvatarModal.vue';
+import ExercisePickerModal from '@/components/workout-builder/ExercisePickerModal.vue';
 
 const activeTab = ref('profile')
 const authStore = useAuth()
@@ -61,6 +62,17 @@ const display = reactive({
   startPage: 'dashboard',
 })
 
+const loadDisplayFromLocalStorage = () => {
+  try {
+    const stored = localStorage.getItem('wa_display_settings')
+    if (!stored) return
+    const d = JSON.parse(stored)
+    if (d.language)        display.language = d.language
+    if (d.dashboardLayout) display.dashboardLayout = d.dashboardLayout
+    if (d.startPage)       display.startPage = d.startPage
+  } catch (_) {}
+}
+
 const security = reactive({
   currentPassword: '',
   newPassword: '',
@@ -113,6 +125,7 @@ async function save() {
 const tabs = [
   { id: 'profile',       label: 'Profile',          icon: 'fa-solid fa-user' },
   { id: 'fitness',       label: 'Fitness Profile',  icon: 'fa-solid fa-dumbbell' },
+  { id: 'goals',         label: 'My Goals',         icon: 'fa-solid fa-bullseye' },
   { id: 'notifications', label: 'Notifications',    icon: 'fa-solid fa-bell' },
   { id: 'display',       label: 'Display',          icon: 'fa-solid fa-display' },
   { id: 'security',      label: 'Security',         icon: 'fa-solid fa-shield-halved' },
@@ -129,6 +142,7 @@ const mobileMenuOpen = ref(false)
 const tabEmoji = {
   profile:       '👤',
   fitness:       '🏋️',
+  goals:         '🎯',
   notifications: '🔔',
   display:       '🖥️',
   security:      '🛡️',
@@ -236,10 +250,227 @@ const getInitials = () => {
   return `${firstInitial}${lastInitial}`.toUpperCase()
 }
 
+// ─── Goals ───────────────────────────────────────────────────────────────────
+const goals = ref([])
+const goalsLoading = ref(false)
+const goalsError = ref('')
+const goalsSuccess = ref('')
+const goalFormOpen = ref(false)
+const goalFormMode = ref('add')
+const goalFormId = ref(null)
+const goalFormBusy = ref(false)
+const goalFormError = ref('')
+const showPastGoals = ref(false)
+
+const goalForm = reactive({
+  goalType: 'body_weight',
+  exerciseId: null,
+  exerciseName: '',
+  currentValue: '',
+  targetValue: '',
+  targetUnit: 'lb',
+  targetDate: '',
+})
+
+const allExercises = ref([])
+const exercisesLoaded = ref(false)
+const exercisePickerOpen = ref(false)
+
+const activeGoals = computed(() => goals.value.filter(g => g.status === 'active'))
+const completedGoals = computed(() => goals.value.filter(g => g.status === 'completed'))
+const archivedGoals = computed(() => goals.value.filter(g => g.status === 'archived'))
+
+const loadGoals = async () => {
+  goalsLoading.value = true
+  goalsError.value = ''
+  try {
+    const res = await fetch(`${API_BASE}/api/goals`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to load goals.')
+    const data = await res.json()
+    goals.value = Array.isArray(data.goals) ? data.goals : []
+  } catch (e) {
+    goalsError.value = e.message || 'Failed to load goals.'
+  } finally {
+    goalsLoading.value = false
+  }
+}
+
+const loadAllExercises = async () => {
+  if (exercisesLoaded.value) return
+  try {
+    const res = await fetch(`${API_BASE}/api/exercises?view=all`, { credentials: 'include' })
+    if (!res.ok) return
+    const data = await res.json()
+    allExercises.value = Array.isArray(data) ? data : []
+    exercisesLoaded.value = true
+  } catch (_) {}
+}
+
+const openExercisePicker = () => {
+  loadAllExercises()
+  exercisePickerOpen.value = true
+}
+
+const handleExercisePickerAdd = (payload) => {
+  const ex = Array.isArray(payload) ? payload[0] : payload
+  if (!ex || !ex.ExerciseID) return
+  goalForm.exerciseId = ex.ExerciseID
+  goalForm.exerciseName = ex.ExerciseTitle
+  exercisePickerOpen.value = false
+}
+
+const clearExercise = () => {
+  goalForm.exerciseId = null
+  goalForm.exerciseName = ''
+}
+
+const openAddGoal = () => {
+  goalFormMode.value = 'add'
+  goalFormId.value = null
+  goalFormError.value = ''
+  Object.assign(goalForm, {
+    goalType: 'body_weight',
+    exerciseId: null,
+    exerciseName: '',
+    currentValue: '',
+    targetValue: '',
+    targetUnit: 'lb',
+    targetDate: '',
+  })
+  clearExercise()
+  goalFormOpen.value = true
+}
+
+const openEditGoal = (goal) => {
+  goalFormMode.value = 'edit'
+  goalFormId.value = goal.id
+  goalFormError.value = ''
+  Object.assign(goalForm, {
+    goalType: goal.goalType,
+    exerciseId: goal.exerciseId,
+    exerciseName: goal.exerciseName || '',
+    currentValue: goal.currentValue ?? '',
+    targetValue: goal.targetValue,
+    targetUnit: goal.targetUnit,
+    targetDate: goal.targetDate,
+  })
+  goalFormOpen.value = true
+}
+
+const closeGoalForm = () => {
+  goalFormOpen.value = false
+  goalFormError.value = ''
+  clearExercise()
+}
+
+const submitGoalForm = async () => {
+  goalFormError.value = ''
+  if (!goalForm.targetValue || Number(goalForm.targetValue) <= 0) {
+    goalFormError.value = 'Target value is required and must be greater than 0.'
+    return
+  }
+  if (!goalForm.targetDate) {
+    goalFormError.value = 'Target date is required.'
+    return
+  }
+  if (goalForm.goalType === 'exercise_weight' && !goalForm.exerciseId) {
+    goalFormError.value = 'Please select an exercise from the list.'
+    return
+  }
+  goalFormBusy.value = true
+  try {
+    const body = {
+      goalType: goalForm.goalType,
+      targetValue: Number(goalForm.targetValue),
+      targetUnit: goalForm.targetUnit,
+      targetDate: goalForm.targetDate,
+    }
+    if (goalForm.currentValue !== '' && goalForm.currentValue != null) {
+      body.currentValue = Number(goalForm.currentValue)
+    }
+    if (goalForm.goalType === 'exercise_weight') {
+      body.exerciseId = goalForm.exerciseId
+      body.exerciseName = goalForm.exerciseName
+    }
+    const url = goalFormMode.value === 'edit'
+      ? `${API_BASE}/api/goals/${goalFormId.value}`
+      : `${API_BASE}/api/goals`
+    const method = goalFormMode.value === 'edit' ? 'PATCH' : 'POST'
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to save goal.')
+    closeGoalForm()
+    await loadGoals()
+    goalsSuccess.value = goalFormMode.value === 'edit' ? 'Goal updated.' : 'Goal created.'
+    setTimeout(() => { goalsSuccess.value = '' }, 3000)
+  } catch (e) {
+    goalFormError.value = e.message || 'Failed to save goal.'
+  } finally {
+    goalFormBusy.value = false
+  }
+}
+
+const completeGoal = async (id) => {
+  goalsError.value = ''
+  try {
+    const res = await fetch(`${API_BASE}/api/goals/${id}/complete`, { method: 'PATCH', credentials: 'include' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to complete goal.')
+    await loadGoals()
+    goalsSuccess.value = 'Goal marked as completed!'
+    setTimeout(() => { goalsSuccess.value = '' }, 3000)
+  } catch (e) { goalsError.value = e.message }
+}
+
+const archiveGoal = async (id) => {
+  goalsError.value = ''
+  try {
+    const res = await fetch(`${API_BASE}/api/goals/${id}/archive`, { method: 'PATCH', credentials: 'include' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to archive goal.')
+    await loadGoals()
+    goalsSuccess.value = 'Goal archived.'
+    setTimeout(() => { goalsSuccess.value = '' }, 3000)
+  } catch (e) { goalsError.value = e.message }
+}
+
+const deleteGoal = async (id) => {
+  if (!confirm('Delete this goal permanently?')) return
+  goalsError.value = ''
+  try {
+    const res = await fetch(`${API_BASE}/api/goals/${id}`, { method: 'DELETE', credentials: 'include' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to delete goal.')
+    await loadGoals()
+    goalsSuccess.value = 'Goal deleted.'
+    setTimeout(() => { goalsSuccess.value = '' }, 3000)
+  } catch (e) { goalsError.value = e.message }
+}
+
+const formatGoalDate = (dateStr) => {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T00:00:00')
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+const goalDisplayText = (goal) => {
+  if (goal.goalType === 'body_weight') {
+    return `Reach ${goal.targetValue} ${goal.targetUnit}`
+  }
+  return `${goal.exerciseName || 'Exercise'} ${goal.targetValue} ${goal.targetUnit}`
+}
+
 onMounted(() => {
   authStore.fetchUser()
   loadDisplayFromLocalStorage();
   loadUserSettings();
+  loadGoals();
   window.addEventListener('resize', handleResize)
 })
 
@@ -622,6 +853,165 @@ watch(
           </div>
         </section>
 
+        <!-- GOALS TAB -->
+        <section v-if="activeTab==='goals'" class="s-panel panel-bg">
+          <div class="goals-panel-head">
+            <div>
+              <h4 class="s-panel-title">My Goals</h4>
+              <p class="s-panel-sub">Track your body weight and exercise weight targets</p>
+            </div>
+            <button v-if="!goalFormOpen" class="btn-add-goal" @click="openAddGoal">
+              <i class="fa-solid fa-plus"></i> Add Goal
+            </button>
+          </div>
+
+          <!-- Add / Edit form -->
+          <div v-if="goalFormOpen" class="goal-form-panel">
+            <div class="goal-form-header">
+              <h5>{{ goalFormMode === 'edit' ? 'Edit Goal' : 'New Goal' }}</h5>
+              <button class="goal-form-close" @click="closeGoalForm" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Type selector (add only) -->
+            <div v-if="goalFormMode === 'add'" class="goal-type-row">
+              <button class="goal-type-btn" :class="{ active: goalForm.goalType === 'body_weight' }" @click="goalForm.goalType = 'body_weight'; clearExercise()">
+                <i class="fa-solid fa-weight-scale"></i> Body Weight
+              </button>
+              <button class="goal-type-btn" :class="{ active: goalForm.goalType === 'exercise_weight' }" @click="goalForm.goalType = 'exercise_weight'; loadAllExercises()">
+                <i class="fa-solid fa-dumbbell"></i> Exercise Weight
+              </button>
+            </div>
+
+            <!-- Exercise picker -->
+            <div v-if="goalForm.goalType === 'exercise_weight'" class="goal-form-field mb-12">
+              <label class="ff-label">Exercise</label>
+              <div v-if="!goalForm.exerciseId" class="ex-pick-btn-wrap">
+                <button type="button" class="btn-pick-exercise" @click="openExercisePicker">
+                  <i class="fa-solid fa-magnifying-glass"></i> Choose Exercise...
+                </button>
+              </div>
+              <div v-else class="ex-selected-row">
+                <div class="ex-selected-info">
+                  <i class="fa-solid fa-dumbbell"></i>
+                  <span>{{ goalForm.exerciseName }}</span>
+                </div>
+                <button type="button" class="ex-change-btn" @click="openExercisePicker">Change</button>
+                <button type="button" class="ex-clear-btn-icon" @click="clearExercise" title="Remove">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Value + date grid -->
+            <div class="goal-form-grid">
+              <div class="goal-form-field">
+                <label class="ff-label">Current Value <span style="opacity:.6;text-transform:none;letter-spacing:0">(optional)</span></label>
+                <div class="input-group">
+                  <input v-model="goalForm.currentValue" class="form-control" type="number" step="0.1" min="0" placeholder="0" />
+                  <span class="input-group-text">{{ goalForm.targetUnit }}</span>
+                </div>
+              </div>
+              <div class="goal-form-field">
+                <label class="ff-label">Target Value</label>
+                <div class="input-group">
+                  <input v-model="goalForm.targetValue" class="form-control" type="number" step="0.1" min="0.1" placeholder="0" />
+                  <span class="input-group-text">{{ goalForm.targetUnit }}</span>
+                </div>
+              </div>
+              <div class="goal-form-field">
+                <label class="ff-label">Target Date</label>
+                <input v-model="goalForm.targetDate" class="form-control" type="date" />
+              </div>
+              <div class="goal-form-field">
+                <label class="ff-label">Unit</label>
+                <div class="unit-toggle">
+                  <button class="unit-btn" :class="{ active: goalForm.targetUnit==='lb' }" @click="goalForm.targetUnit='lb'">lb</button>
+                  <button class="unit-btn" :class="{ active: goalForm.targetUnit==='kg' }" @click="goalForm.targetUnit='kg'">kg</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="goalFormError" class="goal-form-error">{{ goalFormError }}</div>
+
+            <div class="goal-form-actions">
+              <button class="btn-goal-cancel" @click="closeGoalForm">Cancel</button>
+              <button class="btn-goal-save" @click="submitGoalForm" :disabled="goalFormBusy">
+                <i v-if="goalFormBusy" class="fa-solid fa-spinner fa-spin"></i>
+                <i v-else class="fa-solid fa-check"></i>
+                {{ goalFormMode === 'edit' ? 'Save Changes' : 'Create Goal' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div v-if="goalsLoading" class="goals-loading">
+            <i class="fa-solid fa-spinner fa-spin"></i> Loading goals...
+          </div>
+
+          <!-- Empty state -->
+          <div v-else-if="!goalsLoading && activeGoals.length === 0 && !goalFormOpen" class="goals-empty">
+            <i class="fa-solid fa-bullseye"></i>
+            <p>No active goals yet. Tap <strong>Add Goal</strong> to get started.</p>
+          </div>
+
+          <!-- Active goals -->
+          <div v-if="activeGoals.length > 0" class="goals-list">
+            <div v-for="goal in activeGoals" :key="goal.id" class="goal-card">
+              <div class="goal-icon" :class="goal.goalType === 'body_weight' ? 'goal-icon--bw' : 'goal-icon--ex'">
+                <i :class="goal.goalType === 'body_weight' ? 'fa-solid fa-weight-scale' : 'fa-solid fa-dumbbell'"></i>
+              </div>
+              <div class="goal-card-body">
+                <div class="goal-card-title">{{ goalDisplayText(goal) }}</div>
+                <div class="goal-card-meta">
+                  <span v-if="goal.currentValue != null"><i class="fa-solid fa-arrow-trend-up"></i> {{ goal.currentValue }} {{ goal.targetUnit }}</span>
+                  <span><i class="fa-regular fa-calendar"></i> {{ formatGoalDate(goal.targetDate) }}</span>
+                </div>
+              </div>
+              <div class="goal-card-actions">
+                <button class="goal-btn goal-btn--edit" @click="openEditGoal(goal)" title="Edit goal">
+                  <i class="fa-regular fa-pen-to-square"></i>
+                </button>
+                <button class="goal-btn goal-btn--complete" @click="completeGoal(goal.id)" title="Mark complete">
+                  <i class="fa-solid fa-circle-check"></i>
+                </button>
+                <button class="goal-btn goal-btn--archive" @click="archiveGoal(goal.id)" title="Archive goal">
+                  <i class="fa-regular fa-folder-closed"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Past goals (collapsed) -->
+          <div v-if="completedGoals.length > 0 || archivedGoals.length > 0" class="goals-past-section">
+            <button class="goals-past-toggle" @click="showPastGoals = !showPastGoals">
+              <i :class="showPastGoals ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+              Past Goals ({{ completedGoals.length + archivedGoals.length }})
+            </button>
+            <div v-if="showPastGoals" class="goals-list goals-list--past">
+              <div v-for="goal in [...completedGoals, ...archivedGoals]" :key="goal.id" class="goal-card goal-card--past">
+                <div class="goal-icon" :class="goal.status === 'completed' ? 'goal-icon--done' : 'goal-icon--arch'">
+                  <i :class="goal.status === 'completed' ? 'fa-solid fa-trophy' : 'fa-regular fa-folder-closed'"></i>
+                </div>
+                <div class="goal-card-body">
+                  <div class="goal-card-title">{{ goalDisplayText(goal) }}</div>
+                  <div class="goal-card-meta">
+                    <span class="goal-badge" :class="'goal-badge--' + goal.status">{{ goal.status }}</span>
+                    <span v-if="goal.completedAt"><i class="fa-solid fa-check"></i> {{ formatGoalDate(goal.completedAt.slice(0,10)) }}</span>
+                  </div>
+                </div>
+                <div class="goal-card-actions">
+                  <button class="goal-btn goal-btn--delete" @click="deleteGoal(goal.id)" title="Delete permanently">
+                    <i class="fa-regular fa-trash-can"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="goalsSuccess" class="goal-msg goal-msg--ok">{{ goalsSuccess }}</div>
+          <div v-if="goalsError" class="goal-msg goal-msg--err">{{ goalsError }}</div>
+        </section>
+
       </div>
     </div>
   </div>
@@ -633,6 +1023,15 @@ watch(
     v-if="showAvatarModal" 
     @close="closeAvatarModal" 
     @avatar-selected="handleAvatarSelected" 
+  />
+
+  <!-- Exercise Picker Modal (Goals) -->
+  <ExercisePickerModal
+    :is-open="exercisePickerOpen"
+    :exercises="allExercises"
+    :user-id="authStore.user?.value?.id ?? authStore.user?.id"
+    @close="exercisePickerOpen = false"
+    @add="handleExercisePickerAdd"
   />
 </template>
 
@@ -1181,6 +1580,187 @@ watch(
 
 :global(body.light-theme) .s-panel-head { border-bottom-color: rgba(15, 23, 42, .24); }
 :global(body.light-theme) .s-nav-icon   { background: rgba(0,0,0,.06); }
+
+/* ── Goals tab ──────────────────────────────────────────────────────────────── */
+.goals-panel-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 18px; padding-bottom: 16px;
+  border-bottom: 1.5px solid var(--ff-border-soft);
+  flex-wrap: wrap;
+}
+.btn-add-goal {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: 8px; border: none;
+  background: #2081e2; color: #fff; font-size: .85rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  transition: background .2s;
+}
+.btn-add-goal:hover { background: #176bbf; }
+
+/* form panel */
+.goal-form-panel {
+  background: var(--ff-surface-2);
+  border: 1.5px solid var(--ff-border-strong);
+  border-radius: 12px; padding: 18px 20px; margin-bottom: 18px;
+}
+.goal-form-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.goal-form-header h5 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ff-text); }
+.goal-form-close {
+  width: 28px; height: 28px; border-radius: 6px; border: none;
+  background: rgba(255,255,255,.08); color: var(--ff-text-secondary);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .8rem;
+  transition: background .15s, color .15s;
+}
+.goal-form-close:hover { background: rgba(239,68,68,.2); color: #ef4444; }
+
+/* type buttons */
+.goal-type-row { display: flex; gap: 9px; margin-bottom: 14px; }
+.goal-type-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 14px; border-radius: 8px;
+  border: 1.5px solid var(--ff-border-soft);
+  background: rgba(255,255,255,.04); color: var(--ff-text-secondary);
+  font-size: .86rem; font-weight: 500; cursor: pointer; transition: all .18s;
+}
+.goal-type-btn:hover { border-color: #2081e2; color: #2081e2; background: rgba(32,129,226,.08); }
+.goal-type-btn.active { border-color: #2081e2; background: rgba(32,129,226,.18); color: #2081e2; font-weight: 700; }
+
+/* form grid */
+.goal-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-bottom: 14px; }
+.goal-form-field { display: flex; flex-direction: column; gap: 5px; }
+.mb-12 { margin-bottom: 12px; }
+
+/* exercise search */
+.ex-search-wrap { position: relative; display: flex; align-items: center; }
+.ex-search-wrap .form-control { padding-right: 34px; }
+.ex-clear-btn {
+  position: absolute; right: 8px; background: transparent; border: none;
+  color: var(--ff-text-secondary); cursor: pointer; padding: 4px; font-size: .8rem;
+  display: flex; align-items: center;
+}
+.ex-clear-btn:hover { color: #ef4444; }
+.ex-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--ff-surface-2); border: 1.5px solid var(--ff-border-strong);
+  border-radius: 8px; overflow: hidden; max-height: 220px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.ex-search-wrap { position: relative; }
+.ex-dropdown-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px; border: none; background: transparent;
+  color: var(--ff-text); font-size: .86rem; cursor: pointer;
+  border-bottom: 1px solid var(--ff-border-soft); text-align: left;
+  transition: background .12s;
+}
+.ex-dropdown-item:last-child { border-bottom: none; }
+.ex-dropdown-item:hover { background: rgba(32,129,226,.12); }
+.ex-name { font-weight: 500; }
+.ex-muscle { font-size: .74rem; color: var(--ff-text-muted); }
+
+/* form actions */
+.goal-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-goal-cancel {
+  padding: 9px 18px; border-radius: 8px; font-size: .85rem; font-weight: 600;
+  border: 1.5px solid var(--ff-border-soft); background: transparent;
+  color: var(--ff-text-secondary); cursor: pointer; transition: all .18s;
+}
+.btn-goal-cancel:hover { border-color: var(--ff-border-strong); color: var(--ff-text); }
+.btn-goal-save {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 20px; border-radius: 8px; border: none;
+  background: #16a34a; color: #fff; font-size: .85rem; font-weight: 600;
+  cursor: pointer; transition: background .2s;
+}
+.btn-goal-save:hover:not(:disabled) { background: #15803d; }
+.btn-goal-save:disabled { opacity: .6; cursor: not-allowed; }
+.goal-form-error {
+  padding: 8px 12px; border-radius: 6px;
+  background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3);
+  color: #f87171; font-size: .82rem; margin-bottom: 12px;
+}
+
+/* goals list */
+.goals-loading, .goals-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 32px 16px; color: var(--ff-text-secondary); font-size: .9rem;
+  text-align: center;
+}
+.goals-empty i { font-size: 2rem; opacity: .3; }
+.goals-empty p { margin: 0; }
+.goals-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.goal-card {
+  display: flex; align-items: center; gap: 13px;
+  padding: 13px 14px; border-radius: 10px;
+  background: var(--ff-surface-2); border: 1.5px solid var(--ff-border-soft);
+  transition: border-color .15s;
+}
+.goal-card:hover { border-color: var(--ff-border-strong); }
+.goal-card--past { opacity: .65; }
+.goal-card--past:hover { opacity: .9; }
+
+/* goal icon */
+.goal-icon {
+  width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: .88rem;
+}
+.goal-icon--bw   { background: rgba(59,130,246,.18); color: #60a5fa; }
+.goal-icon--ex   { background: rgba(168,85,247,.18); color: #c084fc; }
+.goal-icon--done { background: rgba(22,163,74,.18);  color: #4ade80; }
+.goal-icon--arch { background: rgba(100,116,139,.15); color: #94a3b8; }
+
+.goal-card-body  { flex: 1; min-width: 0; }
+.goal-card-title { font-size: .9rem; font-weight: 700; color: var(--ff-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-card-meta  { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; }
+.goal-card-meta span { font-size: .76rem; color: var(--ff-text-secondary); display: flex; align-items: center; gap: 4px; }
+
+/* action buttons */
+.goal-card-actions { display: flex; gap: 5px; flex-shrink: 0; }
+.goal-btn {
+  width: 32px; height: 32px; border-radius: 7px; border: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .82rem; cursor: pointer; transition: background .15s, color .15s;
+  color: #fff;
+}
+.goal-btn--edit    { background: #2563eb; }
+.goal-btn--edit:hover { background: #1d4ed8; }
+.goal-btn--complete { background: #16a34a; }
+.goal-btn--complete:hover { background: #15803d; }
+.goal-btn--archive  { background: #64748b; }
+.goal-btn--archive:hover { background: #475569; }
+.goal-btn--delete   { background: #dc2626; }
+.goal-btn--delete:hover  { background: #b91c1c; }
+
+/* past goals toggle */
+.goals-past-section { margin-top: 8px; }
+.goals-past-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 4px; background: transparent; border: none;
+  color: var(--ff-text-secondary); font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: color .15s; text-transform: uppercase; letter-spacing: .04em;
+}
+.goals-past-toggle:hover { color: var(--ff-text); }
+.goals-past-toggle i { font-size: .7rem; }
+.goals-list--past { margin-top: 8px; }
+
+/* badge */
+.goal-badge { padding: 2px 9px; border-radius: 20px; font-size: .71rem; font-weight: 700; text-transform: capitalize; }
+.goal-badge--completed { background: rgba(22,163,74,.18); color: #4ade80; }
+.goal-badge--archived  { background: rgba(100,116,139,.18); color: #94a3b8; }
+
+/* messages */
+.goal-msg { padding: 9px 13px; border-radius: 8px; font-size: .84rem; margin-top: 12px; }
+.goal-msg--ok  { background: rgba(22,163,74,.12); border: 1px solid rgba(22,163,74,.3); color: #4ade80; }
+.goal-msg--err { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: #f87171; }
+
+@media (max-width: 600px) {
+  .goal-form-grid { grid-template-columns: 1fr; }
+  .goal-type-row { flex-direction: column; }
+  .goal-card-title { font-size: .84rem; }
+}
 :global(body.light-theme) .goal-chip    { border-color: rgba(0,0,0,.2); background: #fff; }
 :global(body.light-theme) .unit-toggle  { border-color: rgba(0,0,0,.2); }
 :global(body.light-theme) .theme-tile   { border-color: rgba(0,0,0,.2); background: #fff; }
@@ -1496,4 +2076,173 @@ textarea::placeholder {
   .settings-header { padding: 12px 12px; }
   .s-panel         { padding: 10px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   CHANGE 1 — Dark Account Settings Navigation (v0.85.40.3.1)
+   Override all existing nav styles to enforce dark navy filled look.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* --- Desktop sidebar nav container --- */
+.settings-page .ff-settings-nav {
+  background: #0a1526 !important;
+  border-color: rgba(32, 129, 226, 0.18) !important;
+}
+
+/* --- Each nav item: solid dark filled background --- */
+.settings-page .ff-settings-nav .s-nav-item {
+  background: #0d1e38 !important;
+  color: #8fa8cc !important;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.settings-page .ff-settings-nav .s-nav-item .s-nav-label,
+.settings-page .ff-settings-nav .s-nav-item i {
+  color: #8fa8cc !important;
+  font-weight: 500;
+}
+
+/* --- Icon box: blend with item background --- */
+.settings-page .ff-settings-nav .s-nav-icon {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #6b87ad !important;
+}
+
+/* --- Hover --- */
+.settings-page .ff-settings-nav .s-nav-item:hover {
+  background: #152540 !important;
+  color: #d0e0f5 !important;
+}
+.settings-page .ff-settings-nav .s-nav-item:hover .s-nav-label,
+.settings-page .ff-settings-nav .s-nav-item:hover i {
+  color: #d0e0f5 !important;
+}
+.settings-page .ff-settings-nav .s-nav-item:hover .s-nav-icon {
+  background: rgba(32, 129, 226, 0.2) !important;
+  color: #60a5fa !important;
+}
+
+/* --- Active: strong blue-navy fill --- */
+.settings-page .ff-settings-nav .s-nav-item.active {
+  background: #1a3d75 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: inset 3px 0 0 #2081e2 !important;
+}
+.settings-page .ff-settings-nav .s-nav-item.active .s-nav-label,
+.settings-page .ff-settings-nav .s-nav-item.active i {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+.settings-page .ff-settings-nav .s-nav-item.active .s-nav-icon {
+  background: rgba(32, 129, 226, 0.3) !important;
+  color: #93c5fd !important;
+}
+
+/* --- Override light-theme to keep dark nav --- */
+:global(body.light-theme) .settings-page .ff-settings-nav {
+  background: #0a1526 !important;
+  border-color: rgba(32, 129, 226, 0.22) !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item {
+  background: #0d1e38 !important;
+  color: #8fa8cc !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item .s-nav-label,
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item i {
+  color: #8fa8cc !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-icon {
+  background: rgba(255,255,255,.07) !important;
+  color: #6b87ad !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item:hover {
+  background: #152540 !important;
+  color: #d0e0f5 !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item:hover .s-nav-icon {
+  background: rgba(32,129,226,.2) !important;
+  color: #60a5fa !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item.active {
+  background: #1a3d75 !important;
+  color: #ffffff !important;
+  box-shadow: inset 3px 0 0 #2081e2 !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item.active .s-nav-label,
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item.active i {
+  color: #ffffff !important;
+}
+:global(body.light-theme) .settings-page .ff-settings-nav .s-nav-item.active .s-nav-icon {
+  background: rgba(32,129,226,.3) !important;
+  color: #93c5fd !important;
+}
+
+/* --- Mobile nav: dark filled ---
+   Apply to both light and dark themes unconditionally */
+.settings-page .mobile-nav-trigger {
+  background: #0d1e38 !important;
+  border-color: rgba(32, 129, 226, 0.25) !important;
+  color: #d0e0f5 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,.35) !important;
+}
+.settings-page .mobile-nav-trigger.open {
+  background: #152a50 !important;
+  border-color: #2081e2 !important;
+}
+.settings-page .mobile-nav-selected { color: #93c5fd !important; }
+
+.settings-page .mobile-nav-menu {
+  background: #0a1526 !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5) !important;
+}
+.settings-page .mobile-nav-item {
+  background: #0d1e38 !important;
+  color: #8fa8cc !important;
+  border-bottom-color: rgba(255,255,255,.06) !important;
+}
+.settings-page .mobile-nav-item:hover {
+  background: #152540 !important;
+  color: #d0e0f5 !important;
+}
+.settings-page .mobile-nav-item.active {
+  background: #1a3d75 !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+/* ── Change 3: Exercise picker button (v0.85.40.3.1) ── */
+.btn-pick-exercise {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 11px 16px; border-radius: 8px;
+  border: 1.5px dashed var(--ff-border-strong);
+  background: rgba(255,255,255,.03); color: var(--ff-text-secondary);
+  font-size: .88rem; cursor: pointer; text-align: left;
+  transition: border-color .18s, background .18s, color .18s;
+}
+.btn-pick-exercise:hover {
+  border-color: #2081e2; background: rgba(32,129,226,.08); color: #60a5fa;
+}
+.ex-selected-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 8px;
+  background: rgba(32,129,226,.12); border: 1.5px solid rgba(32,129,226,.3);
+}
+.ex-selected-info {
+  flex: 1; display: flex; align-items: center; gap: 9px;
+  color: #60a5fa; font-size: .88rem; font-weight: 600; overflow: hidden;
+}
+.ex-selected-info span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-change-btn {
+  padding: 4px 11px; border-radius: 6px; border: 1px solid rgba(32,129,226,.4);
+  background: transparent; color: #60a5fa; font-size: .76rem; font-weight: 600;
+  cursor: pointer; flex-shrink: 0; white-space: nowrap; transition: background .15s;
+}
+.ex-change-btn:hover { background: rgba(32,129,226,.18); }
+.ex-clear-btn-icon {
+  width: 26px; height: 26px; border-radius: 5px; border: none; flex-shrink: 0;
+  background: rgba(255,255,255,.08); color: var(--ff-text-secondary);
+  display: flex; align-items: center; justify-content: center; font-size: .75rem;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.ex-clear-btn-icon:hover { background: rgba(239,68,68,.2); color: #ef4444; }
 </style>

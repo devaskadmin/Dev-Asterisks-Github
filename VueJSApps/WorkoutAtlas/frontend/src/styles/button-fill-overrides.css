@@ -1,0 +1,190 @@
+/* Global button fill enforcement (v0.85.39.11)
+   Goal: remove transparent/outline action buttons and keep high contrast in dark UI. */
+
+:root {
+  --wa-btn-primary: #2563eb;
+  --wa-btn-primary-hover: #1d4ed8;
+  --wa-btn-info: #0e7490;
+  --wa-btn-info-hover: #0b5f77;
+  --wa-btn-danger: #c62828;
+  --wa-btn-danger-hover: #ad1f1f;
+  --wa-btn-success: #2e7d32;
+  --wa-btn-success-hover: #24662a;
+  --wa-btn-neutral: #334155;
+  --wa-btn-neutral-hover: #273646;
+  --wa-btn-text: #f8fbff;
+}
+
+.btn {
+  color: var(--wa-btn-text);
+  border-color: transparent;
+  background-color: var(--wa-btn-neutral);
+}
+
+.btn:hover,
+.btn:focus,
+.btn:active,
+.btn.active,
+.btn.show {
+  color: #ffffff;
+  background-color: var(--wa-btn-neutral-hover);
+  border-color: var(--wa-btn-neutral-hover);
+}
+
+.btn-primary,
+.btn-outline-primary {
+  color: #ffffff;
+  background-color: var(--wa-btn-primary);
+  border-color: var(--wa-btn-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active,
+.btn-primary.active,
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:active,
+.btn-outline-primary.active {
+  color: #ffffff;
+  background-color: var(--wa-btn-primary-hover);
+  border-color: var(--wa-btn-primary-hover);
+}
+
+.btn-info,
+.btn-outline-info {
+  color: #ffffff;
+  background-color: var(--wa-btn-info);
+  border-color: var(--wa-btn-info);
+}
+
+.btn-info:hover,
+.btn-info:focus,
+.btn-info:active,
+.btn-info.active,
+.btn-outline-info:hover,
+.btn-outline-info:focus,
+.btn-outline-info:active,
+.btn-outline-info.active {
+  color: #ffffff;
+  background-color: var(--wa-btn-info-hover);
+  border-color: var(--wa-btn-info-hover);
+}
+
+.btn-danger,
+.btn-outline-danger {
+  color: #ffffff;
+  background-color: var(--wa-btn-danger);
+  border-color: var(--wa-btn-danger);
+}
+
+.btn-danger:hover,
+.btn-danger:focus,
+.btn-danger:active,
+.btn-danger.active,
+.btn-outline-danger:hover,
+.btn-outline-danger:focus,
+.btn-outline-danger:active,
+.btn-outline-danger.active {
+  color: #ffffff;
+  background-color: var(--wa-btn-danger-hover);
+  border-color: var(--wa-btn-danger-hover);
+}
+
+.btn-success,
+.btn-outline-success {
+  color: #ffffff;
+  background-color: var(--wa-btn-success);
+  border-color: var(--wa-btn-success);
+}
+
+.btn-success:hover,
+.btn-success:focus,
+.btn-success:active,
+.btn-success.active,
+.btn-outline-success:hover,
+.btn-outline-success:focus,
+.btn-outline-success:active,
+.btn-outline-success.active {
+  color: #ffffff;
+  background-color: var(--wa-btn-success-hover);
+  border-color: var(--wa-btn-success-hover);
+}
+
+.btn-secondary,
+.btn-outline-secondary,
+.btn-light,
+.btn-outline-light,
+.btn-dark,
+.btn-outline-dark,
+.btn-link {
+  color: #ffffff;
+  background-color: var(--wa-btn-neutral);
+  border-color: var(--wa-btn-neutral);
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus,
+.btn-secondary:active,
+.btn-secondary.active,
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active,
+.btn-light:hover,
+.btn-light:focus,
+.btn-light:active,
+.btn-light.active,
+.btn-outline-light:hover,
+.btn-outline-light:focus,
+.btn-outline-light:active,
+.btn-outline-light.active,
+.btn-dark:hover,
+.btn-dark:focus,
+.btn-dark:active,
+.btn-dark.active,
+.btn-outline-dark:hover,
+.btn-outline-dark:focus,
+.btn-outline-dark:active,
+.btn-outline-dark.active,
+.btn-link:hover,
+.btn-link:focus,
+.btn-link:active,
+.btn-link.active {
+  color: #ffffff;
+  background-color: var(--wa-btn-neutral-hover);
+  border-color: var(--wa-btn-neutral-hover);
+  text-decoration: none;
+}
+
+.btn-warning,
+.btn-outline-warning {
+  color: #ffffff;
+  background-color: #a16207;
+  border-color: #a16207;
+}
+
+.btn-warning:hover,
+.btn-warning:focus,
+.btn-warning:active,
+.btn-warning.active,
+.btn-outline-warning:hover,
+.btn-outline-warning:focus,
+.btn-outline-warning:active,
+.btn-outline-warning.active {
+  color: #ffffff;
+  background-color: #854d0e;
+  border-color: #854d0e;
+}
+
+.btn:disabled,
+.btn.disabled,
+fieldset:disabled .btn,
+.btn-check:disabled + .btn,
+.btn-check[disabled] + .btn {
+  color: #dce7f9;
+  background-color: #475569;
+  border-color: #475569;
+  opacity: 0.62;
+  box-shadow: none;
+}

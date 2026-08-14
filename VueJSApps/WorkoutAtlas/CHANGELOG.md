@@ -1,5 +1,147 @@
 # Changelog
 
+## [0.85.40.9] - 2026-08-13 - August 13, 2026 Development Log
+
+### Global Workout Plans / Mobile UI - 0.85.39.x
+
+- Delivered major mobile UI polish for Global Workout Plans admin workflows.
+- Converted mobile plan rows into compact card-style rows for better readability and tap targeting.
+- Added icon-led metadata labels in mobile plan cards for Category, Days, Exercises, Access, and Updated.
+- Converted View / Edit / Delete actions to compact filled icon buttons and right-aligned action layout.
+- Reduced mobile font sizes, icon sizes, button dimensions, row density, and inter-card spacing.
+- Improved mobile card alignment and usable horizontal width.
+- Reworked Add Exercise modal to WorkoutAtlas dark styling with compact exercise rows.
+- Added colored tabs and labeled Search / Category / Equipment filters in the exercise picker UI.
+- Added icon-based selection/add actions in the picker and improved compact interaction spacing.
+- Fixed modal inner-container alignment and balanced left/right spacing.
+- Simplified Global Workout Builder mobile layout and reduced nested card/div visual weight.
+- Added vertical accordion-style Plan Information and Workout Day sections where implemented.
+- Replaced oversized day actions with compact icon actions where implemented.
+- Established and applied UI verification workflow during this release window:
+  - Change -> Screenshot -> Verify
+  - Change -> Screenshot -> Verify
+  - Change -> Screenshot -> Verify
+- Verification policy applied: browser viewport/device emulation is not changed during screenshot verification unless explicitly requested.
+
+### Goals System Inventory - 0.85.40.1
+
+- Audited frontend, backend, database schema, Dashboard, Progress, User Settings, Workout Builder, and Global Workout Plans for goal support.
+- Confirmed no dedicated user-goal persistence existed before this work.
+- Identified Workout Builder goal state that was present in UI state but not persisted.
+- Identified User Settings fitness fields and goal-like fields that were not being saved as a structured goals system.
+- Identified hardcoded/mock goal data usage paths.
+- Confirmed workout exercise `target_weight` is a per-workout prescription field and separate from long-term Exercise Weight goals.
+
+### Core Goals System - 0.85.40.2
+
+- Added persistent `user_goals` storage via migration:
+  - `backend/migrations/core/20260813_user_goals.sql`
+- Added Body Weight goal support.
+- Added Exercise Weight goal support.
+- Added goal model support for:
+  - user relationship
+  - exercise relationship
+  - current value
+  - target value
+  - unit (`lb` / `kg`)
+  - target date
+  - active / completed / archived status
+  - completed timestamp
+  - created / updated timestamps
+- Added authenticated Goals CRUD API in:
+  - `backend/api/goals.js`
+- Mounted Goals API in backend route registration:
+  - `backend/server.js`
+- Added create/read/update/complete/archive/delete goal functionality, including target-date extension via update flow.
+- Added Exercise Weight goal validation against existing Exercise Database IDs.
+- Verification run for goals CRUD/database behavior in this work window reported 18/18 successful checks.
+
+### Account Settings / My Goals - 0.85.40.3
+
+- Added My Goals section to Account Settings.
+- Added Body Weight goal management UI.
+- Added Exercise Weight goal management UI.
+- Supports multiple independent Exercise Weight goals per user.
+- Exercise goals use existing Exercise Database selector and `ExerciseID` mapping.
+- Added Create, Edit, Extend Date, Complete, and Archive/Delete flows where implemented.
+- Continued dark-theme cleanup of Account Settings navigation.
+- Replaced inappropriate white/light nav treatment with WorkoutAtlas dark styling where implemented.
+
+### Workout Builder Goals - 0.85.40.4
+
+- Connected personal Workout Builder plans to active user goals.
+- Added optional Goal selector in Workout Plan Details.
+- Loads logged-in user's active goals and persists selected goal relationship in personal plans.
+- Existing workouts without linked goals remain compatible.
+- Long-term Exercise Weight goals remain separate from per-workout exercise `target_weight` values.
+- Updated Workout Plan Details toward compact label/input two-column desktop layout with responsive mobile stacking.
+
+### Global Workout Builder Goals - 0.85.40.5
+
+- Added Goal Type support to Global Workout Plans metadata.
+- Kept Goal Type separate from workout Category.
+- Global templates do not store a specific user's target weight or target date.
+- Supported Goal Types include:
+  - No Specific Goal
+  - Body Weight
+  - Exercise Weight
+- Added Goal Type persistence/display where implemented.
+- Existing Global Plans without Goal Type remain compatible.
+- Prepared Global Plans for compatibility matching with user goals when adopted.
+- Added supporting workout migrations:
+  - `backend/migrations/workout/20260813_workout_schedule_goal_type.sql`
+  - `backend/migrations/workout/20260813_workout_schedule_linked_goal.sql`
+
+### Progress Goal Integration - 0.85.40.6
+
+- Connected active user goals to Progress.
+- Added goal selection/context in Progress filters.
+- Added goal insight API integration in Progress path:
+  - `GET /api/progress/goal-insight` in `backend/api/progress.js`
+- Exercise Weight goals use actual completed/logged exercise performance where available.
+- Displays current/best value, target value, and target date for linked goal context.
+- Keeps logged performance separate from prescribed workout `target_weight`.
+- Body Weight goals display current value, target value, and target date.
+- Goal date extensions propagate automatically because Progress reads the same `user_goals` record.
+- Did not fabricate body-weight historical series where historical measurements do not exist.
+
+### Global Workout Plan Adoption Tracking - 0.85.40.7
+
+- Added persistent provenance when members use `Use This Plan`.
+- Preserved existing behavior where global templates create independent user-owned copies.
+- Added schedule provenance fields:
+  - `source_global_plan_id`
+  - `global_plan_adopted_at`
+- Added schema/migration support for provenance:
+  - `backend/migrations/workout/20260813_workout_schedule_source_global_plan.sql`
+  - `backend/schema/workout_schedule_schema.sql` updates
+- User-owned adopted copies now retain originating global plan ID.
+- Manual/personal plans remain `NULL` for global provenance fields.
+- Global template edits do not overwrite existing adopted copies.
+- Added Workout Log provenance indicator (`Based on <Global Plan>` style) where source exists.
+- Extended workout planner serialization with global provenance metadata.
+- Added provenance query support by:
+  - user workout plan (`planId`)
+  - source global plan (`sourceGlobalPlanId`)
+  via:
+  - `GET /api/workout-planner/provenance`
+- Verified multiple user-owned copies can independently reference the same global plan.
+- Verified Find Plans -> View Plan -> Use This Plan -> Workout Log flow.
+- Verified provenance in database rows and API responses.
+
+### Progress UI - 0.85.40.8
+
+- Updated Progress chart controls toward compact square/rounded-square styling.
+- Week / Month / Year controls now use compact filled states instead of oversized pill treatment.
+- Chart view icon buttons now use matching compact square styling.
+- Selected controls use WorkoutAtlas blue; inactive controls use dark navy.
+- Improved control-row spacing/alignment while preserving mobile usability.
+- Preserved existing chart logic, chart data, and backend behavior.
+
+### Summary
+
+August 13 was a major WorkoutAtlas feature-development day focused on Global Workout Plans, the new user Goals System, goal integration across Workout Builder / Global Workout Builder / Progress, and persistent tracking of Global Plan adoption through Workout Log. Significant mobile UI cleanup and verification improvements were also completed.
+
 ## Workout Atlas 0.85.b.1-8
 ### August 11, 2026
 

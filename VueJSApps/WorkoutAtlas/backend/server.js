@@ -61,7 +61,7 @@ app.use(cors({
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma'],
 }));
 
@@ -229,6 +229,7 @@ app.use('/api', require('./api/dashboard.js')); // 📊 v0.82.20 Dashboard Live 
 app.use('/api', toolsRoutes); // 🧰 v0.83.5 Tools diagnostics
 app.use('/api', mediaRoutes); // 🖼️ v0.83.7 media resolver
 app.use('/api', aiGatewayRoutes); // 🤖 WorkoutAtlas AI gateway proxy
+app.use('/api', require('./api/goals.js')); // 🎯 v0.85.40.2 Goals System
 
 // Lightweight health route for local/API reachability checks.
 app.get('/api/health', (_req, res) => {
@@ -292,7 +293,7 @@ process.on('uncaughtException', (err) => {
 // ✅ DB heartbeat — ping every 5 minutes to prevent idle connection resets.
 // mysql2 keepAlive works at the TCP layer but some cloud proxies still reset
 // idle sockets; a periodic SELECT 1 keeps the logical connection active.
-setInterval(async () => {
+const dbHeartbeatInterval = setInterval(async () => {
   try {
     await pool.query('SELECT 1');
   } catch (err) {
@@ -300,33 +301,134 @@ setInterval(async () => {
   }
 }, 300000); // 5 minutes
 
+let activeServer = null;
+let isShuttingDown = false;
+
+const closeHttpServer = async () => {
+  if (!activeServer) {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    activeServer.close((err) => {
+      if (err) {
+        console.error('⚠️ HTTP server close error:', err?.message || err);
+      }
+      resolve();
+    });
+  });
+};
+
+const closeSessionStore = async () => {
+  if (!sessionStore || typeof sessionStore.close !== 'function') {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    sessionStore.close(() => resolve());
+  });
+};
+
+const closeDbPool = async () => {
+  if (!pool || typeof pool.end !== 'function') {
+    return;
+  }
+
+  try {
+    await pool.end();
+  } catch (err) {
+    console.error('⚠️ DB pool close error:', err?.message || err);
+  }
+};
+
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  console.log(`🛑 Received ${signal}. Shutting down backend gracefully...`);
+
+  clearInterval(dbHeartbeatInterval);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error('⏱️ Graceful shutdown timeout reached. Forcing exit.');
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
+
+  try {
+    await closeHttpServer();
+    await closeSessionStore();
+    await closeDbPool();
+    clearTimeout(forceExitTimer);
+    console.log('✅ Backend shutdown complete.');
+    process.exit(0);
+  } catch (err) {
+    clearTimeout(forceExitTimer);
+    console.error('❌ Error during graceful shutdown:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', () => {
+  gracefulShutdown('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  gracefulShutdown('SIGTERM');
+});
+
 const START_PORT = Number(process.env.PORT || 5000);
 
-const startServer = (port, allowLocalFallback) => {
+const startServer = (port, isLocalFallbackMode) => {
   const server = app.listen(port, '0.0.0.0', () => {
-    if (allowLocalFallback) {
+    if (isLocalFallbackMode) {
       console.log(`🏠 Local backend started on port ${port}`);
+      console.log(`✅ Local backend port selected: ${port}`);
     } else {
       console.log(`🚀 Backend running on port ${port}`);
     }
   });
 
-  server.on('error', (err) => {
-    if (allowLocalFallback && err && err.code === 'EADDRINUSE' && port === 5000) {
-      console.warn('⚠️ Local port 5000 is in use, retrying on 5001...');
-      startServer(5001, true);
-      return;
-    }
+  activeServer = server;
 
+  return server;
+};
+
+const startServerWithLocalFallback = (initialPort) => {
+  const tryPort = (port) => {
+    const server = startServer(port, true);
+
+    server.on('error', (err) => {
+      if (err && err.code === 'EADDRINUSE') {
+        const nextPort = port + 1;
+        console.warn(`⚠️ Local port ${port} is in use, retrying on ${nextPort}...`);
+        tryPort(nextPort);
+        return;
+      }
+
+      console.error('❌ Startup failed:', err);
+      process.exit(1);
+    });
+  };
+
+  tryPort(initialPort);
+};
+
+const useLocalFallback = !isProduction && !process.env.PORT;
+
+if (useLocalFallback) {
+  startServerWithLocalFallback(START_PORT);
+} else {
+  const server = startServer(START_PORT, false);
+  server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-      console.error(`❌ Startup failed: port ${port} is already in use.`);
+      console.error(`❌ Startup failed: port ${START_PORT} is already in use.`);
       process.exit(1);
     }
 
     console.error('❌ Startup failed:', err);
     process.exit(1);
   });
-};
-
-const useLocalFallback = !isProduction && !process.env.PORT && START_PORT === 5000;
-startServer(START_PORT, useLocalFallback);
+}

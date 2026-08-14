@@ -79,6 +79,7 @@ removeLegacyDebugArtifacts();
 
 
 import 'bootstrap/dist/css/bootstrap.css'
+import './styles/button-fill-overrides.css'
 import 'bootstrap/dist/js/bootstrap.bundle.min.js'
 
 app.use(i18n);

@@ -50,15 +50,27 @@ const workoutPlannerSchemaState = {
   hasUseCustomWorkoutLogOrder: false,
   hasWorkoutLogDisplayOrder: false,
   hasWorkoutPlanType: false,
+  hasGoalType: false,
+  hasLinkedGoalId: false,
+  hasSourceGlobalPlanId: false,
+  hasGlobalPlanAdoptedAt: false,
+  hasTargetDistanceMiles: false,
 };
 
 const FEATURED_WORKOUT_PLAN_TYPE = 'featured';
 const COMMUNITY_SHARED_WORKOUT_PLAN_TYPE = 'community_shared';
 const GLOBAL_WORKOUT_PLAN_TYPES = new Set([FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]);
 const PUBLISHED_GLOBAL_STATUSES = ['active', 'published', 'completed'];
+const GLOBAL_WORKOUT_MIN_EXERCISES = 1;
+const GLOBAL_WORKOUT_EXERCISE_VALIDATION_ERROR = 'Add at least one exercise before saving this workout.';
+const GLOBAL_WORKOUT_COMPLETENESS_PREFIX = 'This global starter workout is incomplete. Missing:';
 const PLAN_TYPE_SURFACE_WORKOUT_BUILDER = 'workout_builder';
 const PLAN_TYPE_SURFACE_ADMIN_GLOBAL = 'admin_global';
 const ADMIN_ROLE_VALUES = ['admin', 'administrator'];
+const TRAINER_ROLE_VALUES = ['trainer'];
+const WORKOUT_GOAL_TYPE_NONE = 'none';
+const WORKOUT_GOAL_TYPE_BODY_WEIGHT = 'body_weight';
+const WORKOUT_GOAL_TYPE_EXERCISE_WEIGHT = 'exercise_weight';
 
 // Current release policy (v0.85.gb.5): only administrators can create Community Shared plans.
 // Future expansion can add 'trainer' and 'member' here without endpoint rewrites.
@@ -76,6 +88,10 @@ const normalizeSessionRoleSlug = (req) => {
 
 const isAdminUser = (req) => {
   return normalizeSessionRoleSlug(req) === 'admin';
+};
+
+const isTrainerUser = (req) => {
+  return normalizeSessionRoleSlug(req) === 'trainer';
 };
 
 const canCreateCommunitySharedPlan = (req) => {
@@ -98,6 +114,62 @@ const parseWorkoutPlanType = (rawValue) => {
   }
 
   return { isSet: true, isValid: false, value: null };
+};
+
+const parseWorkoutGoalType = (rawValue, options = {}) => {
+  const allowNull = Boolean(options?.allowNull);
+  const normalized = String(rawValue ?? '').trim().toLowerCase();
+
+  if (!normalized) {
+    return {
+      isSet: false,
+      isValid: true,
+      value: allowNull ? null : WORKOUT_GOAL_TYPE_NONE,
+    };
+  }
+
+  if (['none', 'no_specific_goal', 'no-specific-goal', 'no specific goal'].includes(normalized)) {
+    return { isSet: true, isValid: true, value: WORKOUT_GOAL_TYPE_NONE };
+  }
+
+  if (normalized === WORKOUT_GOAL_TYPE_BODY_WEIGHT) {
+    return { isSet: true, isValid: true, value: WORKOUT_GOAL_TYPE_BODY_WEIGHT };
+  }
+
+  if (normalized === WORKOUT_GOAL_TYPE_EXERCISE_WEIGHT) {
+    return { isSet: true, isValid: true, value: WORKOUT_GOAL_TYPE_EXERCISE_WEIGHT };
+  }
+
+  return { isSet: true, isValid: false, value: null };
+};
+
+const parseLinkedGoalId = (rawValue) => {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return Math.trunc(parsed);
+};
+
+const resolveLinkedGoalIdForUser = async (db, userId, rawGoalId) => {
+  const goalId = parseLinkedGoalId(rawGoalId);
+  if (!goalId) {
+    return null;
+  }
+
+  const [rows] = await db.query(
+    `SELECT id
+     FROM user_goals
+     WHERE id = ? AND user_id = ?
+     LIMIT 1`,
+    [goalId, userId]
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return goalId;
 };
 
 const validateRequestedWorkoutPlanType = (req, rawValue, options = {}) => {
@@ -153,6 +225,9 @@ const validateRequestedWorkoutPlanType = (req, rawValue, options = {}) => {
   }
 
   if (parsed.value === FEATURED_WORKOUT_PLAN_TYPE && !isAdminUser(req)) {
+    if (surface === PLAN_TYPE_SURFACE_ADMIN_GLOBAL) {
+      return { ok: true, value: parsed.value, isSet: true };
+    }
     return {
       ok: false,
       status: 403,
@@ -186,6 +261,11 @@ const parseGlobalWorkoutPlanTypeForAdmin = (req, rawValue) => {
     error: null,
     value: parsed.value,
   };
+};
+
+const isRawGlobalWorkoutPlanType = (planType) => {
+  const parsed = parseWorkoutPlanType(planType);
+  return Boolean(parsed?.isSet && parsed?.isValid && GLOBAL_WORKOUT_PLAN_TYPES.has(parsed.value));
 };
 
 const requireAdminSessionUser = (req, res) => {
@@ -232,6 +312,66 @@ const hasAdminRoleInDb = async (userId) => {
   return profileRows.length > 0;
 };
 
+const hasTrainerRoleInDb = async (userId) => {
+  const [rbacRows] = await pool.query(
+    `SELECT 1
+     FROM user_roles ur
+     JOIN roles r ON r.id = ur.role_id
+     WHERE ur.user_id = ?
+       AND LOWER(TRIM(COALESCE(NULLIF(r.slug, ''), r.name))) IN (?)
+       AND r.is_active = 1
+     LIMIT 1`,
+    [userId, TRAINER_ROLE_VALUES[0]]
+  );
+
+  if (rbacRows.length > 0) {
+    return true;
+  }
+
+  const [profileRows] = await pool.query(
+    `SELECT 1
+     FROM user_profiles up
+     WHERE up.user_id = ?
+       AND LOWER(TRIM(COALESCE(up.user_role, ''))) IN (?)
+     LIMIT 1`,
+    [userId, TRAINER_ROLE_VALUES[0]]
+  );
+
+  return profileRows.length > 0;
+};
+
+const isGlobalPlanManagerUser = async (req, userId) => {
+  if (isAdminUser(req)) {
+    return 'admin';
+  }
+  if (isTrainerUser(req)) {
+    return 'trainer';
+  }
+
+  const hasAdminRole = await hasAdminRoleInDb(userId);
+  if (hasAdminRole) {
+    return 'admin';
+  }
+
+  const hasTrainerRole = await hasTrainerRoleInDb(userId);
+  if (hasTrainerRole) {
+    return 'trainer';
+  }
+
+  return null;
+};
+
+const normalizeGlobalAccessVisibility = (rawValue, fallback = 'public') => {
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (['premium', 'private', 'unlisted'].includes(value)) {
+    return 'private';
+  }
+  if (['free', 'public'].includes(value)) {
+    return 'public';
+  }
+  return fallback;
+};
+
 const requireAdminSessionUserForGlobalPlans = async (req, res) => {
   const userId = req.session?.user?.id;
   if (!userId) {
@@ -239,25 +379,60 @@ const requireAdminSessionUserForGlobalPlans = async (req, res) => {
     return null;
   }
 
-  if (isAdminUser(req)) {
+  if (isAdminUser(req) || isTrainerUser(req)) {
     return userId;
   }
 
   try {
-    const hasAdminRole = await hasAdminRoleInDb(userId);
-    if (!hasAdminRole) {
-      res.status(403).json({ error: 'Administrator access required' });
+    const managerRole = await isGlobalPlanManagerUser(req, userId);
+    if (!managerRole) {
+      res.status(403).json({ error: 'Administrator or approved trainer access required' });
       return null;
     }
 
-    // Backfill role slug for subsequent checks in this session.
-    req.session.user.roleSlug = 'admin';
+    req.session.user.roleSlug = managerRole;
     return userId;
   } catch (err) {
     console.error('❌ Admin authorization check failed for global workout plans:', err);
     res.status(500).json({ error: 'Authorization check failed for global workout plans' });
     return null;
   }
+};
+
+const getGlobalPlanOwnerUserId = async (scheduleId) => {
+  const [rows] = await pool.query(
+    `SELECT user_id
+     FROM workout_schedules
+     WHERE id = ?
+       AND workout_plan_type IN (?, ?)
+     LIMIT 1`,
+    [scheduleId, FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]
+  );
+
+  if (!rows.length) {
+    return 0;
+  }
+
+  return Number(rows[0]?.user_id || 0);
+};
+
+const enforceTrainerOwnsGlobalPlan = async (req, res, userId, scheduleId) => {
+  if (isAdminUser(req)) {
+    return true;
+  }
+
+  const ownerUserId = await getGlobalPlanOwnerUserId(scheduleId);
+  if (!ownerUserId) {
+    res.status(404).json({ error: 'Global workout plan not found' });
+    return false;
+  }
+
+  if (ownerUserId !== Number(userId)) {
+    res.status(403).json({ error: 'You can only manage global workout plans that you created.' });
+    return false;
+  }
+
+  return true;
 };
 
 const isGlobalPlanSchemaCompatibilityError = (err) => {
@@ -274,6 +449,16 @@ const refreshWorkoutPlannerSchemaState = async (db = pool) => {
          OR
          (table_name = 'workout_schedules' AND column_name = 'workout_plan_type')
          OR
+         (table_name = 'workout_schedules' AND column_name = 'goal_type')
+         OR
+         (table_name = 'workout_schedules' AND column_name = 'linked_goal_id')
+         OR
+         (table_name = 'workout_schedules' AND column_name = 'source_global_plan_id')
+         OR
+         (table_name = 'workout_schedules' AND column_name = 'global_plan_adopted_at')
+         OR
+         (table_name = 'workout_schedule_exercises' AND column_name = 'target_distance_miles')
+         OR
          (table_name = 'workout_schedule_groups' AND column_name = 'workout_log_display_order')
        )`
   );
@@ -287,6 +472,21 @@ const refreshWorkoutPlannerSchemaState = async (db = pool) => {
   );
   workoutPlannerSchemaState.hasWorkoutPlanType = columnRows.some(
     (row) => row?.table_name === 'workout_schedules' && row?.column_name === 'workout_plan_type'
+  );
+  workoutPlannerSchemaState.hasGoalType = columnRows.some(
+    (row) => row?.table_name === 'workout_schedules' && row?.column_name === 'goal_type'
+  );
+  workoutPlannerSchemaState.hasLinkedGoalId = columnRows.some(
+    (row) => row?.table_name === 'workout_schedules' && row?.column_name === 'linked_goal_id'
+  );
+  workoutPlannerSchemaState.hasSourceGlobalPlanId = columnRows.some(
+    (row) => row?.table_name === 'workout_schedules' && row?.column_name === 'source_global_plan_id'
+  );
+  workoutPlannerSchemaState.hasGlobalPlanAdoptedAt = columnRows.some(
+    (row) => row?.table_name === 'workout_schedules' && row?.column_name === 'global_plan_adopted_at'
+  );
+  workoutPlannerSchemaState.hasTargetDistanceMiles = columnRows.some(
+    (row) => row?.table_name === 'workout_schedule_exercises' && row?.column_name === 'target_distance_miles'
   );
 
   return { ...workoutPlannerSchemaState };
@@ -316,6 +516,30 @@ const ensureWorkoutPlannerOrderingColumns = async (db = pool) => {
        ADD COLUMN workout_log_display_order INT(11) NULL DEFAULT NULL AFTER sort_order`
     );
   }
+  if (!schemaState.hasLinkedGoalId) {
+    alterations.push(
+      `ALTER TABLE workout_schedules
+       ADD COLUMN linked_goal_id BIGINT UNSIGNED NULL AFTER workout_plan_type`
+    );
+  }
+  if (!schemaState.hasGoalType) {
+    alterations.push(
+      `ALTER TABLE workout_schedules
+       ADD COLUMN goal_type ENUM('none', 'body_weight', 'exercise_weight') NULL DEFAULT NULL AFTER workout_plan_type`
+    );
+  }
+  if (!schemaState.hasSourceGlobalPlanId) {
+    alterations.push(
+      `ALTER TABLE workout_schedules
+       ADD COLUMN source_global_plan_id BIGINT UNSIGNED NULL AFTER workout_plan_type`
+    );
+  }
+  if (!schemaState.hasGlobalPlanAdoptedAt) {
+    alterations.push(
+      `ALTER TABLE workout_schedules
+       ADD COLUMN global_plan_adopted_at DATETIME NULL AFTER source_global_plan_id`
+    );
+  }
 
   for (const statement of alterations) {
     try {
@@ -328,11 +552,99 @@ const ensureWorkoutPlannerOrderingColumns = async (db = pool) => {
     }
   }
 
+  if (!schemaState.hasLinkedGoalId) {
+    try {
+      await db.query('ALTER TABLE workout_schedules ADD KEY idx_workout_schedules_goal_id (linked_goal_id)');
+    } catch (err) {
+      if (!['ER_DUP_KEYNAME', 'ER_CANT_DROP_FIELD_OR_KEY'].includes(String(err?.code || '').trim())) {
+        console.error('⚠️ Unable to add workout goal link index:', err?.message || err);
+      }
+    }
+
+    try {
+      await db.query(
+        `ALTER TABLE workout_schedules
+         ADD CONSTRAINT fk_workout_schedules_goal
+         FOREIGN KEY (linked_goal_id) REFERENCES user_goals(id)
+         ON DELETE SET NULL ON UPDATE CASCADE`
+      );
+    } catch (err) {
+      if (!['ER_FK_DUP_NAME', 'ER_CANT_CREATE_TABLE'].includes(String(err?.code || '').trim())) {
+        console.error('⚠️ Unable to add workout goal link foreign key:', err?.message || err);
+      }
+    }
+  }
+
+  if (!schemaState.hasSourceGlobalPlanId) {
+    try {
+      await db.query('ALTER TABLE workout_schedules ADD KEY idx_workout_schedules_source_global (source_global_plan_id)');
+    } catch (err) {
+      if (!['ER_DUP_KEYNAME', 'ER_CANT_DROP_FIELD_OR_KEY'].includes(String(err?.code || '').trim())) {
+        console.error('⚠️ Unable to add source global plan index:', err?.message || err);
+      }
+    }
+
+    try {
+      await db.query(
+        `ALTER TABLE workout_schedules
+         ADD CONSTRAINT fk_workout_schedules_source_global
+         FOREIGN KEY (source_global_plan_id) REFERENCES workout_schedules(id)
+         ON DELETE SET NULL ON UPDATE CASCADE`
+      );
+    } catch (err) {
+      if (!['ER_FK_DUP_NAME', 'ER_CANT_CREATE_TABLE'].includes(String(err?.code || '').trim())) {
+        console.error('⚠️ Unable to add source global plan foreign key:', err?.message || err);
+      }
+    }
+  }
+
   if (alterations.length > 0) {
     schemaState = await getWorkoutPlannerSchemaState(db, { forceRefresh: true });
   }
 
   return schemaState;
+};
+
+const normalizeGroupLabels = (groups = []) => {
+  return (Array.isArray(groups) ? groups : [])
+    .map((group) => String(group || '').trim())
+    .filter(Boolean);
+};
+
+const collectGlobalPlanCompletenessErrors = (planner = {}) => {
+  const metadata = planner?.metadata || {};
+  const scheduleMode = String(planner?.scheduleMode || 'day').trim() === 'week' ? 'week' : 'day';
+  const dayGroups = normalizeGroupLabels(planner?.dayGroups || []);
+  const weekGroups = normalizeGroupLabels(planner?.weekGroups || []);
+  const exercises = Array.isArray(planner?.exercises) ? planner.exercises : [];
+
+  const missing = [];
+
+  if (!String(metadata?.name || '').trim()) {
+    missing.push('plan name');
+  }
+
+  if (!String(metadata?.type || '').trim()) {
+    missing.push('category');
+  }
+
+  const activeGroups = scheduleMode === 'week' ? weekGroups : dayGroups;
+  if (activeGroups.length < 1) {
+    missing.push('at least one workout day');
+  }
+
+  if (exercises.length < GLOBAL_WORKOUT_MIN_EXERCISES) {
+    missing.push('at least one exercise');
+  }
+
+  return missing;
+};
+
+const buildGlobalPlanCompletenessErrorMessage = (missing = []) => {
+  if (!Array.isArray(missing) || !missing.length) {
+    return `${GLOBAL_WORKOUT_COMPLETENESS_PREFIX} validation details are unavailable.`;
+  }
+  return `${GLOBAL_WORKOUT_COMPLETENESS_PREFIX} ${missing.join(', ')}.`;
 };
 
 const extractWorkoutPlans = (settings) => {
@@ -445,6 +757,7 @@ const normalizePlannerPayload = (planner = {}) => {
         reps: Number(exercise?.reps || 0),
         weight: Number(exercise?.weight || 0),
         duration: Number(exercise?.duration || 0),
+        distance: Number(exercise?.distance || 0),
         restTime: Number(exercise?.restTime || 0),
         notes: String(exercise?.notes || '').trim(),
         scheduleGroup: String(exercise?.scheduleGroup || fallbackGroup),
@@ -456,7 +769,10 @@ const normalizePlannerPayload = (planner = {}) => {
     description: String(planner?.metadata?.description || '').trim(),
     type: String(planner?.metadata?.type || 'Strength').trim() || 'Strength',
     planType: parseWorkoutPlanType(planner?.metadata?.planType).value,
+    goalType: parseWorkoutGoalType(planner?.metadata?.goalType).value,
+    goalId: String(parseLinkedGoalId(planner?.metadata?.goalId) || ''),
     estimatedDuration: Number(planner?.metadata?.estimatedDuration || 0),
+    accessLevel: String(planner?.metadata?.accessLevel || '').trim(),
   };
 
   const incomingPlanId = String(planner?.planId || '').trim();
@@ -610,7 +926,12 @@ const serializeScheduleListItem = (row = {}) => ({
   description: String(row.description || '').trim(),
   type: String(row.workout_type || 'Strength').trim() || 'Strength',
   planType: parseWorkoutPlanType(row.workout_plan_type).value,
+  goalType: parseWorkoutGoalType(row.goal_type).value,
+  sourceGlobalPlanId: row.source_global_plan_id != null ? Number(row.source_global_plan_id) : null,
+  sourceGlobalPlanName: String(row.source_global_plan_name || '').trim() || '',
+  globalPlanAdoptedAt: row.global_plan_adopted_at || null,
   estimatedDuration: Number(row.estimated_duration_minutes || 0),
+  dayCount: Number(row.day_count || 0),
   exerciseCount: Number(row.exercise_count || 0),
   coverImage: String(row.cover_image || '').trim(),
   status: String(row.status || 'draft').trim() || 'draft',
@@ -623,6 +944,21 @@ const loadSchedulesForUser = async (userId) => {
   const planTypeSelect = schemaState.hasWorkoutPlanType
     ? 'ws.workout_plan_type,'
     : 'NULL AS workout_plan_type,';
+  const goalTypeSelect = schemaState.hasGoalType
+    ? 'ws.goal_type,'
+    : 'NULL AS goal_type,';
+  const sourceGlobalPlanIdSelect = schemaState.hasSourceGlobalPlanId
+    ? 'ws.source_global_plan_id,'
+    : 'NULL AS source_global_plan_id,';
+  const globalPlanAdoptedAtSelect = schemaState.hasGlobalPlanAdoptedAt
+    ? 'ws.global_plan_adopted_at,'
+    : 'NULL AS global_plan_adopted_at,';
+  const sourceGlobalPlanNameSelect = schemaState.hasSourceGlobalPlanId
+    ? 'COALESCE(source_global.title, \"\") AS source_global_plan_name,'
+    : 'NULL AS source_global_plan_name,';
+  const sourceGlobalJoin = schemaState.hasSourceGlobalPlanId
+    ? 'LEFT JOIN workout_schedules source_global ON source_global.id = ws.source_global_plan_id'
+    : '';
   const personalPlanWhere = schemaState.hasWorkoutPlanType
     ? `
       AND (
@@ -641,6 +977,10 @@ const loadSchedulesForUser = async (userId) => {
       ws.description,
       ws.workout_type,
       ${planTypeSelect}
+      ${goalTypeSelect}
+      ${sourceGlobalPlanIdSelect}
+      ${globalPlanAdoptedAtSelect}
+      ${sourceGlobalPlanNameSelect}
       ws.estimated_duration_minutes,
       ws.status,
       ws.visibility,
@@ -648,6 +988,7 @@ const loadSchedulesForUser = async (userId) => {
       COALESCE(exercise_agg.exercise_count, 0) AS exercise_count,
       exercise_agg.cover_image
     FROM workout_schedules ws
+    ${sourceGlobalJoin}
     LEFT JOIN (
       SELECT
         wse.workout_schedule_id,
@@ -684,6 +1025,7 @@ const normalizeGlobalPlanTypes = (planTypes = []) => {
 const loadGlobalWorkoutPlans = async ({
   planTypes = [FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE],
   onlyPublished = false,
+  publishedVisibility = 'public',
 } = {}) => {
   const schemaState = await getWorkoutPlannerSchemaState();
   if (!schemaState.hasWorkoutPlanType) {
@@ -695,12 +1037,21 @@ const loadGlobalWorkoutPlans = async ({
     return [];
   }
 
+  const goalTypeSelect = schemaState.hasGoalType
+    ? 'ws.goal_type,'
+    : 'NULL AS goal_type,';
+
   const typePlaceholders = normalizedPlanTypes.map(() => '?').join(', ');
   const statusPlaceholders = PUBLISHED_GLOBAL_STATUSES.map(() => '?').join(', ');
+  const enforcePublicVisibility = publishedVisibility !== 'all';
   const publishedWhere = onlyPublished
     ? `
       AND LOWER(COALESCE(ws.status, '')) IN (${statusPlaceholders})
-      AND LOWER(COALESCE(ws.visibility, '')) = 'public'`
+      ${enforcePublicVisibility ? "AND LOWER(COALESCE(ws.visibility, '')) = 'public'" : ''}
+      AND COALESCE(NULLIF(TRIM(ws.title), ''), '') <> ''
+      AND COALESCE(NULLIF(TRIM(ws.workout_type), ''), '') <> ''
+      AND COALESCE(group_agg.group_count, 0) >= 1
+      AND COALESCE(exercise_agg.exercise_count, 0) >= ${GLOBAL_WORKOUT_MIN_EXERCISES}`
     : '';
   const queryParams = onlyPublished
     ? [...normalizedPlanTypes, ...PUBLISHED_GLOBAL_STATUSES]
@@ -716,13 +1067,36 @@ const loadGlobalWorkoutPlans = async ({
         ws.description,
         ws.workout_type,
         ws.workout_plan_type,
+        ${goalTypeSelect}
         ws.estimated_duration_minutes,
         ws.status,
         ws.visibility,
         ws.updated_at,
+        CASE
+          WHEN owner_role.role_rank = 2 OR LOWER(TRIM(COALESCE(owner_profile.user_role, ''))) IN ('admin', 'administrator') THEN 'Admin'
+          WHEN owner_role.role_rank = 1 OR LOWER(TRIM(COALESCE(owner_profile.user_role, ''))) IN ('trainer') THEN 'Trainer'
+          ELSE 'Admin'
+        END AS created_by_role,
+        COALESCE(group_agg.group_count, 0) AS day_count,
         COALESCE(exercise_agg.exercise_count, 0) AS exercise_count,
         exercise_agg.cover_image
       FROM workout_schedules ws
+      LEFT JOIN (
+        SELECT
+          ur.user_id,
+          MAX(
+            CASE
+              WHEN LOWER(TRIM(COALESCE(NULLIF(r.slug, ''), r.name))) IN ('admin', 'administrator') THEN 2
+              WHEN LOWER(TRIM(COALESCE(NULLIF(r.slug, ''), r.name))) IN ('trainer') THEN 1
+              ELSE 0
+            END
+          ) AS role_rank
+        FROM user_roles ur
+        JOIN roles r ON r.id = ur.role_id
+        WHERE r.is_active = 1
+        GROUP BY ur.user_id
+      ) owner_role ON owner_role.user_id = ws.user_id
+      LEFT JOIN user_profiles owner_profile ON owner_profile.user_id = ws.user_id
       LEFT JOIN (
         SELECT
           wse.workout_schedule_id,
@@ -738,6 +1112,14 @@ const loadGlobalWorkoutPlans = async ({
         LEFT JOIN exercises e ON e.ExerciseID = wse.exercise_id
         GROUP BY wse.workout_schedule_id
       ) exercise_agg ON exercise_agg.workout_schedule_id = ws.id
+      LEFT JOIN (
+        SELECT
+          wsg.workout_schedule_id,
+          COUNT(wsg.id) AS group_count
+        FROM workout_schedule_groups wsg
+        WHERE COALESCE(NULLIF(TRIM(wsg.label), ''), '') <> ''
+        GROUP BY wsg.workout_schedule_id
+      ) group_agg ON group_agg.workout_schedule_id = ws.id
       WHERE ws.workout_plan_type IN (${typePlaceholders})
       ${publishedWhere}
       ORDER BY ws.updated_at DESC, ws.id DESC`,
@@ -755,7 +1137,16 @@ const loadGlobalWorkoutPlans = async ({
   return rows.map((row) => ({
     ...serializeScheduleListItem(row),
     ownerUserId: Number(row.user_id || 0) || null,
+    createdByRole: String(row.created_by_role || '').trim() || 'Admin',
   }));
+};
+
+const normalizeGlobalPlanAccess = (visibility = '') => {
+  const normalizedVisibility = String(visibility || '').trim().toLowerCase();
+  if (normalizedVisibility === 'private' || normalizedVisibility === 'unlisted') {
+    return 'Premium';
+  }
+  return 'Free';
 };
 
 const buildGlobalWorkoutPlanById = async (scheduleId) => {
@@ -826,6 +1217,58 @@ const buildPlannerFromSchedule = async (scheduleId, userId) => {
   }
 
   const schedule = scheduleRows[0];
+  let sourceGlobalPlanName = '';
+  let linkedGoal = null;
+
+  if (schemaState.hasSourceGlobalPlanId) {
+    const sourceGlobalPlanId = Number(schedule?.source_global_plan_id || 0);
+    if (sourceGlobalPlanId > 0) {
+      const [[sourceRow]] = await pool.query(
+        `SELECT title
+         FROM workout_schedules
+         WHERE id = ?
+         LIMIT 1`,
+        [sourceGlobalPlanId]
+      );
+      sourceGlobalPlanName = String(sourceRow?.title || '').trim();
+    }
+  }
+
+  if (schemaState.hasLinkedGoalId) {
+    const linkedGoalId = parseLinkedGoalId(schedule?.linked_goal_id);
+    if (linkedGoalId) {
+      const [goalRows] = await pool.query(
+        `SELECT
+          ug.id,
+          ug.goal_type,
+          ug.exercise_id,
+          COALESCE(ug.exercise_name, e.ExerciseTitle, '') AS exercise_name,
+          ug.target_value,
+          ug.target_unit,
+          ug.target_date,
+          ug.status
+         FROM user_goals ug
+         LEFT JOIN exercises e ON e.ExerciseID = ug.exercise_id
+         WHERE ug.id = ? AND ug.user_id = ?
+         LIMIT 1`,
+        [linkedGoalId, userId]
+      );
+
+      if (goalRows.length) {
+        const row = goalRows[0] || {};
+        linkedGoal = {
+          id: Number(row.id || 0),
+          goalType: String(row.goal_type || '').trim(),
+          exerciseId: Number(row.exercise_id || 0) || null,
+          exerciseName: String(row.exercise_name || '').trim(),
+          targetValue: Number(row.target_value || 0),
+          targetUnit: String(row.target_unit || 'lb').trim() || 'lb',
+          targetDate: row.target_date ? String(row.target_date) : '',
+          status: String(row.status || '').trim(),
+        };
+      }
+    }
+  }
 
   const groupSelectFields = schemaState.hasWorkoutLogDisplayOrder
     ? 'id, label, group_type, sort_order, workout_log_display_order'
@@ -857,6 +1300,7 @@ const buildPlannerFromSchedule = async (scheduleId, userId) => {
       wse.target_weight,
       wse.target_duration_minutes,
       wse.target_rest_seconds,
+      ${schemaState.hasTargetDistanceMiles ? 'wse.target_distance_miles' : 'NULL AS target_distance_miles'},
       wsg.label AS group_label,
       e.ExerciseTitle,
       e.ImageURL,
@@ -915,6 +1359,7 @@ const buildPlannerFromSchedule = async (scheduleId, userId) => {
     reps: Number(row.target_reps || 0),
     weight: Number(row.target_weight || 0),
     duration: Number(row.target_duration_minutes || 0),
+    distance: Number(row.target_distance_miles || 0),
     restTime: Number(row.target_rest_seconds || 0),
     notes: String(row.notes || '').trim(),
     scheduleGroup: String(row.group_label || fallbackGroup).trim() || fallbackGroup,
@@ -937,6 +1382,12 @@ const buildPlannerFromSchedule = async (scheduleId, userId) => {
       description: String(schedule.description || '').trim(),
       type: String(schedule.workout_type || 'Strength').trim() || 'Strength',
       planType: parseWorkoutPlanType(schedule.workout_plan_type).value,
+      goalType: parseWorkoutGoalType(schedule.goal_type).value,
+      sourceGlobalPlanId: schedule.source_global_plan_id != null ? Number(schedule.source_global_plan_id) : null,
+      sourceGlobalPlanName,
+      globalPlanAdoptedAt: schedule.global_plan_adopted_at || null,
+      goalId: String(linkedGoal?.id || ''),
+      goalContext: linkedGoal,
       estimatedDuration: Number(schedule.estimated_duration_minutes || 0),
     },
     exercises,
@@ -1069,43 +1520,52 @@ const replaceScheduleGroupsAndExercises = async (connection, scheduleId, planner
     const label = String(ex.scheduleGroup || fallbackGroupLabel || '').trim();
     const groupId = groupIdByLabel.get(label) || null;
 
+    const insertColumns = [
+      'workout_schedule_id',
+      'workout_schedule_group_id',
+      'exercise_id',
+      'exercise_name',
+      'exercise_image_url',
+      'workout_type',
+      'muscle_group',
+      'equipment',
+      'sort_order',
+      'notes',
+      'target_sets',
+      'target_reps',
+      'target_weight',
+      'target_duration_minutes',
+      'target_rest_seconds',
+    ];
+
+    const insertValues = [
+      scheduleId,
+      groupId,
+      Number(ex.exerciseId || 0) || null,
+      sanitizeText(ex.name || '', 150),
+      sanitizeText(ex.image || '', 255),
+      sanitizeText(ex.workoutType || '', 50),
+      sanitizeText(ex.muscleGroup || '', 80),
+      sanitizeText(ex.equipment || '', 80),
+      i + 1,
+      sanitizeText(ex.notes || '', 500),
+      parseNumber(ex.sets),
+      parseNumber(ex.reps),
+      parseNumber(ex.weight, true),
+      parseNumber(ex.duration),
+      parseNumber(ex.restTime),
+    ];
+
+    if (schemaState.hasTargetDistanceMiles) {
+      insertColumns.push('target_distance_miles');
+      insertValues.push(parseNumber(ex.distance, true));
+    }
+
     await connection.query(
       `INSERT INTO workout_schedule_exercises
-        (
-          workout_schedule_id,
-          workout_schedule_group_id,
-          exercise_id,
-          exercise_name,
-          exercise_image_url,
-          workout_type,
-          muscle_group,
-          equipment,
-          sort_order,
-          notes,
-          target_sets,
-          target_reps,
-          target_weight,
-          target_duration_minutes,
-          target_rest_seconds
-        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        scheduleId,
-        groupId,
-        Number(ex.exerciseId || 0) || null,
-        sanitizeText(ex.name || '', 150),
-        sanitizeText(ex.image || '', 255),
-        sanitizeText(ex.workoutType || '', 50),
-        sanitizeText(ex.muscleGroup || '', 80),
-        sanitizeText(ex.equipment || '', 80),
-        i + 1,
-        sanitizeText(ex.notes || '', 500),
-        parseNumber(ex.sets),
-        parseNumber(ex.reps),
-        parseNumber(ex.weight, true),
-        parseNumber(ex.duration),
-        parseNumber(ex.restTime),
-      ]
+        (${insertColumns.join(', ')})
+       VALUES (${insertColumns.map(() => '?').join(', ')})`,
+      insertValues
     );
   }
 };
@@ -1396,43 +1856,54 @@ router.post('/workout-schedules/:id/exercises', async (req, res) => {
       fallback = exerciseRows?.[0] || {};
     }
 
+    const schemaState = await getWorkoutPlannerSchemaState();
+
+    const insertColumns = [
+      'workout_schedule_id',
+      'workout_schedule_group_id',
+      'exercise_id',
+      'exercise_name',
+      'exercise_image_url',
+      'workout_type',
+      'muscle_group',
+      'equipment',
+      'sort_order',
+      'notes',
+      'target_sets',
+      'target_reps',
+      'target_weight',
+      'target_duration_minutes',
+      'target_rest_seconds',
+    ];
+
+    const insertValues = [
+      scheduleId,
+      groupId || null,
+      exerciseId || null,
+      sanitizeText(body.name || fallback.ExerciseTitle || '', 150),
+      sanitizeText(body.image || fallback.ImageURL || '', 255),
+      sanitizeText(body.workoutType || fallback.WorkoutType || '', 50),
+      sanitizeText(body.muscleGroup || fallback.MuscleGroup || '', 80),
+      sanitizeText(body.equipment || fallback.Equipment || '', 80),
+      parseNumber(body.sortOrder) || 9999,
+      sanitizeText(body.notes || '', 500),
+      parseNumber(body.targetSets),
+      parseNumber(body.targetReps),
+      parseNumber(body.targetWeight, true),
+      parseNumber(body.targetDurationMinutes),
+      parseNumber(body.targetRestSeconds),
+    ];
+
+    if (schemaState.hasTargetDistanceMiles) {
+      insertColumns.push('target_distance_miles');
+      insertValues.push(parseNumber(body.targetDistanceMiles, true));
+    }
+
     const [insertResult] = await pool.query(
       `INSERT INTO workout_schedule_exercises
-        (
-          workout_schedule_id,
-          workout_schedule_group_id,
-          exercise_id,
-          exercise_name,
-          exercise_image_url,
-          workout_type,
-          muscle_group,
-          equipment,
-          sort_order,
-          notes,
-          target_sets,
-          target_reps,
-          target_weight,
-          target_duration_minutes,
-          target_rest_seconds
-        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        scheduleId,
-        groupId || null,
-        exerciseId || null,
-        sanitizeText(body.name || fallback.ExerciseTitle || '', 150),
-        sanitizeText(body.image || fallback.ImageURL || '', 255),
-        sanitizeText(body.workoutType || fallback.WorkoutType || '', 50),
-        sanitizeText(body.muscleGroup || fallback.MuscleGroup || '', 80),
-        sanitizeText(body.equipment || fallback.Equipment || '', 80),
-        parseNumber(body.sortOrder) || 9999,
-        sanitizeText(body.notes || '', 500),
-        parseNumber(body.targetSets),
-        parseNumber(body.targetReps),
-        parseNumber(body.targetWeight, true),
-        parseNumber(body.targetDurationMinutes),
-        parseNumber(body.targetRestSeconds),
-      ]
+        (${insertColumns.join(', ')})
+       VALUES (${insertColumns.map(() => '?').join(', ')})`,
+      insertValues
     );
 
     await pool.query('UPDATE workout_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [scheduleId]);
@@ -1458,33 +1929,43 @@ router.patch('/workout-schedules/:id/exercises/:scheduleExerciseId', async (req,
     }
 
     const body = req.body || {};
+    const schemaState = await getWorkoutPlannerSchemaState();
+    const setClauses = [
+      'wse.workout_schedule_group_id = COALESCE(?, wse.workout_schedule_group_id)',
+      'wse.sort_order = COALESCE(?, wse.sort_order)',
+      'wse.notes = COALESCE(?, wse.notes)',
+      'wse.target_sets = COALESCE(?, wse.target_sets)',
+      'wse.target_reps = COALESCE(?, wse.target_reps)',
+      'wse.target_weight = COALESCE(?, wse.target_weight)',
+      'wse.target_duration_minutes = COALESCE(?, wse.target_duration_minutes)',
+      'wse.target_rest_seconds = COALESCE(?, wse.target_rest_seconds)',
+    ];
+    const queryParams = [
+      parseNumber(body.workoutScheduleGroupId),
+      parseNumber(body.sortOrder),
+      sanitizeText(body.notes || '', 500) || null,
+      parseNumber(body.targetSets),
+      parseNumber(body.targetReps),
+      parseNumber(body.targetWeight, true),
+      parseNumber(body.targetDurationMinutes),
+      parseNumber(body.targetRestSeconds),
+    ];
+
+    if (schemaState.hasTargetDistanceMiles) {
+      setClauses.push('wse.target_distance_miles = COALESCE(?, wse.target_distance_miles)');
+      queryParams.push(parseNumber(body.targetDistanceMiles, true));
+    }
+
+    queryParams.push(scheduleExerciseId, scheduleId, userId);
+
     const [result] = await pool.query(
       `UPDATE workout_schedule_exercises wse
        INNER JOIN workout_schedules ws ON ws.id = wse.workout_schedule_id
        SET
-         wse.workout_schedule_group_id = COALESCE(?, wse.workout_schedule_group_id),
-         wse.sort_order = COALESCE(?, wse.sort_order),
-         wse.notes = COALESCE(?, wse.notes),
-         wse.target_sets = COALESCE(?, wse.target_sets),
-         wse.target_reps = COALESCE(?, wse.target_reps),
-         wse.target_weight = COALESCE(?, wse.target_weight),
-         wse.target_duration_minutes = COALESCE(?, wse.target_duration_minutes),
-         wse.target_rest_seconds = COALESCE(?, wse.target_rest_seconds),
+         ${setClauses.join(',\n         ')},
          wse.updated_at = CURRENT_TIMESTAMP
        WHERE wse.id = ? AND ws.id = ? AND ws.user_id = ?`,
-      [
-        parseNumber(body.workoutScheduleGroupId),
-        parseNumber(body.sortOrder),
-        sanitizeText(body.notes || '', 500) || null,
-        parseNumber(body.targetSets),
-        parseNumber(body.targetReps),
-        parseNumber(body.targetWeight, true),
-        parseNumber(body.targetDurationMinutes),
-        parseNumber(body.targetRestSeconds),
-        scheduleExerciseId,
-        scheduleId,
-        userId,
-      ]
+      queryParams
     );
 
     if (!result.affectedRows) {
@@ -1546,6 +2027,29 @@ router.delete('/workout-schedules/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule id' });
     }
 
+    const [scheduleRows] = await pool.query(
+      'SELECT id, user_id, workout_plan_type FROM workout_schedules WHERE id = ? LIMIT 1',
+      [scheduleId]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Workout schedule not found' });
+    }
+
+    const schedule = scheduleRows[0] || {};
+    if (Number(schedule.user_id || 0) !== Number(userId)) {
+      return res.status(404).json({ error: 'Workout schedule not found' });
+    }
+
+    const parsedPlanType = parseWorkoutPlanType(schedule.workout_plan_type);
+    const isGlobalPlanType = Boolean(
+      parsedPlanType?.isSet && parsedPlanType?.isValid && GLOBAL_WORKOUT_PLAN_TYPES.has(parsedPlanType.value)
+    );
+
+    if (isGlobalPlanType && !isAdminUser(req)) {
+      return res.status(403).json({ error: 'You are not allowed to delete global workout templates.' });
+    }
+
     const [result] = await pool.query(
       'DELETE FROM workout_schedules WHERE id = ? AND user_id = ?',
       [scheduleId, userId]
@@ -1590,6 +2094,253 @@ router.get('/featured-workout-plans', async (req, res) => {
   }
 });
 
+router.get('/global-workout-plans', async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not logged in' });
+    }
+
+    const searchQuery = String(req.query?.q || '').trim().toLowerCase();
+    const requestedCategory = String(req.query?.category || '').trim().toLowerCase();
+    const requestedAccess = String(req.query?.access || '').trim().toLowerCase();
+
+    const workoutLists = await loadGlobalWorkoutPlans({
+      onlyPublished: true,
+      publishedVisibility: 'all',
+    });
+
+    const filteredWorkoutLists = workoutLists.filter((plan) => {
+      const category = String(plan?.type || '').trim();
+      const name = String(plan?.name || '').trim();
+      const description = String(plan?.description || '').trim();
+      const accessLabel = normalizeGlobalPlanAccess(plan?.visibility);
+
+      if (requestedCategory && requestedCategory !== 'all') {
+        if (category.toLowerCase() !== requestedCategory) {
+          return false;
+        }
+      }
+
+      if (requestedAccess && requestedAccess !== 'all') {
+        if (accessLabel.toLowerCase() !== requestedAccess) {
+          return false;
+        }
+      }
+
+      if (searchQuery) {
+        const haystack = `${name} ${description} ${category}`.toLowerCase();
+        if (!haystack.includes(searchQuery)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    return res.json({
+      workoutLists: filteredWorkoutLists,
+      hasWorkoutLists: filteredWorkoutLists.length > 0,
+    });
+  } catch (err) {
+    console.error('❌ Failed to load global workout plans library:', err);
+    return res.status(500).json({ error: 'Failed to load global workout plans library' });
+  }
+});
+
+router.get('/global-workout-plans/:id', async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not logged in' });
+    }
+
+    const scheduleId = Number(req.params?.id || 0);
+    if (!scheduleId) {
+      return res.status(400).json({ error: 'Invalid global workout plan id' });
+    }
+
+    const planner = await buildGlobalWorkoutPlanById(scheduleId);
+    if (!planner) {
+      return res.status(404).json({ error: 'Global workout plan not found' });
+    }
+
+    const status = String(planner?.status || '').trim().toLowerCase();
+    const visibility = String(planner?.visibility || '').trim().toLowerCase();
+    const publishedStatusAllowed = PUBLISHED_GLOBAL_STATUSES.includes(status);
+    const isDiscoverableVisibility = ['public', 'private', 'unlisted'].includes(visibility);
+
+    const completenessMissing = collectGlobalPlanCompletenessErrors(planner);
+    if (!publishedStatusAllowed || !isDiscoverableVisibility || completenessMissing.length) {
+      return res.status(404).json({ error: 'Global workout plan not found' });
+    }
+
+    return res.json({
+      planner,
+      accessLevel: normalizeGlobalPlanAccess(planner?.visibility),
+    });
+  } catch (err) {
+    console.error('❌ Failed to load global workout plan detail:', err);
+    return res.status(500).json({ error: 'Failed to load global workout plan detail' });
+  }
+});
+
+router.post('/global-workout-plans/:id/use', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not logged in' });
+    }
+
+    const sourcePlanId = Number(req.params?.id || 0);
+    if (!sourcePlanId) {
+      return res.status(400).json({ error: 'Invalid global workout plan id' });
+    }
+
+    const schemaState = await getWorkoutPlannerSchemaState(connection);
+    if (!schemaState.hasWorkoutPlanType) {
+      return res.status(400).json({ error: 'Database migration required: workout_plan_type column is missing.' });
+    }
+
+    const [sourceRows] = await connection.query(
+      `SELECT id, user_id
+       FROM workout_schedules
+       WHERE id = ?
+         AND workout_plan_type IN (?, ?)
+         AND LOWER(COALESCE(status, '')) IN (?, ?, ?)
+         AND LOWER(COALESCE(visibility, '')) IN ('public', 'private', 'unlisted')
+         AND EXISTS (
+           SELECT 1
+           FROM workout_schedule_exercises wse
+           WHERE wse.workout_schedule_id = workout_schedules.id
+         )
+       LIMIT 1`,
+      [
+        sourcePlanId,
+        FEATURED_WORKOUT_PLAN_TYPE,
+        COMMUNITY_SHARED_WORKOUT_PLAN_TYPE,
+        ...PUBLISHED_GLOBAL_STATUSES,
+      ]
+    );
+
+    if (!sourceRows.length) {
+      return res.status(404).json({ error: 'Global workout plan not found' });
+    }
+
+    const sourceOwnerUserId = Number(sourceRows[0]?.user_id || 0);
+    if (!sourceOwnerUserId) {
+      return res.status(404).json({ error: 'Global workout plan owner not found' });
+    }
+
+    const sourcePlanner = await buildPlannerFromSchedule(sourcePlanId, sourceOwnerUserId);
+    if (!sourcePlanner) {
+      return res.status(404).json({ error: 'Global workout plan details not found' });
+    }
+
+    const sourceMetadata = sourcePlanner?.metadata || {};
+    const sourceName = sanitizeText(sourceMetadata?.name || 'Global Workout Plan', 150) || 'Global Workout Plan';
+    const sourceDescription = sanitizeText(sourceMetadata?.description || '', 1000);
+    const sourceType = sanitizeText(sourceMetadata?.type || 'Strength', 50) || 'Strength';
+    const sourceDuration = parseNumber(sourceMetadata?.estimatedDuration) || 0;
+    const sourceGoalType = parseWorkoutGoalType(sourceMetadata?.goalType).value;
+    const sourceScheduleMode = sourcePlanner?.scheduleMode === 'week' ? 'week' : 'day';
+
+    await connection.beginTransaction();
+
+    const cloneColumns = [
+      'user_id',
+      'title',
+      'description',
+      'workout_type',
+      'workout_plan_type',
+      'estimated_duration_minutes',
+      'status',
+      'visibility',
+      'schedule_mode',
+    ];
+    const cloneValues = [
+      userId,
+      sourceName,
+      sourceDescription,
+      sourceType,
+      null,
+      sourceDuration,
+      'draft',
+      'private',
+      sourceScheduleMode,
+    ];
+
+    if (schemaState.hasGoalType) {
+      cloneColumns.splice(6, 0, 'goal_type');
+      cloneValues.splice(6, 0, sourceGoalType);
+    }
+    if (schemaState.hasSourceGlobalPlanId) {
+      const insertAt = cloneColumns.indexOf('workout_plan_type') + 1;
+      cloneColumns.splice(insertAt, 0, 'source_global_plan_id');
+      cloneValues.splice(insertAt, 0, sourcePlanId);
+    }
+    if (schemaState.hasGlobalPlanAdoptedAt) {
+      const insertAt = cloneColumns.indexOf('source_global_plan_id') >= 0
+        ? cloneColumns.indexOf('source_global_plan_id') + 1
+        : cloneColumns.indexOf('workout_plan_type') + 1;
+      cloneColumns.splice(insertAt, 0, 'global_plan_adopted_at');
+      cloneValues.splice(insertAt, 0, new Date());
+    }
+
+    const [insertResult] = await connection.query(
+      `INSERT INTO workout_schedules (${cloneColumns.join(', ')})
+       VALUES (${cloneColumns.map(() => '?').join(', ')})`,
+      cloneValues
+    );
+
+    const clonedScheduleId = Number(insertResult.insertId || 0);
+    if (!clonedScheduleId) {
+      await connection.rollback();
+      return res.status(500).json({ error: 'Failed to create personal workout copy' });
+    }
+
+    const plannerForClone = {
+      ...sourcePlanner,
+      planId: String(clonedScheduleId),
+      metadata: {
+        ...sourceMetadata,
+        planType: null,
+        goalType: sourceGoalType,
+        goalId: '',
+        goalContext: null,
+      },
+    };
+
+    await replaceScheduleGroupsAndExercises(connection, clonedScheduleId, plannerForClone);
+    await connection.commit();
+
+    const planner = await buildPlannerFromSchedule(clonedScheduleId, userId);
+    const workoutLists = await loadSchedulesForUser(userId);
+    const hasSavedExerciseList = await hasSavedExercisesForUser(userId);
+
+    return res.status(201).json({
+      message: 'Global workout plan copied to your Workout Builder.',
+      planner,
+      workoutLists,
+      hasWorkoutLists: workoutLists.length > 0,
+      hasSavedWorkoutExerciseList: hasSavedExerciseList,
+      canCreateFeaturedPlans: isAdminUser(req),
+      sourcePlanId: String(sourcePlanId),
+    });
+  } catch (err) {
+    try {
+      await connection.rollback();
+    } catch (_) {
+      // ignore rollback errors
+    }
+    console.error('❌ Failed to copy global workout plan:', err);
+    return res.status(500).json({ error: 'Failed to copy global workout plan' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.post('/featured-workout-plans/:id/clone', async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -1615,6 +2366,11 @@ router.post('/featured-workout-plans/:id/clone', async (req, res) => {
          AND workout_plan_type = ?
          AND LOWER(COALESCE(status, '')) IN (?, ?, ?)
          AND LOWER(COALESCE(visibility, '')) = 'public'
+         AND EXISTS (
+           SELECT 1
+           FROM workout_schedule_exercises wse
+           WHERE wse.workout_schedule_id = workout_schedules.id
+         )
        LIMIT 1`,
       [sourcePlanId, FEATURED_WORKOUT_PLAN_TYPE, ...PUBLISHED_GLOBAL_STATUSES]
     );
@@ -1638,22 +2394,55 @@ router.post('/featured-workout-plans/:id/clone', async (req, res) => {
     const sourceDescription = sanitizeText(sourceMetadata?.description || '', 1000);
     const sourceType = sanitizeText(sourceMetadata?.type || 'Strength', 50) || 'Strength';
     const sourceDuration = parseNumber(sourceMetadata?.estimatedDuration) || 0;
+    const sourceGoalType = parseWorkoutGoalType(sourceMetadata?.goalType).value;
     const sourceScheduleMode = sourcePlanner?.scheduleMode === 'week' ? 'week' : 'day';
 
     await connection.beginTransaction();
 
+    const cloneColumns = [
+      'user_id',
+      'title',
+      'description',
+      'workout_type',
+      'workout_plan_type',
+      'estimated_duration_minutes',
+      'status',
+      'visibility',
+      'schedule_mode',
+    ];
+    const cloneValues = [
+      userId,
+      sourceName,
+      sourceDescription,
+      sourceType,
+      null,
+      sourceDuration,
+      'draft',
+      'private',
+      sourceScheduleMode,
+    ];
+
+    if (schemaState.hasGoalType) {
+      cloneColumns.splice(6, 0, 'goal_type');
+      cloneValues.splice(6, 0, sourceGoalType);
+    }
+    if (schemaState.hasSourceGlobalPlanId) {
+      const insertAt = cloneColumns.indexOf('workout_plan_type') + 1;
+      cloneColumns.splice(insertAt, 0, 'source_global_plan_id');
+      cloneValues.splice(insertAt, 0, sourcePlanId);
+    }
+    if (schemaState.hasGlobalPlanAdoptedAt) {
+      const insertAt = cloneColumns.indexOf('source_global_plan_id') >= 0
+        ? cloneColumns.indexOf('source_global_plan_id') + 1
+        : cloneColumns.indexOf('workout_plan_type') + 1;
+      cloneColumns.splice(insertAt, 0, 'global_plan_adopted_at');
+      cloneValues.splice(insertAt, 0, new Date());
+    }
+
     const [insertResult] = await connection.query(
-      `INSERT INTO workout_schedules
-        (user_id, title, description, workout_type, workout_plan_type, estimated_duration_minutes, status, visibility, schedule_mode)
-       VALUES (?, ?, ?, ?, NULL, ?, 'draft', 'private', ?)`,
-      [
-        userId,
-        sourceName,
-        sourceDescription,
-        sourceType,
-        sourceDuration,
-        sourceScheduleMode,
-      ]
+      `INSERT INTO workout_schedules (${cloneColumns.join(', ')})
+       VALUES (${cloneColumns.map(() => '?').join(', ')})`,
+      cloneValues
     );
 
     const clonedScheduleId = Number(insertResult.insertId || 0);
@@ -1668,6 +2457,9 @@ router.post('/featured-workout-plans/:id/clone', async (req, res) => {
       metadata: {
         ...sourceMetadata,
         planType: null,
+        goalType: sourceGoalType,
+        goalId: '',
+        goalContext: null,
       },
     };
 
@@ -1708,10 +2500,15 @@ router.get('/admin/global-workout-plans', async (req, res) => {
       return;
     }
 
+    await ensureWorkoutPlannerOrderingColumns();
+
     const workoutLists = await loadGlobalWorkoutPlans();
+    const visibleLists = isAdminUser(req)
+      ? workoutLists
+      : workoutLists.filter((plan) => Number(plan?.ownerUserId || 0) === Number(userId));
     return res.json({
-      workoutLists,
-      hasWorkoutLists: workoutLists.length > 0,
+      workoutLists: visibleLists,
+      hasWorkoutLists: visibleLists.length > 0,
     });
   } catch (err) {
     console.error('❌ Failed to load global workout plans:', err);
@@ -1725,6 +2522,8 @@ router.get('/admin/global-workout-plans/:id', async (req, res) => {
     if (!userId) {
       return;
     }
+
+    await ensureWorkoutPlannerOrderingColumns();
 
     const scheduleId = Number(req.params?.id || 0);
     if (!scheduleId) {
@@ -1750,7 +2549,7 @@ router.post('/admin/global-workout-plans', async (req, res) => {
       return;
     }
 
-    const schemaState = await getWorkoutPlannerSchemaState();
+    const schemaState = await ensureWorkoutPlannerOrderingColumns();
     if (!schemaState.hasWorkoutPlanType) {
       return res.status(400).json({ error: 'Database migration required: workout_plan_type column is missing.' });
     }
@@ -1760,23 +2559,48 @@ router.post('/admin/global-workout-plans', async (req, res) => {
     if (!parsedPlanType.ok) {
       return res.status(parsedPlanType.status).json({ error: parsedPlanType.error });
     }
+    const parsedGoalType = parseWorkoutGoalType(payload?.goalType);
+    if (!parsedGoalType.isValid) {
+      return res.status(400).json({ error: 'Invalid Goal Type. Allowed values: No Specific Goal, Body Weight, Exercise Weight.' });
+    }
 
     const title = sanitizeText(payload?.title || 'Untitled Workout', 150) || 'Untitled Workout';
     const description = sanitizeText(payload?.description || '', 1000);
     const estimatedDuration = parseNumber(payload?.estimatedDurationMinutes) || 0;
+    const visibility = normalizeGlobalAccessVisibility(payload?.accessLevel, 'private');
+
+    const insertColumns = [
+      'user_id',
+      'title',
+      'description',
+      'workout_type',
+      'workout_plan_type',
+      'estimated_duration_minutes',
+      'status',
+      'visibility',
+      'schedule_mode',
+    ];
+    const insertValues = [
+      userId,
+      title,
+      description,
+      'Strength',
+      parsedPlanType.value,
+      estimatedDuration,
+      'draft',
+      visibility,
+      'day',
+    ];
+
+    if (schemaState.hasGoalType) {
+      insertColumns.splice(5, 0, 'goal_type');
+      insertValues.splice(5, 0, parsedGoalType.value);
+    }
 
     const [result] = await pool.query(
-      `INSERT INTO workout_schedules
-        (user_id, title, description, workout_type, workout_plan_type, estimated_duration_minutes, status, visibility, schedule_mode)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', 'public', 'day')`,
-      [
-        userId,
-        title,
-        description,
-        'Strength',
-        parsedPlanType.value,
-        estimatedDuration,
-      ]
+      `INSERT INTO workout_schedules (${insertColumns.join(', ')})
+       VALUES (${insertColumns.map(() => '?').join(', ')})`,
+      insertValues
     );
 
     const scheduleId = Number(result.insertId || 0);
@@ -1794,7 +2618,7 @@ router.post('/admin/global-workout-plans', async (req, res) => {
     const workoutLists = await loadGlobalWorkoutPlans();
 
     return res.status(201).json({
-      message: 'Global workout plan created',
+      message: 'Global workout plan draft created',
       planner,
       workoutLists,
       hasWorkoutLists: workoutLists.length > 0,
@@ -1812,7 +2636,7 @@ router.patch('/admin/global-workout-plans/:id', async (req, res) => {
       return;
     }
 
-    const schemaState = await getWorkoutPlannerSchemaState();
+    const schemaState = await ensureWorkoutPlannerOrderingColumns();
     if (!schemaState.hasWorkoutPlanType) {
       return res.status(400).json({ error: 'Database migration required: workout_plan_type column is missing.' });
     }
@@ -1827,26 +2651,46 @@ router.patch('/admin/global-workout-plans/:id', async (req, res) => {
     if (!parsedPlanType.ok) {
       return res.status(parsedPlanType.status).json({ error: parsedPlanType.error });
     }
+    const parsedGoalType = parseWorkoutGoalType(body?.goalType);
+    if (!parsedGoalType.isValid) {
+      return res.status(400).json({ error: 'Invalid Goal Type. Allowed values: No Specific Goal, Body Weight, Exercise Weight.' });
+    }
 
     const title = sanitizeText(body?.title || '', 150);
     const description = sanitizeText(body?.description || '', 1000);
     const estimatedDuration = parseNumber(body?.estimatedDurationMinutes);
+    const visibility = normalizeGlobalAccessVisibility(body?.accessLevel, 'public');
+
+    const updateFields = [
+      "title = COALESCE(NULLIF(?, ''), title)",
+      'description = COALESCE(?, description)',
+      'workout_plan_type = ?',
+      'estimated_duration_minutes = COALESCE(?, estimated_duration_minutes)',
+      'visibility = ?',
+    ];
+    const updateParams = [
+      title,
+      description,
+      parsedPlanType.value,
+      estimatedDuration,
+      visibility,
+    ];
+
+    if (schemaState.hasGoalType) {
+      updateFields.push('goal_type = ?');
+      updateParams.push(parsedGoalType.value);
+    }
+
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
 
     const [result] = await pool.query(
       `UPDATE workout_schedules
        SET
-         title = COALESCE(NULLIF(?, ''), title),
-         description = COALESCE(?, description),
-         workout_plan_type = ?,
-         estimated_duration_minutes = COALESCE(?, estimated_duration_minutes),
-         updated_at = CURRENT_TIMESTAMP
+         ${updateFields.join(',\n         ')}
        WHERE id = ?
          AND workout_plan_type IN (?, ?)`,
       [
-        title,
-        description,
-        parsedPlanType.value,
-        estimatedDuration,
+        ...updateParams,
         scheduleId,
         FEATURED_WORKOUT_PLAN_TYPE,
         COMMUNITY_SHARED_WORKOUT_PLAN_TYPE,
@@ -1887,6 +2731,8 @@ router.patch('/admin/global-workout-plans/:id/schedule', async (req, res) => {
       return res.status(400).json({ error: 'Invalid schedule id' });
     }
 
+    const schemaState = await ensureWorkoutPlannerOrderingColumns(connection);
+
     const currentPlanner = await buildGlobalWorkoutPlanById(scheduleId);
     if (!currentPlanner) {
       connection.release();
@@ -1906,28 +2752,61 @@ router.patch('/admin/global-workout-plans/:id/schedule', async (req, res) => {
         ...(incomingPlanner?.metadata || {}),
         // Preserve global plan classification during schedule edits.
         planType: currentPlanner?.metadata?.planType,
+        goalType: parseWorkoutGoalType(incomingPlanner?.metadata?.goalType).isValid
+          ? parseWorkoutGoalType(incomingPlanner?.metadata?.goalType).value
+          : currentPlanner?.metadata?.goalType,
       },
     });
+    const normalizedGoalType = parseWorkoutGoalType(normalizedPlanner?.metadata?.goalType).value;
+    const accessVisibility = normalizeGlobalAccessVisibility(
+      normalizedPlanner?.metadata?.accessLevel,
+      normalizeGlobalAccessVisibility(currentPlanner?.visibility, 'public')
+    );
+
+    const completenessMissing = collectGlobalPlanCompletenessErrors(incomingPlanner);
+    if (completenessMissing.length) {
+      connection.release();
+      return res.status(422).json({
+        error: buildGlobalPlanCompletenessErrorMessage(completenessMissing),
+        missingRequirements: completenessMissing,
+      });
+    }
 
     await connection.beginTransaction();
+
+    const scheduleUpdateFields = [
+      'title = ?',
+      'description = ?',
+      'workout_type = ?',
+      'estimated_duration_minutes = ?',
+      "status = 'active'",
+      'visibility = ?',
+      'schedule_mode = ?',
+    ];
+    const scheduleUpdateParams = [
+      sanitizeText(normalizedPlanner?.metadata?.name || '', 150) || 'Untitled Workout',
+      sanitizeText(normalizedPlanner?.metadata?.description || '', 1000),
+      sanitizeText(normalizedPlanner?.metadata?.type || 'Strength', 50) || 'Strength',
+      parseNumber(normalizedPlanner?.metadata?.estimatedDuration) || 0,
+      accessVisibility,
+      normalizedPlanner?.scheduleMode === 'week' ? 'week' : 'day',
+    ];
+
+    if (schemaState.hasGoalType) {
+      scheduleUpdateFields.push('goal_type = ?');
+      scheduleUpdateParams.push(normalizedGoalType);
+    }
+
+    scheduleUpdateFields.push('updated_at = CURRENT_TIMESTAMP');
 
     const [updateResult] = await connection.query(
       `UPDATE workout_schedules
        SET
-         title = ?,
-         description = ?,
-         workout_type = ?,
-         estimated_duration_minutes = ?,
-         schedule_mode = ?,
-         updated_at = CURRENT_TIMESTAMP
+         ${scheduleUpdateFields.join(',\n         ')}
        WHERE id = ?
          AND workout_plan_type IN (?, ?)`,
       [
-        sanitizeText(normalizedPlanner?.metadata?.name || '', 150) || 'Untitled Workout',
-        sanitizeText(normalizedPlanner?.metadata?.description || '', 1000),
-        sanitizeText(normalizedPlanner?.metadata?.type || 'Strength', 50) || 'Strength',
-        parseNumber(normalizedPlanner?.metadata?.estimatedDuration) || 0,
-        normalizedPlanner?.scheduleMode === 'week' ? 'week' : 'day',
+        ...scheduleUpdateParams,
         scheduleId,
         FEATURED_WORKOUT_PLAN_TYPE,
         COMMUNITY_SHARED_WORKOUT_PLAN_TYPE,
@@ -1962,6 +2841,181 @@ router.patch('/admin/global-workout-plans/:id/schedule', async (req, res) => {
     connection.release();
     console.error('❌ Failed to update global workout plan schedule:', err);
     return res.status(500).json({ error: 'Failed to update global workout plan schedule' });
+  }
+});
+
+router.post('/admin/global-workout-plans/:id/exercises', async (req, res) => {
+  try {
+    const userId = await requireAdminSessionUserForGlobalPlans(req, res);
+    if (!userId) {
+      return;
+    }
+
+    const scheduleId = Number(req.params?.id || 0);
+    if (!scheduleId) {
+      return res.status(400).json({ error: 'Invalid schedule id' });
+    }
+
+    const body = req.body || {};
+    const exerciseId = parseNumber(body.exerciseId);
+
+    if (!exerciseId) {
+      return res.status(400).json({ error: 'exerciseId is required' });
+    }
+
+    const [scheduleRows] = await pool.query(
+      `SELECT id, workout_type
+       FROM workout_schedules
+       WHERE id = ?
+         AND workout_plan_type IN (?, ?)
+       LIMIT 1`,
+      [scheduleId, FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Global workout plan not found' });
+    }
+
+    const [exerciseRows] = await pool.query(
+      'SELECT ExerciseID, ExerciseTitle, ImageURL, WorkoutType, MuscleGroup, Equipment FROM exercises WHERE ExerciseID = ? LIMIT 1',
+      [exerciseId]
+    );
+
+    const exerciseRow = exerciseRows?.[0] || null;
+    if (!exerciseRow) {
+      return res.status(404).json({ error: 'Exercise not found' });
+    }
+
+    const [groupRows] = await pool.query(
+      `SELECT id
+       FROM workout_schedule_groups
+       WHERE workout_schedule_id = ?
+       ORDER BY sort_order ASC, id ASC
+       LIMIT 1`,
+      [scheduleId]
+    );
+
+    const defaultGroupId = Number(groupRows?.[0]?.id || 0) || null;
+
+    const [sortRows] = await pool.query(
+      'SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order FROM workout_schedule_exercises WHERE workout_schedule_id = ?',
+      [scheduleId]
+    );
+    const nextSortOrder = Number(sortRows?.[0]?.max_sort_order || 0) + 1;
+
+    const schemaState = await getWorkoutPlannerSchemaState();
+    const insertColumns = [
+      'workout_schedule_id',
+      'workout_schedule_group_id',
+      'exercise_id',
+      'exercise_name',
+      'exercise_image_url',
+      'workout_type',
+      'muscle_group',
+      'equipment',
+      'sort_order',
+      'notes',
+      'target_sets',
+      'target_reps',
+      'target_weight',
+      'target_duration_minutes',
+      'target_rest_seconds',
+    ];
+
+    const insertValues = [
+      scheduleId,
+      defaultGroupId,
+      Number(exerciseRow.ExerciseID || 0) || null,
+      sanitizeText(body.name || exerciseRow.ExerciseTitle || '', 150),
+      sanitizeText(body.image || exerciseRow.ImageURL || '', 255),
+      sanitizeText(body.workoutType || exerciseRow.WorkoutType || scheduleRows[0]?.workout_type || 'Strength', 50),
+      sanitizeText(body.muscleGroup || exerciseRow.MuscleGroup || '', 80),
+      sanitizeText(body.equipment || exerciseRow.Equipment || '', 80),
+      nextSortOrder,
+      sanitizeText(body.notes || '', 500),
+      parseNumber(body.targetSets),
+      parseNumber(body.targetReps),
+      parseNumber(body.targetWeight, true),
+      parseNumber(body.targetDurationMinutes),
+      parseNumber(body.targetRestSeconds),
+    ];
+
+    if (schemaState.hasTargetDistanceMiles) {
+      insertColumns.push('target_distance_miles');
+      insertValues.push(parseNumber(body.targetDistanceMiles, true));
+    }
+
+    const [insertResult] = await pool.query(
+      `INSERT INTO workout_schedule_exercises
+        (${insertColumns.join(', ')})
+       VALUES (${insertColumns.map(() => '?').join(', ')})`,
+      insertValues
+    );
+
+    await pool.query('UPDATE workout_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [scheduleId]);
+
+    const planner = await buildGlobalWorkoutPlanById(scheduleId);
+    const workoutLists = await loadGlobalWorkoutPlans();
+
+    return res.status(201).json({
+      message: 'Exercise added to global workout plan',
+      scheduleExerciseId: Number(insertResult.insertId || 0) || null,
+      planner,
+      workoutLists,
+      hasWorkoutLists: workoutLists.length > 0,
+    });
+  } catch (err) {
+    console.error('❌ Failed to add exercise to global workout plan:', err);
+    return res.status(500).json({ error: 'Failed to add exercise to global workout plan' });
+  }
+});
+
+router.delete('/admin/global-workout-plans/:id/exercises/:scheduleExerciseId', async (req, res) => {
+  try {
+    const userId = await requireAdminSessionUserForGlobalPlans(req, res);
+    if (!userId) {
+      return;
+    }
+
+    const scheduleId = Number(req.params?.id || 0);
+    const scheduleExerciseId = Number(req.params?.scheduleExerciseId || 0);
+    if (!scheduleId || !scheduleExerciseId) {
+      return res.status(400).json({ error: 'Invalid schedule or exercise id' });
+    }
+
+    const [result] = await pool.query(
+      `DELETE wse
+       FROM workout_schedule_exercises wse
+       INNER JOIN workout_schedules ws ON ws.id = wse.workout_schedule_id
+       WHERE wse.id = ?
+         AND ws.id = ?
+         AND ws.workout_plan_type IN (?, ?)`,
+      [
+        scheduleExerciseId,
+        scheduleId,
+        FEATURED_WORKOUT_PLAN_TYPE,
+        COMMUNITY_SHARED_WORKOUT_PLAN_TYPE,
+      ]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Global workout plan exercise not found' });
+    }
+
+    await pool.query('UPDATE workout_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [scheduleId]);
+
+    const planner = await buildGlobalWorkoutPlanById(scheduleId);
+    const workoutLists = await loadGlobalWorkoutPlans();
+
+    return res.json({
+      message: 'Exercise removed from global workout plan',
+      planner,
+      workoutLists,
+      hasWorkoutLists: workoutLists.length > 0,
+    });
+  } catch (err) {
+    console.error('❌ Failed to remove exercise from global workout plan:', err);
+    return res.status(500).json({ error: 'Failed to remove exercise from global workout plan' });
   }
 });
 
@@ -2052,6 +3106,92 @@ router.get('/workout-planner', async (req, res) => {
   }
 });
 
+router.get('/workout-planner/provenance', async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not logged in' });
+    }
+
+    const schemaState = await ensureWorkoutPlannerOrderingColumns();
+    if (!schemaState.hasSourceGlobalPlanId) {
+      return res.json({
+        sourceGlobalPlanId: null,
+        sourceGlobalPlanName: '',
+        adoptedPlanCount: 0,
+        adoptedByUsers: [],
+        adoptedPlans: [],
+      });
+    }
+
+    const planId = Number(req.query?.planId || 0);
+    const sourceGlobalPlanId = Number(req.query?.sourceGlobalPlanId || 0);
+    if (!planId && !sourceGlobalPlanId) {
+      return res.status(400).json({ error: 'planId or sourceGlobalPlanId is required' });
+    }
+
+    if (planId) {
+      const [rows] = await pool.query(
+        `SELECT ws.id, ws.user_id, ws.source_global_plan_id, ws.global_plan_adopted_at, src.title AS source_global_plan_name
+         FROM workout_schedules ws
+         LEFT JOIN workout_schedules src ON src.id = ws.source_global_plan_id
+         WHERE ws.id = ?
+           AND ws.user_id = ?
+         LIMIT 1`,
+        [planId, userId]
+      );
+
+      if (!rows.length) {
+        return res.status(404).json({ error: 'Workout plan not found' });
+      }
+
+      const row = rows[0] || {};
+      return res.json({
+        planId: Number(row.id || 0),
+        userId: Number(row.user_id || 0),
+        sourceGlobalPlanId: row.source_global_plan_id != null ? Number(row.source_global_plan_id) : null,
+        sourceGlobalPlanName: String(row.source_global_plan_name || '').trim(),
+        globalPlanAdoptedAt: row.global_plan_adopted_at || null,
+      });
+    }
+
+    const [adoptedPlans] = await pool.query(
+      `SELECT ws.id, ws.user_id, ws.title, ws.source_global_plan_id, ws.global_plan_adopted_at, src.title AS source_global_plan_name
+       FROM workout_schedules ws
+       LEFT JOIN workout_schedules src ON src.id = ws.source_global_plan_id
+       WHERE ws.source_global_plan_id = ?
+       ORDER BY ws.id DESC`,
+      [sourceGlobalPlanId]
+    );
+
+    const adoptedByUsers = Array.from(
+      new Set(
+        adoptedPlans
+          .map((row) => Number(row?.user_id || 0))
+          .filter((value) => value > 0)
+      )
+    );
+
+    return res.json({
+      sourceGlobalPlanId,
+      sourceGlobalPlanName: String(adoptedPlans[0]?.source_global_plan_name || '').trim(),
+      adoptedPlanCount: adoptedPlans.length,
+      adoptedByUsers,
+      adoptedPlans: adoptedPlans.map((row) => ({
+        planId: Number(row?.id || 0),
+        userId: Number(row?.user_id || 0),
+        name: String(row?.title || '').trim(),
+        sourceGlobalPlanId: row?.source_global_plan_id != null ? Number(row.source_global_plan_id) : null,
+        sourceGlobalPlanName: String(row?.source_global_plan_name || '').trim(),
+        globalPlanAdoptedAt: row?.global_plan_adopted_at || null,
+      })),
+    });
+  } catch (err) {
+    console.error('❌ Failed to query workout planner provenance:', err);
+    return res.status(500).json({ error: 'Failed to query workout planner provenance' });
+  }
+});
+
 // Compatibility endpoint used by existing frontend workflow
 router.put('/workout-planner', async (req, res) => {
   const connection = await pool.getConnection();
@@ -2070,22 +3210,37 @@ router.put('/workout-planner', async (req, res) => {
     if (!requestedPlanType.ok) {
       return res.status(requestedPlanType.status).json({ error: requestedPlanType.error });
     }
+    if (isRawGlobalWorkoutPlanType(requestedPlanType.value)) {
+      return res.status(403).json({
+        error: 'Global workout templates must be managed from Admin/Trainer Global Workout Plans.',
+      });
+    }
 
     const normalizedPlanner = normalizePlannerPayload(incomingPlanner);
     const planId = Number(normalizedPlanner?.planId || 0);
 
     await connection.beginTransaction();
     const schemaState = await ensureWorkoutPlannerOrderingColumns(connection);
+    const linkedGoalId = schemaState.hasLinkedGoalId
+      ? await resolveLinkedGoalIdForUser(connection, userId, normalizedPlanner?.metadata?.goalId)
+      : null;
 
     let scheduleId = planId;
     if (scheduleId) {
       const [ownedRows] = await connection.query(
-        'SELECT id FROM workout_schedules WHERE id = ? AND user_id = ? LIMIT 1',
+        'SELECT id, workout_plan_type FROM workout_schedules WHERE id = ? AND user_id = ? LIMIT 1',
         [scheduleId, userId]
       );
       if (!ownedRows.length) {
         await connection.rollback();
         return res.status(404).json({ error: 'Workout plan not found' });
+      }
+
+      if (isRawGlobalWorkoutPlanType(ownedRows[0]?.workout_plan_type)) {
+        await connection.rollback();
+        return res.status(403).json({
+          error: 'Global workout templates must be managed from Admin/Trainer Global Workout Plans.',
+        });
       }
 
       const updateFields = [
@@ -2109,6 +3264,10 @@ router.put('/workout-planner', async (req, res) => {
         updateFields.push('workout_plan_type = ?');
         updateParams.push(requestedPlanType.value);
       }
+      if (schemaState.hasLinkedGoalId) {
+        updateFields.push('linked_goal_id = ?');
+        updateParams.push(linkedGoalId);
+      }
 
       updateFields.push('updated_at = CURRENT_TIMESTAMP');
 
@@ -2123,33 +3282,52 @@ router.put('/workout-planner', async (req, res) => {
       if (schemaState.hasWorkoutPlanType) {
         [insertResult] = await connection.query(
           `INSERT INTO workout_schedules
-            (user_id, title, description, workout_type, workout_plan_type, estimated_duration_minutes, status, visibility, schedule_mode)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'private', ?)`,
+            (user_id, title, description, workout_type, workout_plan_type, linked_goal_id, estimated_duration_minutes, status, visibility, schedule_mode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'private', ?)`,
           [
             userId,
             sanitizeText(normalizedPlanner?.metadata?.name || '', 150) || 'Untitled Workout',
             sanitizeText(normalizedPlanner?.metadata?.description || '', 1000),
             sanitizeText(normalizedPlanner?.metadata?.type || 'Strength', 50) || 'Strength',
             requestedPlanType.value,
+            linkedGoalId,
             parseNumber(normalizedPlanner?.metadata?.estimatedDuration) || 0,
             'active',
             normalizedPlanner?.scheduleMode === 'week' ? 'week' : 'day',
           ]
         );
       } else {
+        const insertColumns = [
+          'user_id',
+          'title',
+          'description',
+          'workout_type',
+          'estimated_duration_minutes',
+          'status',
+          'visibility',
+          'schedule_mode',
+        ];
+        const insertValues = [
+          userId,
+          sanitizeText(normalizedPlanner?.metadata?.name || '', 150) || 'Untitled Workout',
+          sanitizeText(normalizedPlanner?.metadata?.description || '', 1000),
+          sanitizeText(normalizedPlanner?.metadata?.type || 'Strength', 50) || 'Strength',
+          parseNumber(normalizedPlanner?.metadata?.estimatedDuration) || 0,
+          'active',
+          'private',
+          normalizedPlanner?.scheduleMode === 'week' ? 'week' : 'day',
+        ];
+
+        if (schemaState.hasLinkedGoalId) {
+          insertColumns.splice(4, 0, 'linked_goal_id');
+          insertValues.splice(4, 0, linkedGoalId);
+        }
+
         [insertResult] = await connection.query(
           `INSERT INTO workout_schedules
-            (user_id, title, description, workout_type, estimated_duration_minutes, status, visibility, schedule_mode)
-           VALUES (?, ?, ?, ?, ?, ?, 'private', ?)`,
-          [
-            userId,
-            sanitizeText(normalizedPlanner?.metadata?.name || '', 150) || 'Untitled Workout',
-            sanitizeText(normalizedPlanner?.metadata?.description || '', 1000),
-            sanitizeText(normalizedPlanner?.metadata?.type || 'Strength', 50) || 'Strength',
-            parseNumber(normalizedPlanner?.metadata?.estimatedDuration) || 0,
-            'active',
-            normalizedPlanner?.scheduleMode === 'week' ? 'week' : 'day',
-          ]
+            (${insertColumns.join(', ')})
+           VALUES (${insertColumns.map(() => '?').join(', ')})`,
+          insertValues
         );
       }
       scheduleId = insertResult.insertId;
@@ -2193,6 +3371,26 @@ router.delete('/workout-planner/:planId', async (req, res) => {
     const scheduleId = Number(req.params?.planId || 0);
     if (!scheduleId) {
       return res.status(400).json({ error: 'planId is required' });
+    }
+
+    const [scheduleRows] = await pool.query(
+      'SELECT id, user_id, workout_plan_type FROM workout_schedules WHERE id = ? LIMIT 1',
+      [scheduleId]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Workout plan not found' });
+    }
+
+    const schedule = scheduleRows[0] || {};
+    if (Number(schedule.user_id || 0) !== Number(userId)) {
+      return res.status(404).json({ error: 'Workout plan not found' });
+    }
+
+    if (isRawGlobalWorkoutPlanType(schedule.workout_plan_type)) {
+      return res.status(403).json({
+        error: 'Global workout templates must be managed from Admin/Trainer Global Workout Plans.',
+      });
     }
 
     const [result] = await pool.query(
