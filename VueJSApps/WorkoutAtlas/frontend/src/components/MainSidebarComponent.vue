@@ -546,15 +546,13 @@ onMounted(() => {
 }
 
 .sidebar-link.admin-light-gray,
-.sidebar-link.admin-light-gray .sidebar-txt,
-.sidebar-link.admin-light-gray .nav-icon i {
-  color: #9aabbc !important;
+.sidebar-link.admin-light-gray .sidebar-txt {
+  color: #ffffff !important;
 }
 
 .sidebar-link.admin-light-gray:hover,
-.sidebar-link.admin-light-gray:hover .sidebar-txt,
-.sidebar-link.admin-light-gray:hover .nav-icon i {
-  color: #c0d0e0 !important;
+.sidebar-link.admin-light-gray:hover .sidebar-txt {
+  color: #ffffff !important;
 }
 
 /* ── WorkoutAtlas dark sidebar — always-on overrides ─────── */
@@ -636,13 +634,13 @@ onMounted(() => {
 /* Inactive nav links */
 .sidebar-link {
   background: transparent !important;
-  color: var(--wa-sidebar-text-secondary) !important;
+  color: #ffffff !important;
   border-left: 3px solid transparent;
   min-height: 40px;
   padding: 0 12px 0 11px;
 }
 .sidebar-link .sidebar-txt {
-  color: var(--wa-sidebar-text-secondary) !important;
+  color: #ffffff !important;
 }
 .sidebar-link .nav-icon i {
   color: color-mix(in srgb, var(--wa-sidebar-text-secondary) 88%, #ffffff 12%) !important;
@@ -651,11 +649,11 @@ onMounted(() => {
 /* Active nav link */
 .sidebar-link.active {
   background: var(--wa-sidebar-accent-soft) !important;
-  color: color-mix(in srgb, var(--wa-sidebar-accent) 58%, #ffffff 42%) !important;
+  color: #ffffff !important;
   border-left: 3px solid var(--wa-sidebar-accent) !important;
 }
 .sidebar-link.active .sidebar-txt {
-  color: color-mix(in srgb, var(--wa-sidebar-accent) 58%, #ffffff 42%) !important;
+  color: #ffffff !important;
   font-weight: 600 !important;
 }
 .sidebar-link.active .nav-icon i {
@@ -668,11 +666,11 @@ onMounted(() => {
 /* Hover */
 .sidebar-link:hover {
   background: color-mix(in srgb, var(--wa-sidebar-divider) 60%, transparent 40%) !important;
-  color: var(--wa-sidebar-text) !important;
+  color: #ffffff !important;
   border-left-color: color-mix(in srgb, var(--wa-sidebar-text-muted) 65%, transparent 35%);
 }
 .sidebar-link:hover .sidebar-txt {
-  color: var(--wa-sidebar-text) !important;
+  color: #ffffff !important;
 }
 .sidebar-link:hover .nav-icon i {
   color: color-mix(in srgb, var(--wa-sidebar-text) 82%, var(--wa-sidebar-text-muted) 18%) !important;
@@ -681,8 +679,12 @@ onMounted(() => {
 /* Open/expanded submenu parent */
 .sidebar-item.open .sidebar-link.has-sub {
   background: var(--wa-sidebar-accent-soft-strong) !important;
-  color: color-mix(in srgb, var(--wa-sidebar-accent) 56%, #ffffff 44%) !important;
+  color: #ffffff !important;
   border-left: 3px solid color-mix(in srgb, var(--wa-sidebar-accent) 55%, transparent 45%) !important;
+}
+
+.sidebar-item.open .sidebar-link.has-sub .sidebar-txt {
+  color: #ffffff !important;
 }
 .sidebar-item.open .sidebar-link.has-sub .nav-icon i {
   color: color-mix(in srgb, var(--wa-sidebar-accent) 56%, #ffffff 44%) !important;

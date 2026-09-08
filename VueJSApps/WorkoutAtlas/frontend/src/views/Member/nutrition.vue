@@ -647,10 +647,10 @@ const goToFavoritesTab = () => {
 
         <!-- Filters tabs -->
         <CTabs v-if="showFilters" v-model="pageTab" :activeItemKey="pageTab">
-          <CTabList variant="tabs">
-            <CTab itemKey="FoodCategories">Food Categories</CTab>
-            <CTab itemKey="FoodBrands">Brands</CTab>
-            <CTab itemKey="FoodLabels">Labels</CTab>
+          <CTabList variant="tabs" class="wa-h-tabs wa-h-tabs--tricolor">
+            <CTab class="wa-h-tab" itemKey="FoodCategories">Food Categories</CTab>
+            <CTab class="wa-h-tab" itemKey="FoodBrands">Brands</CTab>
+            <CTab class="wa-h-tab" itemKey="FoodLabels">Labels</CTab>
           </CTabList>
           <CTabContent>
             <CTabPanel class="p-3" itemKey="FoodCategories">
@@ -709,11 +709,11 @@ const goToFavoritesTab = () => {
 
         <!-- Tabs: Results / AddEdit / MyNutrition / Favorites -->
         <CTabs v-model="pageTab" :activeItemKey="pageTab">
-          <CTabList variant="tabs">
-            <CTab itemKey="results">Food Results</CTab>
-            <CTab itemKey="addeditfood">Add/Edit Food</CTab>
-            <CTab itemKey="mynutrition">My Nutrition Log</CTab>
-            <CTab itemKey="mynutritionfav">My Favorite Foods</CTab>
+          <CTabList variant="tabs" class="wa-h-tabs wa-h-tabs--tricolor">
+            <CTab class="wa-h-tab" itemKey="results">Food Results</CTab>
+            <CTab class="wa-h-tab" itemKey="addeditfood">Add/Edit Food</CTab>
+            <CTab class="wa-h-tab" itemKey="mynutrition">My Nutrition Log</CTab>
+            <CTab class="wa-h-tab" itemKey="mynutritionfav">My Favorite Foods</CTab>
           </CTabList>
           <CTabContent>
             <!-- Results -->
@@ -997,28 +997,14 @@ const goToFavoritesTab = () => {
 }
 .chip .remove { margin-left: 6px; cursor: pointer; font-weight: 600; }
 
-/* Tabs look */
-.nav.nav-tabs, .c-tabs .nav, .c-tabs .nav-tabs {
-  background: #272e38; border: none; border-radius: 0;
+/* Shared horizontal tab standard handles color and active states. */
+.nutrition-page-card :deep(.wa-h-tabs) {
+  margin-bottom: 14px;
 }
-.nav.nav-tabs .nav-link,
-.nav.nav-tabs .nav-link.active,
-.c-tabs .nav .nav-link,
-.c-tabs .nav .nav-link.active {
-  border: none; padding: 14px 20px; color: #fff; background: #272e38;
-}
-.nav.nav-tabs .nav-link.active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: -15px;
-  border: 15px solid transparent;
-  border-top-color: #e74c3c;
-  margin-top: 0;
-}
-.c-tabs .nav .nav-link.active {
-  position: relative;
+
+.nutrition-page-card :deep(.wa-h-tabs .wa-h-tab),
+.nutrition-page-card :deep(.wa-h-tabs .nav-link) {
+  min-height: 38px;
 }
 .tab-content {
   background: #fdfdfd;

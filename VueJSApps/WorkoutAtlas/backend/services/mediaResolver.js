@@ -1,12 +1,18 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const {
+  buildGatewayHeaders,
+  createSignature,
+  createTimeoutSignal,
+  resolveGatewayConfig,
+  createRequestId,
+} = require('./aiGatewayService');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
-const DEFAULT_LOCAL_AWS_RELATIVE_PATH = 'backend/AWS-S3-CONTENT';
+const DEFAULT_LOCAL_AWS_RELATIVE_PATH = 'backend/workoutatlas-s3-data';
 
-const CONTENT_ROOT = path.resolve(BACKEND_ROOT, 'AWS-S3-CONTENT');
+const CONTENT_ROOT = path.resolve(BACKEND_ROOT, 'workoutatlas-s3-data');
 const LEGACY_EXERCISE_ROOT = path.resolve(__dirname, '..', '..', 'frontend', 'src', 'assets', 'Excerises');
 
 const MEDIA_PROVIDER_LOCAL = 'LOCAL';
@@ -195,38 +201,148 @@ function shouldTraceMedia() {
   return ['1', 'true', 'yes', 'on'].includes(raw);
 }
 
-function normalizeGatewayUrl(url) {
-  return String(url || '').trim().replace(/\/+$/, '');
+function buildPublicGatewayUrl(baseUrl) {
+  const trimmed = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return '';
+  }
+
+  return `${trimmed}/api/gateway`;
 }
 
-async function proxyImageViaGateway(res, exerciseId, imageName) {
-  const gatewayBase = normalizeGatewayUrl(process.env.PUBLIC_GATEWAY_URL);
-  if (!gatewayBase) {
-    throw new Error('USE_GW=true but PUBLIC_GATEWAY_URL is not configured.');
+function extractGatewayContentType(payload, fallbackType) {
+  const candidates = [
+    payload?.contentType,
+    payload?.mimeType,
+    payload?.content_type,
+    payload?.data?.contentType,
+    payload?.data?.mimeType,
+    payload?.payload?.contentType,
+    payload?.payload?.mimeType,
+  ];
+
+  const resolved = candidates.find((value) => String(value || '').trim());
+  return String(resolved || fallbackType || 'application/octet-stream').trim();
+}
+
+function extractGatewayBase64(payload) {
+  const candidates = [
+    payload?.dataBase64,
+    payload?.objectBase64,
+    payload?.base64,
+    payload?.bodyBase64,
+    payload?.contentBase64,
+    payload?.data?.dataBase64,
+    payload?.data?.objectBase64,
+    payload?.data?.base64,
+    payload?.payload?.dataBase64,
+    payload?.payload?.objectBase64,
+    payload?.payload?.base64,
+  ];
+
+  const resolved = candidates.find((value) => typeof value === 'string' && value.trim());
+  return String(resolved || '').trim();
+}
+
+function buildExerciseStorageKey(exercise = {}, requestedImageName = '') {
+  const id = Number(exercise.ExerciseID || exercise.exerciseId || 0);
+  const mediaPath = normalizeMediaPath(exercise.MediaPath || exercise.mediaPath, id);
+  const imageName = toSafeRelativePath(requestedImageName || exercise.PrimaryImage || exercise.primaryImage) || DEFAULT_IMAGE_NAME;
+  return `${mediaPath}/${imageName}`.replace(/\/+/, '/').replace(/\/{2,}/g, '/');
+}
+
+async function fetchObjectViaGateway(storageKey) {
+  const gatewayConfig = resolveGatewayConfig(process.env);
+  const gatewayUrl = buildPublicGatewayUrl(process.env.PUBLIC_GATEWAY_URL);
+
+  if (!gatewayUrl) {
+    throw new Error('PUBLIC_GATEWAY_URL is not configured.');
   }
 
-  const gatewayResponse = await axios.get(`${gatewayBase}/api/media/exercises/${exerciseId}/image`, {
-    params: { name: imageName },
-    responseType: 'stream',
-    timeout: 12000,
-    validateStatus: () => true,
-  });
-
-  if (gatewayResponse.status < 200 || gatewayResponse.status >= 300) {
-    const err = new Error(`Gateway image request failed with status ${gatewayResponse.status}`);
-    err.statusCode = gatewayResponse.status;
-    throw err;
+  if (!gatewayConfig.hmacSecret) {
+    throw new Error('Gateway authentication is not configured.');
   }
 
-  const passthroughHeaders = ['content-type', 'content-length', 'cache-control', 'etag', 'last-modified'];
-  for (const headerName of passthroughHeaders) {
-    const headerValue = gatewayResponse.headers?.[headerName];
-    if (headerValue) {
-      res.setHeader(headerName, headerValue);
+  const requestPayload = {
+    appName: 'Workout-Atlas',
+    type: 'LOCAL_CLOUD',
+    payload: {
+      action: 'GET_OBJECT',
+      storageKey,
+    },
+  };
+
+  const serializedBody = JSON.stringify(requestPayload);
+  const requestId = createRequestId('wa-media');
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createSignature(
+    gatewayConfig.hmacSecret,
+    'POST',
+    gatewayConfig.gatewayPath || '/api/gateway',
+    timestamp,
+    requestId,
+    serializedBody
+  );
+
+  const timeout = createTimeoutSignal(gatewayConfig.timeoutMs);
+  try {
+    const gatewayResponse = await fetch(gatewayUrl, {
+      method: 'POST',
+      headers: buildGatewayHeaders({
+        requestId,
+        timestamp,
+        signature,
+        apiToken: gatewayConfig.apiToken,
+      }),
+      body: serializedBody,
+      signal: timeout.signal,
+    });
+
+    const rawText = await gatewayResponse.text();
+    let parsedBody = {};
+    try {
+      parsedBody = rawText ? JSON.parse(rawText) : {};
+    } catch (_) {
+      parsedBody = {};
     }
-  }
 
-  gatewayResponse.data.pipe(res);
+    const gatewayData = parsedBody?.data && typeof parsedBody.data === 'object'
+      ? parsedBody.data
+      : parsedBody;
+
+    const ok = gatewayResponse.ok && gatewayData?.success !== false && parsedBody?.success !== false;
+    if (!ok) {
+      const err = new Error(
+        String(
+          gatewayData?.message ||
+          parsedBody?.error?.message ||
+          parsedBody?.message ||
+          parsedBody?.detail ||
+          `Gateway HTTP ${gatewayResponse.status}`
+        ).trim()
+      );
+      err.statusCode = gatewayResponse.status >= 400 ? gatewayResponse.status : 502;
+      throw err;
+    }
+
+    const base64Data = extractGatewayBase64(gatewayData);
+    if (!base64Data) {
+      const err = new Error('Gateway object response did not include base64 data.');
+      err.statusCode = 502;
+      throw err;
+    }
+
+    const objectBuffer = Buffer.from(base64Data, 'base64');
+    const responseType = extractGatewayContentType(gatewayData, detectMimeType(storageKey));
+
+    return {
+      buffer: objectBuffer,
+      contentType: responseType,
+      contentLength: objectBuffer.length,
+    };
+  } finally {
+    timeout.clear();
+  }
 }
 
 function getLocalImageCandidates(exercise = {}, requestedImageName = '') {
@@ -286,11 +402,26 @@ async function streamExerciseImage(res, exerciseOrRow, imageName) {
     console.log(`[MEDIA] Image=${effectiveImageName}`);
   }
 
-  if (shouldUseGateway() && normalizeProvider(resolvedExercise.MediaProvider) !== MEDIA_PROVIDER_LOCAL) {
-    await proxyImageViaGateway(res, resolvedExercise.ExerciseID, effectiveImageName);
+  const storageKey = buildExerciseStorageKey(resolvedExercise, effectiveImageName);
+  console.log(`[MEDIA] STORAGE_KEY=${storageKey}`);
+
+  try {
+    const gatewayObject = await fetchObjectViaGateway(storageKey);
+    console.log('MEDIA SOURCE: GATEWAY_S3');
+    res.setHeader('content-type', gatewayObject.contentType);
+    res.setHeader('content-length', gatewayObject.contentLength);
+    res.setHeader('cache-control', 'public, max-age=300');
+    res.end(gatewayObject.buffer);
     return;
+  } catch (gatewayError) {
+    const safeGatewayError = String(gatewayError?.message || gatewayError || '').trim();
+    if (shouldTraceMedia()) {
+      console.warn('[MEDIA] Gateway retrieval failed; using temporary local filesystem fallback.', safeGatewayError);
+    }
+    console.warn(`MEDIA SOURCE: LOCAL_FALLBACK${safeGatewayError ? ` (Gateway error: ${safeGatewayError})` : ''}`);
   }
 
+  // Temporary Stage 2A fallback: if gateway/S3 retrieval fails, read from local media path.
   const candidates = getLocalImageCandidates(resolvedExercise, effectiveImageName);
   const primaryLocal = buildExerciseImagePath({
     ExerciseID: resolvedExercise.ExerciseID,
@@ -340,4 +471,5 @@ module.exports = {
   resolveExerciseMediaRow,
   streamExerciseImage,
   toSafeRelativePath,
+  buildExerciseStorageKey,
 };

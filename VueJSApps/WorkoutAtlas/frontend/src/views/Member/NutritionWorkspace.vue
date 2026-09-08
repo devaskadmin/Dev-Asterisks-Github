@@ -45,6 +45,16 @@ const customFoods = ref([]);
 const detailsFood = ref(null);
 const detailsOpen = ref(false);
 
+const nutritionCameraInputRef = ref(null);
+const nutritionUploadInputRef = ref(null);
+const nutritionImageUploading = ref(false);
+const nutritionUploadError = ref('');
+const nutritionUploadSuccess = ref('');
+const nutritionAnalyzeNotice = ref('');
+const nutritionUploadedImageMeta = ref(null);
+const nutritionUploadedImageUrl = ref('');
+const activeNutritionTab = ref('food-search');
+
 const addEditForm = ref({
   id: '',
   name: '',
@@ -262,6 +272,83 @@ const removeCustomFood = (id) => {
   saveStorage();
 };
 
+const openNutritionCamera = () => {
+  nutritionUploadError.value = '';
+  nutritionUploadSuccess.value = '';
+  nutritionAnalyzeNotice.value = '';
+  nutritionCameraInputRef.value?.click();
+};
+
+const openNutritionUpload = () => {
+  nutritionUploadError.value = '';
+  nutritionUploadSuccess.value = '';
+  nutritionAnalyzeNotice.value = '';
+  nutritionUploadInputRef.value?.click();
+};
+
+const uploadNutritionImageFile = async (file) => {
+  if (!file) return;
+
+  nutritionUploadError.value = '';
+  nutritionUploadSuccess.value = '';
+  nutritionAnalyzeNotice.value = '';
+
+  const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  if (!allowedTypes.has(String(file.type || '').toLowerCase())) {
+    nutritionUploadError.value = 'Unsupported image type. Use JPG, PNG, WEBP, or GIF.';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('image', file);
+
+  nutritionImageUploading.value = true;
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE}/api/nutrition/images`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Image upload failed. Please try again.');
+    }
+
+    nutritionUploadedImageMeta.value = payload;
+    nutritionUploadedImageUrl.value = URL.createObjectURL(file);
+    nutritionUploadSuccess.value = 'Uploaded successfully.';
+  } catch (error) {
+    nutritionUploadError.value = error?.message || 'Image upload failed. Please try again.';
+  } finally {
+    nutritionImageUploading.value = false;
+  }
+};
+
+const onNutritionCameraChange = async (event) => {
+  const inputEl = event?.target;
+  const file = inputEl?.files?.[0] || null;
+  await uploadNutritionImageFile(file);
+  if (inputEl) inputEl.value = '';
+};
+
+const onNutritionUploadChange = async (event) => {
+  const inputEl = event?.target;
+  const file = inputEl?.files?.[0] || null;
+  await uploadNutritionImageFile(file);
+  if (inputEl) inputEl.value = '';
+};
+
+const announceNutritionAnalyzeComingSoon = () => {
+  nutritionAnalyzeNotice.value = 'AI nutrition analysis coming next';
+};
+
 onMounted(async () => {
   hydrateStorage();
   await Promise.all([loadCategories(), loadBrands()]);
@@ -328,128 +415,236 @@ onMounted(async () => {
       <span class="sticky-macro sticky-fat">🥑 {{ macroSummary.fat || 0 }}g</span>
     </div>
 
-    <!-- ── Search card ── -->
-    <div class="search-card">
-      <div class="search-card-head">
-        <h4 class="search-card-title">Food Search</h4>
-        <p class="search-card-sub">Find and log meals quickly</p>
+    <button
+      type="button"
+      class="nutrition-ai-action"
+      :class="{ 'nutrition-ai-action--active': activeNutritionTab === 'ai-scan' }"
+      @click="activeNutritionTab = 'ai-scan'"
+    >
+      <i class="fa-solid fa-camera" aria-hidden="true"></i>
+      <span>AI Nutrition Scan</span>
+    </button>
+
+    <nav class="nutrition-tab-row wa-h-tabs wa-h-tabs--tricolor" aria-label="Nutrition sections">
+      <button
+        type="button"
+        class="nutrition-tab wa-h-tab nutrition-tab--search"
+        :class="{ 'nutrition-tab--active': activeNutritionTab === 'food-search', 'wa-h-tab--active': activeNutritionTab === 'food-search' }"
+        @click="activeNutritionTab = 'food-search'"
+      >
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <span>Food Search</span>
+      </button>
+
+      <button
+        type="button"
+        class="nutrition-tab wa-h-tab nutrition-tab--myfoods"
+        :class="{ 'nutrition-tab--active': activeNutritionTab === 'my-foods', 'wa-h-tab--active': activeNutritionTab === 'my-foods' }"
+        @click="activeNutritionTab = 'my-foods'"
+      >
+        <i class="fa-solid fa-star" aria-hidden="true"></i>
+        <span>My Foods</span>
+      </button>
+    </nav>
+
+    <section v-show="activeNutritionTab === 'food-search'" class="nutrition-tab-panel">
+      <!-- ── Search card ── -->
+      <div class="search-card">
+        <div class="search-card-head">
+          <h4 class="search-card-title">Food Search</h4>
+          <p class="search-card-sub">Find and log meals quickly</p>
+        </div>
+        <div class="search-controls">
+          <input v-model="foodSearchQuery" type="text" placeholder="Search food by name..." @keyup.enter="searchFood" />
+          <select v-model="selectedCategory">
+            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+          </select>
+          <select v-model="selectedBrand">
+            <option v-for="brand in brands" :key="brand" :value="brand">{{ brand }}</option>
+          </select>
+          <button type="button" class="btn-search" @click="searchFood">
+            <i class="fa-solid fa-magnifying-glass"></i> Search Foods
+          </button>
+        </div>
       </div>
-      <div class="search-controls">
-        <input v-model="foodSearchQuery" type="text" placeholder="Search food by name..." @keyup.enter="searchFood" />
-        <select v-model="selectedCategory">
-          <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-        </select>
-        <select v-model="selectedBrand">
-          <option v-for="brand in brands" :key="brand" :value="brand">{{ brand }}</option>
-        </select>
-        <button type="button" class="btn-search" @click="searchFood">
-          <i class="fa-solid fa-magnifying-glass"></i> Search Foods
+
+      <p v-if="searchError" class="state-msg err">{{ searchError }}</p>
+      <p v-if="searchLoading" class="state-msg">Searching foods...</p>
+      <p v-if="didSearch && !searchLoading && filteredResults.length === 0" class="state-msg">No foods found.</p>
+
+      <div v-if="filteredResults.length" class="food-grid">
+        <NutritionFoodCard
+          v-for="food in filteredResults"
+          :key="food.id"
+          :food="food"
+          :is-favorite="isFavorite(food.id)"
+          @add="addFoodToLog"
+          @edit="openEdit"
+          @favorite="toggleFavorite"
+          @details="openDetails"
+        />
+      </div>
+
+      <h4 class="nutrition-subsection-title">My Nutrition Log</h4>
+
+      <!-- ── Today's Log (collapsible) ── -->
+      <div class="collapsible-section">
+        <button type="button" class="section-toggle" @click="logOpen = !logOpen">
+          <span>📋 Today's Entries<small v-if="selectedDateLogs.length"> ({{ selectedDateLogs.length }})</small></span>
+          <i :class="logOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
         </button>
+        <div v-show="logOpen" class="section-body">
+          <NutritionLogList :entries="selectedDateLogs" @remove="removeLogEntry" />
+        </div>
       </div>
-    </div>
+    </section>
 
-    <p v-if="searchError" class="state-msg err">{{ searchError }}</p>
-    <p v-if="searchLoading" class="state-msg">Searching foods...</p>
-    <p v-if="didSearch && !searchLoading && filteredResults.length === 0" class="state-msg">No foods found.</p>
+    <section v-show="activeNutritionTab === 'ai-scan'" class="nutrition-tab-panel">
+      <section class="nutrition-scan-section">
+        <div class="nutrition-scan-head">
+          <h4>AI Nutrition Scan</h4>
+          <p>Take a photo or upload a food image.</p>
+        </div>
 
-    <div v-if="filteredResults.length" class="food-grid">
-      <NutritionFoodCard
-        v-for="food in filteredResults"
-        :key="food.id"
-        :food="food"
-        :is-favorite="isFavorite(food.id)"
-        @add="addFoodToLog"
-        @edit="openEdit"
-        @favorite="toggleFavorite"
-        @details="openDetails"
-      />
-    </div>
+        <div class="nutrition-scan-actions">
+          <button
+            type="button"
+            class="nutrition-scan-btn nutrition-scan-btn--camera"
+            :disabled="nutritionImageUploading"
+            @click="openNutritionCamera"
+          >
+            <i class="fa-solid fa-camera"></i>
+            Camera
+          </button>
 
-    <!-- ── Today's Log (collapsible) ── -->
-    <div class="collapsible-section">
-      <button type="button" class="section-toggle" @click="logOpen = !logOpen">
-        <span>📋 Today's Entries<small v-if="selectedDateLogs.length"> ({{ selectedDateLogs.length }})</small></span>
-        <i :class="logOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-      </button>
-      <div v-show="logOpen" class="section-body">
-        <NutritionLogList :entries="selectedDateLogs" @remove="removeLogEntry" />
-      </div>
-    </div>
+          <button
+            type="button"
+            class="nutrition-scan-btn nutrition-scan-btn--upload"
+            :disabled="nutritionImageUploading"
+            @click="openNutritionUpload"
+          >
+            <i class="fa-solid fa-upload"></i>
+            Upload Image
+          </button>
 
-    <!-- ── Favorite Foods (collapsible) ── -->
-    <div class="collapsible-section">
-      <button type="button" class="section-toggle" @click="favoritesOpen = !favoritesOpen">
-        <span>⭐ Favorite Foods<small v-if="favoriteFoods.length"> ({{ favoriteFoods.length }})</small></span>
-        <i :class="favoritesOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-      </button>
-      <div v-show="favoritesOpen" class="section-body">
-        <div v-if="favoriteFoods.length === 0" class="state-msg">No favorite foods yet.</div>
-        <div v-else class="food-grid">
-          <NutritionFoodCard
-            v-for="food in favoriteFoods"
-            :key="food.id"
-            :food="food"
-            :is-favorite="true"
-            @add="addFoodToLog"
-            @edit="openEdit"
-            @favorite="toggleFavorite"
-            @details="openDetails"
+          <input
+            ref="nutritionCameraInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            capture="environment"
+            class="nutrition-hidden-input"
+            @change="onNutritionCameraChange"
+          />
+
+          <input
+            ref="nutritionUploadInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            class="nutrition-hidden-input"
+            @change="onNutritionUploadChange"
           />
         </div>
-      </div>
-    </div>
 
-    <!-- ── Add / Edit Custom Food (collapsible) ── -->
-    <div class="collapsible-section">
-      <button type="button" class="section-toggle" @click="addEditOpen = !addEditOpen">
-        <span>✏️ {{ addEditForm.id ? 'Edit Food' : 'Add Custom Food' }}</span>
-        <i :class="addEditOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-      </button>
-      <div v-show="addEditOpen" class="section-body">
-        <div class="add-edit-grid">
-          <article class="form-card">
-            <div class="form-grid">
-              <label><span>Food Name</span><input v-model="addEditForm.name" type="text" placeholder="e.g., Greek Yogurt" /></label>
-              <label><span>Brand</span><input v-model="addEditForm.brand" type="text" placeholder="e.g., Chobani" /></label>
-              <label><span>Image URL</span><input v-model="addEditForm.image" type="text" placeholder="https://..." /></label>
-              <label><span>Calories</span><input v-model.number="addEditForm.calories" type="number" min="0" /></label>
-              <label><span>Protein (g)</span><input v-model.number="addEditForm.protein" type="number" min="0" /></label>
-              <label><span>Carbs (g)</span><input v-model.number="addEditForm.carbs" type="number" min="0" /></label>
-              <label><span>Fat (g)</span><input v-model.number="addEditForm.fat" type="number" min="0" /></label>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn-save" @click="saveCustomFood">Save Food</button>
-              <button type="button" class="btn-clear" @click="resetAddEdit">Clear</button>
-            </div>
-          </article>
-          <article v-if="customFoods.length" class="form-card">
-            <h3>Custom Foods</h3>
-            <div class="custom-list">
-              <NutritionFoodCard
-                v-for="food in customFoods"
-                :key="food.id"
-                :food="food"
-                compact
-                :is-favorite="isFavorite(food.id)"
-                @add="addFoodToLog"
-                @edit="openEdit"
-                @favorite="toggleFavorite"
-                @details="openDetails"
-              />
-              <button
-                v-for="food in customFoods"
-                :key="`remove-${food.id}`"
-                type="button"
-                class="btn-remove-custom"
-                @click="removeCustomFood(food.id)"
-              >
-                Remove {{ food.name }}
-              </button>
-            </div>
-          </article>
+        <p v-if="nutritionImageUploading" class="state-msg">Uploading image...</p>
+        <p v-else-if="nutritionUploadError" class="state-msg err">{{ nutritionUploadError }}</p>
+        <p v-else-if="nutritionUploadSuccess" class="state-msg ok">{{ nutritionUploadSuccess }}</p>
+
+        <div v-if="nutritionUploadedImageMeta && nutritionUploadedImageUrl" class="nutrition-upload-preview">
+          <h5>Food Image</h5>
+          <img :src="nutritionUploadedImageUrl" alt="Uploaded food preview" />
+          <p class="nutrition-upload-meta">
+            {{ nutritionUploadedImageMeta.filename }}
+            <span>• {{ nutritionUploadedImageMeta.mimeType }}</span>
+          </p>
+          <button
+            type="button"
+            class="nutrition-analyze-btn"
+            :disabled="nutritionImageUploading"
+            @click="announceNutritionAnalyzeComingSoon"
+          >
+            Analyze Nutrition
+          </button>
+          <p v-if="nutritionAnalyzeNotice" class="state-msg">{{ nutritionAnalyzeNotice }}</p>
+        </div>
+      </section>
+    </section>
+
+    <section v-show="activeNutritionTab === 'my-foods'" class="nutrition-tab-panel">
+      <!-- ── Favorite Foods (collapsible) ── -->
+      <div class="collapsible-section">
+        <button type="button" class="section-toggle" @click="favoritesOpen = !favoritesOpen">
+          <span>⭐ Favorite Foods<small v-if="favoriteFoods.length"> ({{ favoriteFoods.length }})</small></span>
+          <i :class="favoritesOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+        </button>
+        <div v-show="favoritesOpen" class="section-body">
+          <div v-if="favoriteFoods.length === 0" class="state-msg">No favorite foods yet.</div>
+          <div v-else class="food-grid">
+            <NutritionFoodCard
+              v-for="food in favoriteFoods"
+              :key="food.id"
+              :food="food"
+              :is-favorite="true"
+              @add="addFoodToLog"
+              @edit="openEdit"
+              @favorite="toggleFavorite"
+              @details="openDetails"
+            />
+          </div>
         </div>
       </div>
-    </div>
+
+      <!-- ── Add / Edit Custom Food (collapsible) ── -->
+      <div class="collapsible-section">
+        <button type="button" class="section-toggle" @click="addEditOpen = !addEditOpen">
+          <span>✏️ {{ addEditForm.id ? 'Edit Food' : 'Add Custom Food' }}</span>
+          <i :class="addEditOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+        </button>
+        <div v-show="addEditOpen" class="section-body">
+          <div class="add-edit-grid">
+            <article class="form-card">
+              <div class="form-grid">
+                <label><span>Food Name</span><input v-model="addEditForm.name" type="text" placeholder="e.g., Greek Yogurt" /></label>
+                <label><span>Brand</span><input v-model="addEditForm.brand" type="text" placeholder="e.g., Chobani" /></label>
+                <label><span>Image URL</span><input v-model="addEditForm.image" type="text" placeholder="https://..." /></label>
+                <label><span>Calories</span><input v-model.number="addEditForm.calories" type="number" min="0" /></label>
+                <label><span>Protein (g)</span><input v-model.number="addEditForm.protein" type="number" min="0" /></label>
+                <label><span>Carbs (g)</span><input v-model.number="addEditForm.carbs" type="number" min="0" /></label>
+                <label><span>Fat (g)</span><input v-model.number="addEditForm.fat" type="number" min="0" /></label>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn-save" @click="saveCustomFood">Save Food</button>
+                <button type="button" class="btn-clear" @click="resetAddEdit">Clear</button>
+              </div>
+            </article>
+            <article v-if="customFoods.length" class="form-card">
+              <h3>Custom Foods</h3>
+              <div class="custom-list">
+                <NutritionFoodCard
+                  v-for="food in customFoods"
+                  :key="food.id"
+                  :food="food"
+                  compact
+                  :is-favorite="isFavorite(food.id)"
+                  @add="addFoodToLog"
+                  @edit="openEdit"
+                  @favorite="toggleFavorite"
+                  @details="openDetails"
+                />
+                <button
+                  v-for="food in customFoods"
+                  :key="`remove-${food.id}`"
+                  type="button"
+                  class="btn-remove-custom"
+                  @click="removeCustomFood(food.id)"
+                >
+                  Remove {{ food.name }}
+                </button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ── Details modal ── -->
     <div v-if="detailsOpen" class="details-overlay" @click.self="detailsOpen = false">
@@ -753,6 +948,128 @@ onMounted(async () => {
   border-color: #7f1d1d;
 }
 
+.state-msg.ok {
+  color: #86efac;
+  border-color: #166534;
+}
+
+/* ── AI Nutrition Scan ── */
+.nutrition-scan-section {
+  background: var(--nw-surface-1);
+  border: 1.5px solid var(--ff-border-strong);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  display: grid;
+  gap: 10px;
+}
+
+.nutrition-scan-head h4 {
+  margin: 0;
+  color: var(--nw-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.nutrition-scan-head p {
+  margin: 3px 0 0;
+  color: var(--nw-text-secondary);
+  font-size: 0.78rem;
+}
+
+.nutrition-scan-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nutrition-scan-btn {
+  border: none;
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.nutrition-scan-btn--camera {
+  background: #1d4f9f;
+}
+
+.nutrition-scan-btn--camera:hover:not(:disabled) {
+  background: #1b458c;
+}
+
+.nutrition-scan-btn--upload {
+  background: #0d5b55;
+}
+
+.nutrition-scan-btn--upload:hover:not(:disabled) {
+  background: #0b4c47;
+}
+
+.nutrition-scan-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.nutrition-hidden-input {
+  display: none;
+}
+
+.nutrition-upload-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--ff-border-soft);
+  background: color-mix(in srgb, var(--nw-surface-1) 72%, var(--nw-surface-2) 28%);
+}
+
+.nutrition-upload-preview h5 {
+  margin: 0;
+  color: var(--nw-text);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.nutrition-upload-preview img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--ff-border-soft);
+  background: #0b1220;
+}
+
+.nutrition-upload-meta {
+  margin: 0;
+  color: var(--nw-text-secondary);
+  font-size: 0.76rem;
+}
+
+.nutrition-analyze-btn {
+  border: none;
+  border-radius: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: #8f1f2a;
+  cursor: pointer;
+}
+
+.nutrition-analyze-btn:hover:not(:disabled) {
+  background: #7d1b25;
+}
+
 /* ── Collapsible sections ── */
 .collapsible-section {
   background: var(--nw-surface-1);
@@ -959,6 +1276,72 @@ onMounted(async () => {
 .sticky-carb { border-left: 3px solid #43aa8b; }
 .sticky-fat  { border-left: 3px solid #ff5d73; }
 
+.nutrition-tab-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.nutrition-ai-action {
+  min-height: 44px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: #b91c1c;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(127, 29, 29, 0.28);
+}
+
+.nutrition-ai-action--active {
+  border-color: #f8fafc;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.35), 0 10px 18px rgba(2, 6, 23, 0.3);
+}
+
+.nutrition-ai-action:focus-visible {
+  outline: none;
+  border-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+.nutrition-tab-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.nutrition-subsection-title {
+  margin: 2px 2px 0;
+  color: var(--nw-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nutrition-tab {
+  min-height: 46px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nutrition-tab i {
+  font-size: 0.88rem;
+}
+
 :global(body.light-theme) .nutrition-workspace {
   --ff-border-strong: rgba(15, 23, 42, 0.28);
   --ff-border-soft: rgba(15, 23, 42, 0.22);
@@ -1097,6 +1480,44 @@ onMounted(async () => {
   .search-card {
     padding: 12px;
     border-radius: 14px;
+  }
+
+  .nutrition-tab-row {
+    gap: 6px;
+  }
+
+  .nutrition-ai-action {
+    min-height: 42px;
+    font-size: 0.86rem;
+  }
+
+  .nutrition-tab {
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 0.8rem;
+    white-space: normal;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .nutrition-tab i {
+    font-size: 0.82rem;
+  }
+
+  .nutrition-scan-section {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .nutrition-scan-actions {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .nutrition-scan-btn {
+    width: 100%;
+    min-height: 46px;
+    font-size: 0.9rem;
   }
 
   .search-controls {

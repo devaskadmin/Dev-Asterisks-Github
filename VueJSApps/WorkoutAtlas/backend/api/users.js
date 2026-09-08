@@ -1013,6 +1013,68 @@ const loadSchedulesForUser = async (userId) => {
   return rows.map(serializeScheduleListItem);
 };
 
+const serializeAdminUserWorkoutPlanListItem = (row = {}) => {
+  const firstName = String(row.first_name || '').trim();
+  const lastName = String(row.last_name || '').trim();
+  const username = String(row.username || '').trim();
+  const displayName = [firstName, lastName].filter(Boolean).join(' ') || username || 'Unknown User';
+
+  return {
+    planId: String(row.id || ''),
+    userId: Number(row.user_id || 0) || null,
+    username,
+    displayName,
+    planName: String(row.title || '').trim() || 'Untitled Workout',
+    duration: Number(row.estimated_duration_minutes || 0),
+    exerciseCount: Number(row.exercise_count || 0),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+};
+
+const loadAdminUserWorkoutPlans = async () => {
+  const schemaState = await getWorkoutPlannerSchemaState();
+  const personalPlanWhere = schemaState.hasWorkoutPlanType
+    ? `
+      AND (
+        ws.workout_plan_type IS NULL
+        OR ws.workout_plan_type NOT IN (?, ?)
+      )`
+    : '';
+  const queryParams = schemaState.hasWorkoutPlanType
+    ? [FEATURED_WORKOUT_PLAN_TYPE, COMMUNITY_SHARED_WORKOUT_PLAN_TYPE]
+    : [];
+
+  const [rows] = await pool.query(
+    `SELECT
+      ws.id,
+      ws.user_id,
+      ws.title,
+      ws.estimated_duration_minutes,
+      ws.created_at,
+      ws.updated_at,
+      u.username,
+      u.FirstName AS first_name,
+      u.LastName AS last_name,
+      COALESCE(exercise_agg.exercise_count, 0) AS exercise_count
+    FROM workout_schedules ws
+    INNER JOIN users u ON u.id = ws.user_id
+    LEFT JOIN (
+      SELECT
+        wse.workout_schedule_id,
+        COUNT(wse.id) AS exercise_count
+      FROM workout_schedule_exercises wse
+      GROUP BY wse.workout_schedule_id
+    ) exercise_agg ON exercise_agg.workout_schedule_id = ws.id
+    WHERE 1=1
+      ${personalPlanWhere}
+    ORDER BY ws.updated_at DESC, ws.id DESC`,
+    queryParams
+  );
+
+  return rows.map(serializeAdminUserWorkoutPlanListItem);
+};
+
 const normalizeGlobalPlanTypes = (planTypes = []) => {
   const input = Array.isArray(planTypes) ? planTypes : [planTypes];
   return input
@@ -2513,6 +2575,26 @@ router.get('/admin/global-workout-plans', async (req, res) => {
   } catch (err) {
     console.error('❌ Failed to load global workout plans:', err);
     return res.status(500).json({ error: 'Failed to load global workout plans' });
+  }
+});
+
+router.get('/admin/user-workout-plans', async (req, res) => {
+  try {
+    const userId = requireAdminSessionUser(req, res);
+    if (!userId) {
+      return;
+    }
+
+    await ensureWorkoutPlannerOrderingColumns();
+
+    const workoutLists = await loadAdminUserWorkoutPlans();
+    return res.json({
+      workoutLists,
+      hasWorkoutLists: workoutLists.length > 0,
+    });
+  } catch (err) {
+    console.error('❌ Failed to load admin user workout plans:', err);
+    return res.status(500).json({ error: 'Failed to load admin user workout plans' });
   }
 });
 

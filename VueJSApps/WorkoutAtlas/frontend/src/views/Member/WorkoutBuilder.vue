@@ -51,6 +51,14 @@ const aiLoading = ref(false);
 const gatewayTestLoading = ref(false);
 const aiError = ref('');
 const isAdminUser = ref(false);
+const adminUserPlansLoading = ref(false);
+const adminUserPlansError = ref('');
+const adminUserPlans = ref([]);
+const globalPlansLoading = ref(false);
+const globalPlansDeletingId = ref('');
+const globalPlansError = ref('');
+const globalPlansSuccess = ref('');
+const globalPlans = ref([]);
 
 const MENU_ESTIMATED_HEIGHT = 260;
 const MENU_SAFE_GAP = 12;
@@ -90,11 +98,12 @@ const toggleDayMenu = (dayName, event) => {
 const route = useRoute();
 const router = useRouter();
 
-// Tab: 'select' | 'create' | 'ai'
-const builderTab = ref('select');
+// Tab: 'view' | 'create' | 'ai' | 'global'
+const builderTab = ref('view');
+const planSourceTab = ref('my');
+const globalPlansSubTab = ref('global');
 const mainAccordion = ref({
   build: true,
-  existing: false,
 });
 
 const scheduleMode = ref('day');
@@ -154,6 +163,199 @@ const formatGoalContextOptionLabel = (goalContext) => {
   }
 
   return `Reach ${targetValue} ${targetUnit} by ${dateLabel}`;
+};
+
+const normalizeGlobalGoalType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'body_weight') return 'body_weight';
+  if (normalized === 'exercise_weight') return 'exercise_weight';
+  return 'none';
+};
+
+const formatGlobalGoalTypeLabel = (value) => {
+  const normalized = normalizeGlobalGoalType(value);
+  if (normalized === 'body_weight') return 'Body Weight';
+  if (normalized === 'exercise_weight') return 'Exercise Weight';
+  return 'No Specific Goal';
+};
+
+const normalizeGlobalCategory = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'General Fitness';
+  const lookup = {
+    'weight loss': 'Weight Loss',
+    strength: 'Strength',
+    'muscle building': 'Muscle Building',
+    cardio: 'Cardio',
+    'general fitness': 'General Fitness',
+    beginner: 'Beginner',
+    featured: 'General Fitness',
+    community_shared: 'General Fitness',
+    'community shared': 'General Fitness',
+  };
+  return lookup[raw.toLowerCase()] || raw;
+};
+
+const normalizeGlobalPlan = (plan = {}) => ({
+  planId: String(plan.planId || '').trim(),
+  name: String(plan.name || '').trim() || 'Untitled Workout',
+  category: normalizeGlobalCategory(plan.type),
+  goalType: normalizeGlobalGoalType(plan.goalType),
+  dayCount: Number(plan.dayCount || 0),
+  exerciseCount: Number(plan.exerciseCount || 0),
+  updatedAt: plan.updatedAt || null,
+  visibility: String(plan.visibility || 'private').trim() || 'private',
+});
+
+const formatGlobalAccess = (plan = {}) => {
+  const visibility = String(plan?.visibility || '').trim().toLowerCase();
+  if (visibility === 'private' || visibility === 'unlisted') {
+    return 'Premium';
+  }
+  return 'Free';
+};
+
+const formatGlobalUpdatedDate = (value) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString();
+};
+
+const clearGlobalPlansMessages = () => {
+  globalPlansError.value = '';
+  globalPlansSuccess.value = '';
+};
+
+const buildGlobalPlanDraftPayload = () => ({
+  title: 'Untitled Global Workout',
+  description: '',
+  estimatedDurationMinutes: 45,
+  planType: 'featured',
+  goalType: 'none',
+  accessLevel: 'public',
+});
+
+const loadGlobalPlans = async () => {
+  if (!isAdminUser.value) {
+    globalPlans.value = [];
+    return;
+  }
+
+  globalPlansLoading.value = true;
+  clearGlobalPlansMessages();
+
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/global-workout-plans`, {
+      credentials: 'include',
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const status = Number(response.status || 0);
+      const apiError = String(data?.error || '').trim().toLowerCase();
+      if (status === 404 || apiError.includes('no global workout plans')) {
+        globalPlans.value = [];
+        return;
+      }
+      throw new Error(data?.error || 'Failed to load global workout plans.');
+    }
+
+    globalPlans.value = Array.isArray(data?.workoutLists)
+      ? data.workoutLists.map(normalizeGlobalPlan)
+      : [];
+  } catch (error) {
+    globalPlansError.value = error?.message || 'Failed to load global workout plans.';
+  } finally {
+    globalPlansLoading.value = false;
+  }
+};
+
+const createGlobalPlanDraft = async () => {
+  clearGlobalPlansMessages();
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/global-workout-plans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(buildGlobalPlanDraftPayload()),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to create global workout plan draft.');
+    }
+
+    globalPlans.value = Array.isArray(data?.workoutLists)
+      ? data.workoutLists.map(normalizeGlobalPlan)
+      : globalPlans.value;
+    globalPlansSuccess.value = String(data?.message || 'Global workout plan draft created.').trim() || 'Global workout plan draft created.';
+  } catch (error) {
+    globalPlansError.value = error?.message || 'Failed to create global workout plan draft.';
+  }
+};
+
+const viewGlobalPlanSummary = async (plan = {}) => {
+  const targetId = String(plan?.planId || '').trim();
+  if (!targetId) {
+    return;
+  }
+
+  clearGlobalPlansMessages();
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`, {
+      credentials: 'include',
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to open global workout plan.');
+    }
+
+    const planner = data?.planner || {};
+    const dayCount = Array.isArray(planner?.dayGroups) ? planner.dayGroups.length : Number(plan?.dayCount || 0);
+    const exerciseCount = Array.isArray(planner?.exercises) ? planner.exercises.length : Number(plan?.exerciseCount || 0);
+    const name = String(planner?.metadata?.name || plan?.name || 'Untitled Workout').trim() || 'Untitled Workout';
+    globalPlansSuccess.value = `Viewing ${name} (${dayCount} day${dayCount === 1 ? '' : 's'}, ${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'}). Inline edit workflow remains in the embedded Global Plans panel.`;
+  } catch (error) {
+    globalPlansError.value = error?.message || 'Failed to open global workout plan.';
+  }
+};
+
+const deleteGlobalPlan = async (plan = {}) => {
+  const targetId = String(plan?.planId || '').trim();
+  if (!targetId) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete ${plan?.name || 'this plan'}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  globalPlansDeletingId.value = targetId;
+  clearGlobalPlansMessages();
+
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/global-workout-plans/${encodeURIComponent(targetId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to delete global workout plan.');
+    }
+
+    globalPlans.value = Array.isArray(data?.workoutLists)
+      ? data.workoutLists.map(normalizeGlobalPlan)
+      : globalPlans.value.filter((item) => String(item.planId) !== targetId);
+    globalPlansSuccess.value = 'Global workout plan deleted.';
+  } catch (error) {
+    globalPlansError.value = error?.message || 'Failed to delete global workout plan.';
+  } finally {
+    globalPlansDeletingId.value = '';
+  }
 };
 
 const goalOptionsForSelect = computed(() => {
@@ -336,7 +538,7 @@ const selectTemplatePlan = async (plan) => {
 };
 
 const openMainAccordion = (panel) => {
-  if (panel !== 'build' && panel !== 'existing') {
+  if (panel !== 'build') {
     return;
   }
   mainAccordion.value[panel] = !mainAccordion.value[panel];
@@ -416,8 +618,8 @@ const workoutDaysWithExercises = computed(() => {
 });
 
 const hasWorkoutSchedules = computed(() => workoutSchedules.value.length > 0);
-const canShowWorkoutDetails = computed(() => isCreatingWorkout.value || Boolean(selectedWorkoutId.value));
-const showSaveFooter = computed(() => builderTab.value === 'create' && canShowWorkoutDetails.value);
+const canShowWorkoutDetails = computed(() => builderTab.value === 'create' || isCreatingWorkout.value || Boolean(selectedWorkoutId.value));
+const showSaveFooter = computed(() => builderTab.value === 'create');
 const primarySaveLabel = computed(() => {
   return saving.value ? 'Saving Workout Plan...' : 'Save Workout Plan';
 });
@@ -456,6 +658,58 @@ const formatUpdatedAt = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString();
+};
+
+const formatUserPlanCreatedAt = (plan = {}) => formatUpdatedAt(plan?.createdAt || null);
+
+const normalizeAdminUserPlan = (plan = {}) => ({
+  planId: String(plan?.planId || '').trim(),
+  userId: Number(plan?.userId || 0) || null,
+  username: String(plan?.username || '').trim(),
+  displayName: String(plan?.displayName || '').trim() || String(plan?.username || '').trim() || 'Unknown User',
+  planName: String(plan?.planName || '').trim() || 'Untitled Workout',
+  duration: Number(plan?.duration || 0),
+  exerciseCount: Number(plan?.exerciseCount || 0),
+  createdAt: plan?.createdAt || null,
+  updatedAt: plan?.updatedAt || null,
+});
+
+const clearAdminUserPlansError = () => {
+  adminUserPlansError.value = '';
+};
+
+const loadAdminUserPlans = async () => {
+  if (!isAdminUser.value) {
+    adminUserPlans.value = [];
+    clearAdminUserPlansError();
+    return;
+  }
+
+  adminUserPlansLoading.value = true;
+  clearAdminUserPlansError();
+  try {
+    const response = await fetch(`${API_BASE}/api/admin/user-workout-plans`, {
+      credentials: 'include',
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to load user workout plans.');
+    }
+
+    adminUserPlans.value = Array.isArray(data?.workoutLists)
+      ? data.workoutLists.map(normalizeAdminUserPlan)
+      : [];
+  } catch (error) {
+    adminUserPlansError.value = error?.message || 'Failed to load user workout plans.';
+    adminUserPlans.value = [];
+  } finally {
+    adminUserPlansLoading.value = false;
+  }
+};
+
+const viewUserPlanReadOnly = () => {
+  saveMessage.value = 'Cross-user detail view is read-only and will be enabled in a future stage.';
 };
 
 const isPersonalWorkoutPlan = (plan = {}) => {
@@ -597,7 +851,7 @@ const clearSelection = async () => {
   selectedWorkoutId.value = '';
   isCreatingWorkout.value = false;
   hasSavedWorkoutDetails.value = false;
-  builderTab.value = 'select';
+  builderTab.value = 'create';
   resetPlannerDraft();
   await router.replace({ query: { ...route.query, planId: undefined } });
 };
@@ -1216,10 +1470,16 @@ const loadUserId = async () => {
     userId.value = data?.user?.id || null;
     const normalizedRole = String(data?.user?.role || data?.user?.roleSlug || '').trim().toLowerCase();
     isAdminUser.value = ['administrator', 'admin'].includes(normalizedRole);
+    if (!isAdminUser.value && builderTab.value === 'global') {
+      builderTab.value = 'create';
+    }
     canCreateFeaturedPlans.value = isAdminUser.value || Boolean(data?.canCreateFeaturedPlans || data?.user?.canCreateFeaturedPlans);
   } catch {
     userId.value = null;
     isAdminUser.value = false;
+    if (builderTab.value === 'global') {
+      builderTab.value = 'create';
+    }
     canCreateFeaturedPlans.value = false;
   }
 };
@@ -1359,6 +1619,9 @@ const deleteWorkoutSchedule = async (schedule) => {
 onMounted(async () => {
   const requestedPlanId = String(route.query?.planId || '').trim();
   await Promise.all([loadExercises(), loadUserId(), loadWorkoutPlanner(requestedPlanId), loadFeaturedWorkoutPlans(), loadActiveGoals()]);
+  if (isAdminUser.value) {
+    await loadGlobalPlans();
+  }
   document.addEventListener('click', closeDayMenu);
 });
 
@@ -1408,6 +1671,21 @@ watch(
     }
   }
 );
+
+watch(
+  () => [builderTab.value, globalPlansSubTab.value, isAdminUser.value],
+  async ([tab, subTab, isAdmin]) => {
+    if (!isAdmin || tab !== 'global') {
+      return;
+    }
+    if (subTab === 'global' && !globalPlans.value.length && !globalPlansLoading.value) {
+      await loadGlobalPlans();
+    }
+    if (subTab === 'user' && !adminUserPlans.value.length && !adminUserPlansLoading.value) {
+      await loadAdminUserPlans();
+    }
+  }
+);
 </script>
 
 <template>
@@ -1429,7 +1707,7 @@ watch(
             :aria-expanded="mainAccordion.build"
             @click="openMainAccordion('build')"
           >
-            <span class="main-builder-accordion__title">Build a Plan</span>
+            <span class="main-builder-accordion__title">Workout Plan Workspace</span>
             <span class="main-builder-accordion__icon" aria-hidden="true">
               <i class="fa-solid" :class="mainAccordion.build ? 'fa-minus' : 'fa-plus'"></i>
             </span>
@@ -1437,127 +1715,53 @@ watch(
           <div v-show="mainAccordion.build" class="main-builder-accordion__body">
 
       <!-- ── Tab Bar ──────────────────────────────────────────── -->
-      <nav class="builder-tabs" role="tablist" aria-label="Workout Builder sections">
+      <nav class="builder-tabs wa-h-tabs wa-h-tabs--tricolor" role="tablist" aria-label="Workout Builder sections">
         <button
           type="button"
           role="tab"
-          :aria-selected="builderTab === 'select'"
-          :class="['builder-tab', { 'builder-tab--active': builderTab === 'select' }]"
-          @click="builderTab = 'select'"
+          :aria-selected="builderTab === 'view'"
+          :class="['builder-tab', 'wa-h-tab', 'builder-tab--view-tone', { 'builder-tab--active': builderTab === 'view', 'wa-h-tab--active': builderTab === 'view' }]"
+          @click="builderTab = 'view'"
         >
-          <i class="fa-solid fa-list-check"></i>
-          <span class="tab-label-full">Select a Workout Plan</span>
-          <span class="tab-label-short">Select Plan</span>
+          <i class="fa-solid fa-folder-open"></i>
+          <span class="tab-label-full">View/Edit Plans</span>
+          <span class="tab-label-short">View/Edit</span>
         </button>
         <button
           type="button"
           role="tab"
           :aria-selected="builderTab === 'create'"
-          :class="['builder-tab', { 'builder-tab--active': builderTab === 'create' }]"
+          :class="['builder-tab', 'wa-h-tab', 'builder-tab--create-tone', { 'builder-tab--active': builderTab === 'create', 'wa-h-tab--active': builderTab === 'create' }]"
           @click="builderTab = 'create'; if (!canShowWorkoutDetails) { resetPlannerDraft(); }"
         >
           <i class="fa-solid fa-dumbbell"></i>
-          <span class="tab-label-full">Create a Workout Plan</span>
+          <span class="tab-label-full">Create A Workout Plan</span>
           <span class="tab-label-short">Create Plan</span>
         </button>
         <button
           type="button"
           role="tab"
           :aria-selected="builderTab === 'ai'"
-          :class="['builder-tab', { 'builder-tab--active': builderTab === 'ai' }]"
+          :class="['builder-tab', 'wa-h-tab', 'builder-tab--ai-tone', { 'builder-tab--active': builderTab === 'ai', 'wa-h-tab--active': builderTab === 'ai' }]"
           @click="builderTab = 'ai'"
         >
           <i class="fa-solid fa-wand-magic-sparkles"></i>
-          <span class="tab-label-full">Suggest with AI</span>
-          <span class="tab-label-short">AI Suggest</span>
+          <span class="tab-label-full">Suggest With AI</span>
+          <span class="tab-label-short">Suggest AI</span>
+        </button>
+        <button
+          v-if="isAdminUser"
+          type="button"
+          role="tab"
+          :aria-selected="builderTab === 'global'"
+          :class="['builder-tab', 'wa-h-tab', 'builder-tab--global-tone', { 'builder-tab--active': builderTab === 'global', 'wa-h-tab--active': builderTab === 'global' }]"
+          @click="builderTab = 'global'; globalPlansSubTab = 'global'"
+        >
+          <i class="fa-solid fa-earth-americas"></i>
+          <span class="tab-label-full">Manage Global Plans</span>
+          <span class="tab-label-short">Manage Global</span>
         </button>
       </nav>
-
-      <!-- ── TAB 1: Select a Workout Plan ─────────────────────── -->
-      <section v-show="builderTab === 'select'" class="builder-section schedule-hub-section">
-        <div v-if="loadingFeaturedPlans" class="builder-empty planner-empty planner-empty--loading" aria-live="polite">
-          <div class="planner-empty__icon">📋</div>
-          <h4>Loading Featured Workout Plans</h4>
-          <p>Pulling the latest featured plans from the database.</p>
-        </div>
-
-        <div v-else-if="!hasFeaturedWorkoutPlans" class="builder-empty planner-empty" aria-live="polite">
-          <div class="planner-empty__icon">📭</div>
-          <h4>No Featured Workout Plans Available</h4>
-          <p>Ask an administrator to publish a Featured plan to populate this section.</p>
-        </div>
-
-        <div v-else class="plan-carousel" aria-live="polite">
-          <div class="plan-carousel__header">
-            <h4>{{ activeWorkoutPlanSlide.title }}</h4>
-            <span class="plan-carousel__position">
-              Slide {{ currentWorkoutPlanSlide + 1 }} of {{ featuredWorkoutPlanSlides.length }}
-            </span>
-          </div>
-
-          <div class="plan-carousel__body" role="group" :aria-label="`${activeWorkoutPlanSlide.title} workout plans`">
-            <button
-              v-for="plan in activeWorkoutPlanSlide.plans"
-              :key="`${activeWorkoutPlanSlide.title}-${plan.planId || plan.name}`"
-              type="button"
-              :class="['plan-carousel__item', { 'plan-carousel__item--selected': selectedTemplatePlanId === plan.planId }]"
-              :disabled="cloningFeaturedPlanId === plan.planId"
-              @click="selectTemplatePlan(plan)"
-            >
-              <span class="plan-carousel__item-content">
-                <span class="plan-carousel__item-name">{{ plan.name }}</span>
-                <small class="plan-carousel__item-description">{{ plan.description || 'No description provided.' }}</small>
-              </span>
-              <small class="plan-carousel__item-meta">
-                {{ plan.estimatedDuration }} min • {{ plan.exerciseCount }} exercises
-              </small>
-            </button>
-          </div>
-
-          <div class="plan-carousel__footer">
-            <button
-              v-if="hasMultipleFeaturedWorkoutPlanSlides"
-              type="button"
-              class="plan-carousel__nav"
-              @click="goToPreviousWorkoutPlanSlide"
-            >
-              Previous
-            </button>
-
-            <div
-              v-if="hasMultipleFeaturedWorkoutPlanSlides"
-              class="plan-carousel__dots"
-              role="tablist"
-              aria-label="Workout plan slides"
-            >
-              <button
-                v-for="(slide, index) in featuredWorkoutPlanSlides"
-                :key="slide.title"
-                type="button"
-                role="tab"
-                :aria-selected="currentWorkoutPlanSlide === index"
-                :aria-label="`Go to ${slide.title}`"
-                :class="['plan-carousel__dot', { 'plan-carousel__dot--active': currentWorkoutPlanSlide === index }]"
-                @click="setWorkoutPlanSlide(index)"
-              ></button>
-            </div>
-
-            <button
-              v-if="hasMultipleFeaturedWorkoutPlanSlides"
-              type="button"
-              class="plan-carousel__nav"
-              @click="goToNextWorkoutPlanSlide"
-            >
-              Next
-            </button>
-          </div>
-
-          <p class="plan-carousel__selected">
-            Selected Plan:
-            <strong>{{ selectedTemplatePlanName || 'None' }}</strong>
-          </p>
-        </div>
-      </section>
 
       <!-- ── TAB 2: Create a Workout Plan ───────────────────────── -->
       <section v-show="builderTab === 'create'" class="builder-section collapsible-panel">
@@ -1770,7 +1974,172 @@ watch(
         </button>
       </footer>
 
-      <!-- ── TAB 3: Suggest with AI ─────────────────────────────── -->
+      <!-- ── TAB 3: View/Edit Plans ─────────────────────────────── -->
+      <section v-show="builderTab === 'view'" class="builder-section collapsible-panel">
+        <div class="existing-plans-panel" aria-live="polite">
+          <div class="existing-plans-panel__head">
+            <p class="existing-plans-panel__source-line">
+              <strong>Filter Plan Sources</strong>
+              <span>— Choose a source to view available plans.</span>
+            </p>
+          </div>
+
+          <nav class="wa-h-tabs select-source-tabs" role="tablist" aria-label="Show plans sources">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="planSourceTab === 'my'"
+              :class="['builder-subtab', 'wa-h-tab', 'select-source-tab', 'select-source-tab--my', { 'wa-h-tab--active': planSourceTab === 'my' }]"
+              @click="planSourceTab = 'my'"
+            >
+              <i class="fa-solid fa-clipboard-list"></i>
+              <span>My Plans</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="planSourceTab === 'global'"
+              :class="['builder-subtab', 'wa-h-tab', 'select-source-tab', 'select-source-tab--global', { 'wa-h-tab--active': planSourceTab === 'global' }]"
+              @click="planSourceTab = 'global'"
+            >
+              <i class="fa-solid fa-earth-americas"></i>
+              <span>Global Plans</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="planSourceTab === 'paid'"
+              :class="['builder-subtab', 'wa-h-tab', 'select-source-tab', 'select-source-tab--paid', { 'wa-h-tab--active': planSourceTab === 'paid' }]"
+              @click="planSourceTab = 'paid'"
+            >
+              <i class="fa-solid fa-share-nodes"></i>
+              <span>Paid / Shared Plans</span>
+            </button>
+          </nav>
+
+          <div v-show="planSourceTab === 'my'" class="plan-source-panel" aria-live="polite">
+            <div v-if="loadingPlanner" class="builder-empty planner-empty planner-empty--loading">
+              <div class="planner-empty__icon">📋</div>
+              <h4>Loading existing plans</h4>
+              <p>Fetching your saved workout plans from the current database.</p>
+            </div>
+
+            <div v-else-if="!hasWorkoutSchedules" class="builder-empty schedule-hub-empty">
+              <div class="planner-empty__icon">🗂️</div>
+              <h4>No saved plans yet</h4>
+              <p>Create a new plan using Add New Plan, then save it to see it here.</p>
+            </div>
+
+            <div v-else class="schedule-hub-list">
+              <WorkoutScheduleListItem
+                v-for="schedule in workoutSchedules"
+                :key="schedule.planId"
+                :schedule="schedule"
+                :selected="selectedWorkoutId === schedule.planId"
+                :deleting="deletingWorkoutId === schedule.planId"
+                @open="selectWorkoutSchedule"
+                @edit="editWorkoutSchedule"
+                @delete="deleteWorkoutSchedule"
+              />
+            </div>
+          </div>
+
+          <div v-show="planSourceTab === 'global'" class="plan-source-panel" aria-live="polite">
+            <div v-if="loadingFeaturedPlans" class="builder-empty planner-empty planner-empty--loading" aria-live="polite">
+              <div class="planner-empty__icon">📋</div>
+              <h4>Loading Global Plans</h4>
+              <p>Pulling global workout plans now.</p>
+            </div>
+
+            <div v-else-if="!hasFeaturedWorkoutPlans" class="builder-empty planner-empty" aria-live="polite">
+              <div class="planner-empty__icon">📭</div>
+              <h4>No Global Plans Available</h4>
+              <p>Global workout plans will appear here.</p>
+            </div>
+
+            <div v-else class="plan-carousel" aria-live="polite">
+              <div class="plan-carousel__header">
+                <h4>{{ activeWorkoutPlanSlide.title }}</h4>
+                <span class="plan-carousel__position">
+                  Slide {{ currentWorkoutPlanSlide + 1 }} of {{ featuredWorkoutPlanSlides.length }}
+                </span>
+              </div>
+
+              <div class="plan-carousel__body" role="group" :aria-label="`${activeWorkoutPlanSlide.title} workout plans`">
+                <button
+                  v-for="plan in activeWorkoutPlanSlide.plans"
+                  :key="`${activeWorkoutPlanSlide.title}-${plan.planId || plan.name}`"
+                  type="button"
+                  :class="['plan-carousel__item', { 'plan-carousel__item--selected': selectedTemplatePlanId === plan.planId }]"
+                  :disabled="cloningFeaturedPlanId === plan.planId"
+                  @click="selectTemplatePlan(plan)"
+                >
+                  <span class="plan-carousel__item-content">
+                    <span class="plan-carousel__item-name">{{ plan.name }}</span>
+                    <small class="plan-carousel__item-description">{{ plan.description || 'No description provided.' }}</small>
+                  </span>
+                  <small class="plan-carousel__item-meta">
+                    {{ plan.estimatedDuration }} min • {{ plan.exerciseCount }} exercises
+                  </small>
+                </button>
+              </div>
+
+              <div class="plan-carousel__footer">
+                <button
+                  v-if="hasMultipleFeaturedWorkoutPlanSlides"
+                  type="button"
+                  class="plan-carousel__nav"
+                  @click="goToPreviousWorkoutPlanSlide"
+                >
+                  Previous
+                </button>
+
+                <div
+                  v-if="hasMultipleFeaturedWorkoutPlanSlides"
+                  class="plan-carousel__dots"
+                  role="tablist"
+                  aria-label="Workout plan slides"
+                >
+                  <button
+                    v-for="(slide, index) in featuredWorkoutPlanSlides"
+                    :key="slide.title"
+                    type="button"
+                    role="tab"
+                    :aria-selected="currentWorkoutPlanSlide === index"
+                    :aria-label="`Go to ${slide.title}`"
+                    :class="['plan-carousel__dot', { 'plan-carousel__dot--active': currentWorkoutPlanSlide === index }]"
+                    @click="setWorkoutPlanSlide(index)"
+                  ></button>
+                </div>
+
+                <button
+                  v-if="hasMultipleFeaturedWorkoutPlanSlides"
+                  type="button"
+                  class="plan-carousel__nav"
+                  @click="goToNextWorkoutPlanSlide"
+                >
+                  Next
+                </button>
+              </div>
+
+              <p class="plan-carousel__selected">
+                Selected Plan:
+                <strong>{{ selectedTemplatePlanName || 'None' }}</strong>
+              </p>
+            </div>
+          </div>
+
+          <div v-show="planSourceTab === 'paid'" class="plan-source-panel" aria-live="polite">
+            <div class="builder-empty planner-empty planner-empty--compact">
+              <div class="planner-empty__icon">💳</div>
+              <h4>Paid / Shared Plans</h4>
+              <p>Paid and shared workout plans will appear here.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAB 4: Suggest with AI ─────────────────────────────── -->
       <section v-show="builderTab === 'ai'" class="builder-section ai-suggest-section">
         <div v-if="!isAdminUser" class="ai-suggest-body planner-empty">
           <div class="planner-empty__icon">🔒</div>
@@ -1807,55 +2176,143 @@ watch(
           <div v-else class="ai-feedback ai-feedback--hint">Your response will appear here once the request completes.</div>
         </div>
       </section>
-          </div>
-        </section>
 
-        <section class="main-builder-accordion__item" :class="{ open: mainAccordion.existing }">
-          <button
-            type="button"
-            class="main-builder-accordion__header"
-            :aria-expanded="mainAccordion.existing"
-            @click="openMainAccordion('existing')"
-          >
-            <span class="main-builder-accordion__title">Show Existing Plans</span>
-            <span class="main-builder-accordion__icon" aria-hidden="true">
-              <i class="fa-solid" :class="mainAccordion.existing ? 'fa-minus' : 'fa-plus'"></i>
-            </span>
-          </button>
-          <div v-show="mainAccordion.existing" class="main-builder-accordion__body">
-            <div class="existing-plans-panel" aria-live="polite">
-              <div class="existing-plans-panel__head">
-                <h4>Saved Workout Plans</h4>
-                <p>Plan Name, Duration, Exercise Count, and quick actions.</p>
+      <!-- ── TAB 5: Manage Global Plans (Admin Only) ───────────── -->
+      <section v-if="isAdminUser" v-show="builderTab === 'global'" class="builder-section ai-suggest-section">
+        <div class="ai-suggest-body ai-suggest-card global-plans-shell">
+          <h4>Manage Global Plans</h4>
+          <nav class="wa-h-tabs global-subtabs" role="tablist" aria-label="Global workout plans sub sections">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="globalPlansSubTab === 'global'"
+              :class="['builder-subtab', 'wa-h-tab', 'builder-subtab--global', { 'wa-h-tab--active': globalPlansSubTab === 'global' }]"
+              @click="globalPlansSubTab = 'global'"
+            >
+              <i class="fa-solid fa-layer-group"></i>
+              <span>Global Plans</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="globalPlansSubTab === 'user'"
+              :class="['builder-subtab', 'wa-h-tab', 'builder-subtab--user', { 'wa-h-tab--active': globalPlansSubTab === 'user' }]"
+              @click="globalPlansSubTab = 'user'"
+            >
+              <i class="fa-solid fa-users"></i>
+              <span>User Plans</span>
+            </button>
+          </nav>
+
+          <div v-show="globalPlansSubTab === 'global'" class="global-subtab-panel planner-empty" aria-live="polite">
+            <div class="global-plans-embed">
+              <div class="global-plans-embed__head">
+                <button type="button" class="btn btn-sm global-plans-embed__add" @click="createGlobalPlanDraft">
+                  <i class="fa-solid fa-plus"></i>
+                  <span>Add Global Plan</span>
+                </button>
               </div>
 
-              <div v-if="loadingPlanner" class="builder-empty planner-empty planner-empty--loading">
-                <div class="planner-empty__icon">📋</div>
-                <h4>Loading existing plans</h4>
-                <p>Fetching your saved workout plans from the current database.</p>
-              </div>
+              <div v-if="globalPlansError" class="global-plans-embed__feedback global-plans-embed__feedback--error">{{ globalPlansError }}</div>
+              <div v-if="globalPlansSuccess" class="global-plans-embed__feedback global-plans-embed__feedback--ok">{{ globalPlansSuccess }}</div>
 
-              <div v-else-if="!hasWorkoutSchedules" class="builder-empty schedule-hub-empty">
-                <div class="planner-empty__icon">🗂️</div>
-                <h4>No saved plans yet</h4>
-                <p>Create a new plan using Add New Plan, then save it to see it here.</p>
-              </div>
-
-              <div v-else class="schedule-hub-list">
-                <WorkoutScheduleListItem
-                  v-for="schedule in workoutSchedules"
-                  :key="schedule.planId"
-                  :schedule="schedule"
-                  :selected="selectedWorkoutId === schedule.planId"
-                  :deleting="deletingWorkoutId === schedule.planId"
-                  @open="selectWorkoutSchedule"
-                  @edit="editWorkoutSchedule"
-                  @delete="deleteWorkoutSchedule"
-                />
+              <div class="table-responsive">
+                <table class="table align-middle mb-0 global-plans-table">
+                  <thead>
+                    <tr>
+                      <th><i class="fa-solid fa-clipboard-list global-plans-table__th-icon" aria-hidden="true"></i>Plan Name</th>
+                      <th>Category</th>
+                      <th>Goal Type</th>
+                      <th>Days</th>
+                      <th>Exercises</th>
+                      <th><i class="fa-solid fa-lock-open global-plans-table__th-icon" aria-hidden="true"></i>Access</th>
+                      <th><i class="fa-solid fa-clock global-plans-table__th-icon" aria-hidden="true"></i>Updated</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="globalPlansLoading">
+                      <td colspan="8" class="text-center text-muted py-3">Loading global workout plans...</td>
+                    </tr>
+                    <tr v-for="plan in globalPlans" :key="plan.planId">
+                      <td class="fw-semibold">{{ plan.name }}</td>
+                      <td>{{ plan.category }}</td>
+                      <td>{{ formatGlobalGoalTypeLabel(plan.goalType) }}</td>
+                      <td>{{ plan.dayCount }}</td>
+                      <td>{{ plan.exerciseCount }}</td>
+                      <td>{{ formatGlobalAccess(plan) }}</td>
+                      <td>{{ formatGlobalUpdatedDate(plan.updatedAt) }}</td>
+                      <td class="text-end">
+                        <div class="global-plans-table__actions">
+                          <button type="button" class="btn btn-sm global-plans-table__btn global-plans-table__btn--open" @click="viewGlobalPlanSummary(plan)">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                            <span>View</span>
+                          </button>
+                          <button type="button" class="btn btn-sm global-plans-table__btn global-plans-table__btn--delete" :disabled="globalPlansDeletingId === plan.planId" @click="deleteGlobalPlan(plan)">
+                            <i v-if="globalPlansDeletingId === plan.planId" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                            <i v-else class="fa-solid fa-trash" aria-hidden="true"></i>
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="!globalPlansLoading && !globalPlans.length">
+                      <td colspan="8" class="text-center text-muted py-3">No global workout plans found.</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
+          <div v-show="globalPlansSubTab === 'user'" class="global-subtab-panel planner-empty" aria-live="polite">
+            <div class="global-plans-embed">
+              <div v-if="adminUserPlansError" class="global-plans-embed__feedback global-plans-embed__feedback--error">{{ adminUserPlansError }}</div>
+              <div class="table-responsive">
+                <table class="table align-middle mb-0 global-plans-table user-plans-table">
+                  <thead>
+                    <tr>
+                      <th><i class="fa-solid fa-user global-plans-table__th-icon" aria-hidden="true"></i>User</th>
+                      <th><i class="fa-solid fa-clipboard-list global-plans-table__th-icon" aria-hidden="true"></i>Plan Name</th>
+                      <th><i class="fa-solid fa-clock global-plans-table__th-icon" aria-hidden="true"></i>Duration</th>
+                      <th><i class="fa-solid fa-dumbbell global-plans-table__th-icon" aria-hidden="true"></i>Exercises</th>
+                      <th><i class="fa-solid fa-calendar-plus global-plans-table__th-icon" aria-hidden="true"></i>Created</th>
+                      <th><i class="fa-solid fa-clock-rotate-left global-plans-table__th-icon" aria-hidden="true"></i>Updated</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="adminUserPlansLoading">
+                      <td colspan="7" class="text-center text-muted py-3">Loading user workout plans...</td>
+                    </tr>
+                    <tr v-for="plan in adminUserPlans" :key="`user-${plan.planId}-${plan.userId || 0}`">
+                      <td>{{ plan.displayName }}</td>
+                      <td class="fw-semibold">{{ plan.planName }}</td>
+                      <td>{{ Number(plan.duration || 0) }} min</td>
+                      <td>{{ Number(plan.exerciseCount || 0) }}</td>
+                      <td>{{ formatUserPlanCreatedAt(plan) }}</td>
+                      <td>{{ formatUpdatedAt(plan.updatedAt) }}</td>
+                      <td class="text-end">
+                        <div class="global-plans-table__actions">
+                          <button type="button" class="btn btn-sm global-plans-table__btn global-plans-table__btn--open" @click="viewUserPlanReadOnly(plan)">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                            <span>Open</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="!adminUserPlansLoading && !adminUserPlans.length">
+                      <td colspan="7" class="text-center text-muted py-3">No user workout plans found.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+          </div>
         </section>
+
       </section>
 
     <ExercisePickerModal
@@ -1920,43 +2377,63 @@ watch(
 
 .builder-tab {
   flex: 1;
-  border: none;
-  background: transparent;
-  border-radius: 7px;
-  min-height: 42px;
-  padding: 0 10px;
+  border: 1px solid transparent;
+  background: #1d4f9f;
+  border-radius: 3px;
+  min-height: 34px;
+  padding: 7px 10px;
   font-weight: 700;
-  font-size: 0.86rem;
-  color: #64748b;
+  font-size: 0.8rem;
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: filter 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
   cursor: pointer;
   white-space: nowrap;
   min-width: 0;
   text-align: center;
 }
 
+/* Keep top builder tabs rectangular even when generic mobile button rules apply pill radii. */
+.builder-tabs .builder-tab {
+  border-radius: 3px !important;
+}
+
 .builder-tab i {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  color: #ffffff;
+}
+
+.builder-tab--create-tone {
+  background: #0d5b55;
+}
+
+.builder-tab--ai-tone {
+  background: #8f1f2a;
+}
+
+.builder-tab--view-tone {
+  background: #3b5b8a;
+}
+
+.builder-tab--global-tone {
+  background: #D97706;
 }
 
 .builder-tab:hover:not(:disabled) {
-  background: #f1f5f9;
-  color: #1e293b;
+  filter: brightness(1.08);
 }
 
 .builder-tab--active {
-  background: #2563eb;
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  box-shadow: inset 0 -2px 0 #c8ddff, 0 0 0 1px rgba(196, 220, 255, 0.28);
+  filter: brightness(1.2);
 }
 
-.builder-tab--active:hover {
-  background: #1d4ed8;
-  color: #ffffff;
+.builder-tab:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .builder-tab:disabled {
@@ -2195,6 +2672,32 @@ watch(
   font-size: 0.86rem;
 }
 
+.existing-plans-panel__source-line {
+  margin: 0;
+  color: var(--wb-text-secondary);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.existing-plans-panel__source-line strong {
+  color: var(--wb-text);
+  font-size: 1.02rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.existing-plans-panel__source-line span {
+  line-height: 1.35;
+}
+
+@media (max-width: 768px) {
+  .existing-plans-panel__source-line {
+    flex-wrap: wrap;
+  }
+}
 .plan-carousel {
   border: 1px solid #dce5f3;
   border-radius: 16px;
@@ -3445,13 +3948,12 @@ watch(
 }
 
 .workout-builder-page .builder-tab {
-  color: var(--wb-text-muted);
-  border-radius: 7px;
+  color: #ffffff;
+  border-radius: 3px;
 }
 
 .workout-builder-page .builder-tab:hover:not(:disabled) {
-  background: var(--wb-surface-2);
-  color: var(--wb-text);
+  filter: brightness(1.08);
 }
 
 .workout-builder-page .plan-carousel__item {
@@ -3459,9 +3961,205 @@ watch(
 }
 
 .workout-builder-page .builder-tab--active {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--wb-accent) 85%, #1e40af 15%), color-mix(in srgb, var(--wb-accent) 70%, #1d4ed8 30%));
+  background: unset;
   color: #ffffff;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
+  box-shadow: inset 0 -2px 0 #c8ddff, 0 0 0 1px rgba(196, 220, 255, 0.28);
+  filter: brightness(1.2);
+}
+
+.workout-builder-page .builder-tab--create-tone {
+  background: #0d5b55;
+}
+
+.workout-builder-page .builder-tab--ai-tone {
+  background: #8f1f2a;
+}
+
+.workout-builder-page .builder-tab--view-tone {
+  background: #3b5b8a;
+}
+
+.workout-builder-page .builder-tab--global-tone {
+  background: #D97706;
+}
+
+/* Override shared wa-h-tabs !important active backgrounds so builder tab tones stay fixed by intent. */
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--create-tone,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--create-tone[aria-selected="true"],
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--create-tone.wa-h-tab--active,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--create-tone.active {
+  background: #0d5b55 !important;
+  color: #ffffff !important;
+}
+
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--ai-tone,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--ai-tone[aria-selected="true"],
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--ai-tone.wa-h-tab--active,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--ai-tone.active {
+  background: #8f1f2a !important;
+  color: #ffffff !important;
+}
+
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--global-tone,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--global-tone[aria-selected="true"],
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--global-tone.wa-h-tab--active,
+.workout-builder-page .wa-h-tabs .builder-tab.builder-tab--global-tone.active {
+  background: #D97706 !important;
+  color: #ffffff !important;
+}
+
+.global-plans-shell {
+  gap: 12px;
+}
+
+.global-subtabs {
+  width: min(460px, 100%);
+}
+
+.select-source-tabs {
+  width: min(560px, 100%);
+  margin-bottom: 10px;
+}
+
+.select-source-tabs .select-source-tab {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  gap: 6px;
+  border-radius: 3px !important;
+}
+
+.select-source-tabs .select-source-tab i {
+  font-size: 0.74rem;
+  color: #ffffff;
+}
+
+.select-source-tabs .select-source-tab--my:not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #1d4f9f !important;
+}
+
+.select-source-tabs .select-source-tab--global:not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #0d5b55 !important;
+}
+
+.select-source-tabs .select-source-tab--paid:not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #475569 !important;
+}
+
+.plan-source-panel {
+  text-align: left;
+}
+
+.global-subtabs .builder-subtab {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  gap: 6px;
+  border-radius: 3px !important;
+}
+
+.global-subtabs .builder-subtab i {
+  font-size: 0.74rem;
+  color: #ffffff;
+}
+
+.global-subtabs .builder-subtab--global:not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #1d4f9f !important;
+}
+
+.global-subtabs .builder-subtab--user:not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #0d5b55 !important;
+}
+
+.global-subtab-panel {
+  margin-top: 4px;
+  text-align: left;
+}
+
+.global-subtab-panel p {
+  margin: 0;
+}
+
+.global-plans-embed {
+  display: grid;
+  gap: 10px;
+}
+
+.global-plans-embed__head {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.global-plans-embed__add {
+  border-radius: 3px !important;
+  background: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+.global-plans-embed__feedback {
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border-radius: 3px;
+}
+
+.global-plans-embed__feedback--error {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.global-plans-embed__feedback--ok {
+  color: #14532d;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+}
+
+.global-plans-table th,
+.global-plans-table td {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.global-plans-table__th-icon {
+  margin-right: 6px;
+}
+
+.global-plans-table__actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.global-plans-table__btn {
+  border-radius: 3px !important;
+  min-height: 28px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffffff;
+  border: 1px solid transparent;
+}
+
+.global-plans-table__btn--open {
+  background: #2563eb;
+  border-color: #1d4ed8;
+}
+
+.global-plans-table__btn--edit {
+  background: #0d5b55;
+  border-color: #0f766e;
+}
+
+.global-plans-table__btn--delete {
+  background: #8f1f2a;
+  border-color: #b91c1c;
 }
 
 .workout-builder-page .builder-tab:disabled {
@@ -4174,7 +4872,7 @@ watch(
     font-size: 0.78rem;
     padding: 0 7px;
     gap: 5px;
-    border-radius: 7px;
+    border-radius: 3px;
   }
 
   .builder-tab i {

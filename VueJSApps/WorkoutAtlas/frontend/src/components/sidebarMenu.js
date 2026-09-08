@@ -92,11 +92,6 @@ export const sidebarMenus = ref([
                 icon: 'fa-solid fa-id-badge'
             },
             {
-                name: 'Global Workout Plans',
-                link_name: 'admin_global_workout_plans',
-                icon: 'fa-solid fa-earth-americas'
-            },
-            {
                 name: 'Chat',
                 link_name: 'chat',
                 icon: 'fa-solid fa-comments'

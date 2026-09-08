@@ -12,8 +12,6 @@ const {
   createRequestId,
 } = require('../services/aiGatewayService');
 
-const ADMIN_ROLE_VALUES = ['admin', 'administrator'];
-
 function isAdminSession(req) {
   const roleSlug = String(req?.session?.user?.roleSlug || '').trim().toLowerCase();
   if (roleSlug === 'administrator' || roleSlug === 'admin') {

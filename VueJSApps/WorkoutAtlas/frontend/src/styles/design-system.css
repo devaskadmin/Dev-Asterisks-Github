@@ -146,13 +146,37 @@ button,
 .btn-primary,
 .primary-button,
 button.primary,
-.btn-success,
 .btn-accent,
 .btn-cta {
-  background: linear-gradient(135deg, var(--wa-accent), #d5ff77) !important;
-  color: var(--wa-accent-contrast) !important;
+  background: #1f6bff !important;
+  color: #ffffff !important;
   border: 0 !important;
-  box-shadow: 0 10px 24px rgba(164, 255, 79, 0.24) !important;
+  box-shadow: none !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active,
+.btn-primary.active,
+.primary-button:hover,
+.primary-button:focus,
+.primary-button:active,
+.primary-button.active,
+button.primary:hover,
+button.primary:focus,
+button.primary:active,
+button.primary.active,
+.btn-accent:hover,
+.btn-accent:focus,
+.btn-accent:active,
+.btn-accent.active,
+.btn-cta:hover,
+.btn-cta:focus,
+.btn-cta:active,
+.btn-cta.active {
+  background: #1657d9 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 .btn-outline,
@@ -284,5 +308,98 @@ svg {
   .workout-tile,
   .stat-tile {
     border-radius: 20px !important;
+  }
+}
+
+/* WorkoutAtlas reusable horizontal tab standard (opt-in only). */
+.wa-h-tabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  background: #1b2444 !important;
+  border: 1px solid rgba(145, 160, 200, 0.24) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2) !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.wa-h-tabs .wa-h-tab,
+.wa-h-tabs > button,
+.wa-h-tabs .nav-link {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  margin: 0;
+  border: 1px solid transparent !important;
+  border-radius: 3px !important;
+  background: #1b2444 !important;
+  color: #ffffff !important;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: none !important;
+  text-decoration: none;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wa-h-tabs.wa-h-tabs--tricolor > :nth-child(1):not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #1d4f9f !important;
+}
+
+.wa-h-tabs.wa-h-tabs--tricolor > :nth-child(2):not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #0d5b55 !important;
+}
+
+.wa-h-tabs.wa-h-tabs--tricolor > :nth-child(3):not(.wa-h-tab--active):not(.active):not([aria-selected="true"]) {
+  background: #8f1f2a !important;
+}
+
+.wa-h-tabs .wa-h-tab--active,
+.wa-h-tabs .active,
+.wa-h-tabs [aria-selected="true"] {
+  background: #1d4f9f !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 -2px 0 0 rgba(200, 221, 255, 0.95), 0 0 0 1px rgba(196, 220, 255, 0.28) !important;
+}
+
+.wa-h-tabs .wa-h-tab:hover:not(:disabled):not(.wa-h-tab--active):not(.active),
+.wa-h-tabs > button:hover:not(:disabled):not(.wa-h-tab--active):not(.active),
+.wa-h-tabs .nav-link:hover:not(.disabled):not(.wa-h-tab--active):not(.active) {
+  filter: brightness(1.08);
+}
+
+.wa-h-tabs .wa-h-tab:disabled,
+.wa-h-tabs > button:disabled,
+.wa-h-tabs .nav-link.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .wa-h-tabs {
+    gap: 3px;
+    padding: 4px;
+    border-radius: 8px !important;
+  }
+
+  .wa-h-tabs .wa-h-tab,
+  .wa-h-tabs > button,
+  .wa-h-tabs .nav-link {
+    min-height: 36px;
+    padding: 6px 6px;
+    font-size: 0.74rem;
+    gap: 4px;
   }
 }

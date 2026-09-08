@@ -3,10 +3,10 @@ param(
     [string]$Mode = 'DryRun',
 
     [string]$SourceRoot = (Join-Path $PSScriptRoot '..\..\frontend\src\assets\Excerises'),
-    [string]$TargetRoot = (Join-Path $PSScriptRoot '..\AWS-S3-CONTENT\APP\exercise-library'),
-    [string]$MappingFile = (Join-Path $PSScriptRoot '..\AWS-S3-CONTENT\TEST\exercise-content-migration\last-plan.json'),
-    [string]$AuditCsv = (Join-Path $PSScriptRoot '..\AWS-S3-CONTENT\TEST\exercise-content-migration\powershell-audit.csv'),
-    [string]$ManifestPath = (Join-Path $PSScriptRoot '..\AWS-S3-CONTENT\TEST\exercise-content-migration\powershell-manifest.json'),
+    [string]$TargetRoot = (Join-Path $PSScriptRoot '..\workoutatlas-s3-data\APP\exercise-library'),
+    [string]$MappingFile = (Join-Path $PSScriptRoot '..\workoutatlas-s3-data\TEST\exercise-content-migration\last-plan.json'),
+    [string]$AuditCsv = (Join-Path $PSScriptRoot '..\workoutatlas-s3-data\TEST\exercise-content-migration\powershell-audit.csv'),
+    [string]$ManifestPath = (Join-Path $PSScriptRoot '..\workoutatlas-s3-data\TEST\exercise-content-migration\powershell-manifest.json'),
     [switch]$AllowDelete
 )
 
