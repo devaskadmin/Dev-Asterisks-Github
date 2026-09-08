@@ -231,7 +231,6 @@ const allMenuLinks = [
   { label: 'Scheduling', shortLabel: 'Plan', route: '/calendar', icon: 'fa-solid fa-calendar-days', section: 'Admin', roles: ['admin'] },
   { label: 'Users', shortLabel: 'Users', route: '/admin/users', icon: 'fa-solid fa-users', section: 'Admin', roles: ['admin'] },
   { label: 'Roles', shortLabel: 'Roles', route: '/admin/roles', icon: 'fa-solid fa-user-shield', section: 'Admin', roles: ['admin'] },
-  { label: 'Global Workout Plans', shortLabel: 'Global Plans', route: '/admin/global-workout-plans', icon: 'fa-solid fa-earth-americas', section: 'Admin', roles: ['admin'] },
   { label: 'Test Roles', shortLabel: 'Test', route: '/admin/role-tester', icon: 'fa-solid fa-vials', section: 'Admin', roles: ['admin'] },
   { label: 'Tools', shortLabel: 'Tools', route: '/tools', icon: 'fa-solid fa-screwdriver-wrench', section: 'Admin', roles: ['admin'] },
   { label: 'Admin Chat', shortLabel: 'Chat', route: '/chat', icon: 'fa-solid fa-comments', section: 'Admin', roles: ['admin'] },

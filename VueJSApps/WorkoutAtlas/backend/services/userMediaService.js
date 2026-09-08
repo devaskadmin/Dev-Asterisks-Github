@@ -4,7 +4,7 @@
  * userMediaService.js
  * FlexFit v0.83.11 — User Media Lifecycle Management
  *
- * Manages the per-user media folder structure under AWS-S3-CONTENT/USERS/{UserID}/.
+ * Manages the per-user media folder structure under workoutatlas-s3-data/USERS/{UserID}/.
  * Uses the same LOCAL_AWS_PATH env var as mediaResolver.js.
  */
 
@@ -13,9 +13,10 @@ const path = require('path');
 
 const BACKEND_ROOT                   = path.resolve(__dirname, '..');
 const REPO_ROOT                      = path.resolve(BACKEND_ROOT, '..');
-const DEFAULT_LOCAL_AWS_RELATIVE_PATH = 'backend/AWS-S3-CONTENT';
+const DEFAULT_LOCAL_AWS_RELATIVE_PATH = 'backend/workoutatlas-s3-data';
 
-const USER_MEDIA_SUBDIRS = ['images', 'videos', 'exercises'];
+const USER_MEDIA_SUBDIRS = ['images', 'videos', 'exercises', path.join('nutrition', 'images')];
+const USER_NUTRITION_IMAGE_SUBDIR = path.join('nutrition', 'images');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -53,7 +54,7 @@ function requireValidUserId(userId) {
 
 /**
  * Return the absolute filesystem path to a user's media root folder.
- * AWS-S3-CONTENT/USERS/{userId}
+ * workoutatlas-s3-data/USERS/{userId}
  */
 function getUserMediaPath(userId) {
   const uid = requireValidUserId(userId);
@@ -64,10 +65,11 @@ function getUserMediaPath(userId) {
  * Idempotently create the full media folder structure for a user.
  *
  * Creates:
- *   AWS-S3-CONTENT/USERS/{userId}/
- *   AWS-S3-CONTENT/USERS/{userId}/images/
- *   AWS-S3-CONTENT/USERS/{userId}/videos/
- *   AWS-S3-CONTENT/USERS/{userId}/exercises/
+ *   workoutatlas-s3-data/USERS/{userId}/
+ *   workoutatlas-s3-data/USERS/{userId}/images/
+ *   workoutatlas-s3-data/USERS/{userId}/videos/
+ *   workoutatlas-s3-data/USERS/{userId}/exercises/
+ *   workoutatlas-s3-data/USERS/{userId}/nutrition/images/
  *
  * @returns {object} { success, userId, basePath, folders }
  */
@@ -87,18 +89,18 @@ async function ensureUserMediaFolders(userId) {
   // Root user folder
   const rootExisted = fs.existsSync(userRoot);
   if (!rootExisted) {
-    fs.mkdirSync(userRoot);
+    fs.mkdirSync(userRoot, { recursive: true });
   }
   folders.root = rootExisted ? 'existing' : 'created';
 
-  // Subfolders: images / videos / exercises
+  // Subfolders: images / videos / exercises / nutrition/images
   for (const sub of USER_MEDIA_SUBDIRS) {
     const subPath  = path.join(userRoot, sub);
     const existed  = fs.existsSync(subPath);
     if (!existed) {
-      fs.mkdirSync(subPath);
+      fs.mkdirSync(subPath, { recursive: true });
     }
-    folders[sub] = existed ? 'existing' : 'created';
+    folders[sub.replace(/\\/g, '/')] = existed ? 'existing' : 'created';
   }
 
   if (!rootExisted) {
@@ -114,12 +116,39 @@ async function ensureUserMediaFolders(userId) {
 }
 
 /**
+ * Idempotently create the nutrition image folder for a user.
+ *
+ * Creates:
+ *   workoutatlas-s3-data/USERS/{userId}/nutrition/images/
+ *
+ * @returns {object} { success, userId, relativePath, absolutePath, folder }
+ */
+async function ensureUserNutritionImageFolder(userId) {
+  const uid = requireValidUserId(userId);
+  const userRoot = getUserMediaPath(uid);
+  const nutritionImagesPath = path.join(userRoot, USER_NUTRITION_IMAGE_SUBDIR);
+
+  const existed = fs.existsSync(nutritionImagesPath);
+  if (!existed) {
+    fs.mkdirSync(nutritionImagesPath, { recursive: true });
+  }
+
+  return {
+    success: true,
+    userId: uid,
+    relativePath: path.join('USERS', String(uid), 'nutrition', 'images').replace(/\\/g, '/'),
+    absolutePath: nutritionImagesPath,
+    folder: existed ? 'existing' : 'created',
+  };
+}
+
+/**
  * Recursively delete a user's media folder.
  *
  * Safety constraints enforced:
  *   - userId must be a positive integer
  *   - resolved path must equal USERS/{userId} exactly
- *   - path must be strictly inside AWS-S3-CONTENT/USERS/
+ *   - path must be strictly inside workoutatlas-s3-data/USERS/
  *   - will never delete the USERS root or the content root
  *   - no path traversal allowed
  *
@@ -171,5 +200,6 @@ async function deleteUserMediaFolders(userId) {
 
 module.exports = {
   ensureUserMediaFolders,
+  ensureUserNutritionImageFolder,
   deleteUserMediaFolders,
 };

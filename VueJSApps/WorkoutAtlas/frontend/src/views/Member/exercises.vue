@@ -9,6 +9,11 @@
    
    // ---- VARIABLES ----
    const allExercises = ref([]);
+  const searchExerciseRows = ref([]);
+  const searchResultTotal = ref(0);
+  const searchTotalPages = ref(0);
+  const searchFilterOptions = ref({ muscleGroups: [], equipment: [] });
+  const logLibraryLoaded = ref(false);
    const selectedExercise = ref(null);
    const workoutType = ref("All");
    const selectedMuscleGroup = ref("All");
@@ -16,7 +21,7 @@
    const searchExercise = ref("");
    const workoutList = ref([]);
    const activeTab = ref('search-exercises'); // default tab
-   const filtersOpen = ref(false); // mobile accordion â€“ collapsed by default
+  const filtersOpen = ref(false);
    const existingLogs = ref([]);
   const exercisesLoadError = ref("");
   const exerciseView = ref('all');
@@ -69,14 +74,6 @@
   });
    
    // ---- FILTER EXERCISES ----
-   const searchFilters = computed(() => ({
-    search: searchExercise.value,
-    workoutType: workoutType.value,
-    muscleGroup: selectedMuscleGroup.value,
-    equipment: selectedEquipment.value,
-    ownership: 'all',
-   }));
-
    const logFilters = computed(() => ({
     search: logSearchExercise.value,
     workoutType: logWorkoutTypeFilter.value,
@@ -85,10 +82,7 @@
     ownership: logOwnershipFilter.value,
    }));
 
-   const filteredExercises = useExerciseFiltering({
-    rowsRef: allExercises,
-    filtersRef: searchFilters,
-   });
+  const filteredExercises = computed(() => searchExerciseRows.value);
 
    const filteredLogExercises = useExerciseFiltering({
     rowsRef: allExercises,
@@ -100,7 +94,10 @@
    
    // ---- GET MUSCLE GROUPS + EQUIPMENT ----
    const muscleGroups = computed(() => {
-     const groups = Array.from(new Set(allExercises.value.map(ex => ex.MuscleGroup)));
+     const groups = Array.from(new Set([
+       ...searchFilterOptions.value.muscleGroups,
+       ...allExercises.value.map(ex => ex.MuscleGroup),
+     ].filter(Boolean)));
      groups.sort((a, b) => {
        if (a === null || a === undefined) return 1;
        if (b === null || b === undefined) return -1;
@@ -109,7 +106,10 @@
      return ["All", ...groups];
    });
    const equipmentList = computed(() => {
-     const groups = new Set(allExercises.value.map(ex => ex.Equipment));
+     const groups = new Set([
+       ...searchFilterOptions.value.equipment,
+       ...allExercises.value.map(ex => ex.Equipment),
+     ].filter(Boolean));
      return ["All", ...groups];
    });
    // ---- GET MUSCLE GROUPS + EQUIPMENT ----
@@ -418,7 +418,17 @@ const loadExercisesLibrary = async () => {
   exercisesLoadError.value = "";
 
   try {
-    const res = await fetch(`${API_BASE}/api/exercises?view=${encodeURIComponent(exerciseView.value)}`, {
+    const query = new URLSearchParams({
+      paginated: '1',
+      view: exerciseView.value,
+      search: searchExercise.value.trim(),
+      workoutType: workoutType.value,
+      muscleGroup: selectedMuscleGroup.value,
+      equipment: selectedEquipment.value,
+      page: String(currentPage.value),
+      pageSize: String(itemsPerPage.value),
+    });
+    const res = await fetch(`${API_BASE}/api/exercises?${query}`, {
       credentials: 'include'
     });
 
@@ -427,10 +437,17 @@ const loadExercisesLibrary = async () => {
     }
 
     const data = await res.json();
-    allExercises.value = Array.isArray(data) ? data : [];
+    searchExerciseRows.value = Array.isArray(data?.items) ? data.items : [];
+    searchResultTotal.value = Number(data?.total || 0);
+    searchTotalPages.value = Number(data?.totalPages || 0);
+    searchFilterOptions.value = {
+      muscleGroups: Array.isArray(data?.filters?.muscleGroups) ? data.filters.muscleGroups : [],
+      equipment: Array.isArray(data?.filters?.equipment) ? data.filters.equipment : [],
+    };
+    logLibraryLoaded.value = false;
 
     const nextFavoriteIds = new Set();
-    allExercises.value.forEach((ex) => {
+    searchExerciseRows.value.forEach((ex) => {
       if (Number(ex?.IsFavorite || 0) === 1) {
         nextFavoriteIds.add(Number(ex.ExerciseID));
       }
@@ -438,10 +455,21 @@ const loadExercisesLibrary = async () => {
     favoriteExerciseIds.value = nextFavoriteIds;
   } catch (err) {
     console.error('âŒ Failed to load exercises:', err);
-    allExercises.value = [];
+    searchExerciseRows.value = [];
+    searchResultTotal.value = 0;
+    searchTotalPages.value = 0;
     favoriteExerciseIds.value = new Set();
     exercisesLoadError.value = 'Could not load exercises right now.';
   }
+};
+
+const loadLogExercisesLibrary = async () => {
+  if (logLibraryLoaded.value) return;
+  const res = await fetch(`${API_BASE}/api/exercises?view=all`, { credentials: 'include' });
+  if (!res.ok) throw new Error(`Failed to load workout-log exercises (${res.status})`);
+  const data = await res.json();
+  allExercises.value = Array.isArray(data) ? data : [];
+  logLibraryLoaded.value = true;
 };
 
 const loadCurrentSessionRole = async () => {
@@ -605,10 +633,16 @@ watch(logSearchExercise, () => {
 });
 
 // Trigger favorites load whenever the favorites tab becomes active
-watch(activeTab, (tab) => {
+watch(activeTab, async (tab) => {
   if (tab === 'favorite-exercises') {
     console.log('Favorite tab active');
     loadFavoriteExercises();
+  } else if (tab === 'log-exercise') {
+    try {
+      await loadLogExercisesLibrary();
+    } catch (err) {
+      console.error('Failed to load exercises for workout logging:', err);
+    }
   }
 });
 
@@ -634,8 +668,17 @@ function autoSwitchTabToLogOrLibrary() {
    const displayLimit = ref(3); // default number to show
    const displayedExercises = computed(() => filteredExercises.value.slice(0, displayLimit.value));
    
-   const itemsPerPage = ref(3); // user-defined number
+  const pageSizeOptions = [5, 10, 25, 50, 100];
+  const itemsPerPage = ref(10); // default rows per page
+  const resultsDisplayMode = ref('list');
    const currentPage = ref(1); // start from 1
+    let searchReloadTimer;
+
+   watch([searchExercise, workoutType, selectedMuscleGroup, selectedEquipment], () => {
+     currentPage.value = 1;
+     clearTimeout(searchReloadTimer);
+     searchReloadTimer = setTimeout(loadExercisesLibrary, 250);
+   });
    
    
   const getFirstImage = (gallery, exerciseId = 0) => getExerciseImageFromGallery(gallery, exerciseId);
@@ -648,19 +691,24 @@ function autoSwitchTabToLogOrLibrary() {
    
    
    const pagedExercises = computed(() => {
-     const start = (currentPage.value - 1) * itemsPerPage.value;
-     const end = start + itemsPerPage.value;
-     return filteredExercises.value.slice(start, end);
+     return filteredExercises.value;
    });
+
+  const onRowsPerPageChange = async () => {
+    currentPage.value = 1;
+    await loadExercisesLibrary();
+  };
    
-   const nextPage = () => {
-     const totalItems = filteredExercises.value.length;
-     const maxPage = Math.ceil(totalItems / itemsPerPage.value);
-     if (currentPage.value < maxPage) currentPage.value++;
+   const nextPage = async () => {
+     if (currentPage.value >= searchTotalPages.value) return;
+     currentPage.value++;
+     await loadExercisesLibrary();
    };
    
-   const prevPage = () => {
-     if (currentPage.value > 1) currentPage.value--;
+   const prevPage = async () => {
+     if (currentPage.value <= 1) return;
+     currentPage.value--;
+     await loadExercisesLibrary();
    };
    // Pagination liist view
    
@@ -747,6 +795,7 @@ const selectedImage = computed(() => {
        }
      Object.assign(editExercise, exercise);
        editExercise.CreateAsGlobalExercise = Number(exercise?.IsGlobalExercise || 0) === 1;
+     activeTab.value = 'search-exercises';
      showEditForm.value = true;
      scrollToEditForm(); // optional
    };
@@ -971,6 +1020,25 @@ const newExercise = reactive({
 });
 
 const showAddForm = ref(false); // Toggle form visibility
+const creatingGlobalExercise = ref(false);
+
+const openAddExercise = ({ global = false } = {}) => {
+  creatingGlobalExercise.value = Boolean(global && isAdminUser.value);
+  newExercise.CreateAsGlobalExercise = creatingGlobalExercise.value;
+  activeTab.value = 'search-exercises';
+  showAddForm.value = true;
+  nextTick(() => {
+    document.getElementById('customExerciseForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+};
+
+const closeAddExercise = () => {
+  showAddForm.value = false;
+  creatingGlobalExercise.value = false;
+  newExercise.CreateAsGlobalExercise = false;
+  activeTab.value = 'log-exercise';
+};
+
 // Unified AddWorkout for image upload (FormData)
 const addFormError = ref("");
 const AddWorkout = async () => {
@@ -979,6 +1047,7 @@ const AddWorkout = async () => {
     addFormError.value = "Error - Please fill out all fields (ExerciseTitle, WorkoutType, MuscleGroup)";
     return;
   }
+  newExercise.CreateAsGlobalExercise = Boolean(creatingGlobalExercise.value && isAdminUser.value);
   const formData = new FormData();
   for (const [key, value] of Object.entries(newExercise)) {
     formData.append(key, value || '');
@@ -996,7 +1065,7 @@ const AddWorkout = async () => {
     await loadExercisesLibrary();
     await loadMyCustomExercises();
     alert('âœ… New exercise added!');
-    showAddForm.value = false;
+    closeAddExercise();
     // Reset form and images
     Object.assign(newExercise, {
       ExerciseTitle: '',
@@ -1203,11 +1272,11 @@ const clearFilters = () => {
    <!-- Exercise Tab Section -->
   <div class="ex-page-body app-section-card">
 
-              <nav class="ex-tab-bar" role="tablist" aria-label="Log workout sections">
+              <nav class="ex-tab-bar wa-h-tabs wa-h-tabs--tricolor" role="tablist" aria-label="Log workout sections">
                 <button
                   type="button"
-                  class="ex-tab"
-                  :class="{ 'ex-tab--active': activeTab === 'search-exercises' }"
+                  class="ex-tab wa-h-tab"
+                  :class="{ 'ex-tab--active': activeTab === 'search-exercises', 'wa-h-tab--active': activeTab === 'search-exercises' }"
                   :aria-selected="activeTab === 'search-exercises'"
                   role="tab"
                   @click="activeTab = 'search-exercises'"
@@ -1216,8 +1285,8 @@ const clearFilters = () => {
                 </button>
                 <button
                   type="button"
-                  class="ex-tab"
-                  :class="{ 'ex-tab--active': activeTab === 'log-exercise' }"
+                  class="ex-tab wa-h-tab"
+                  :class="{ 'ex-tab--active': activeTab === 'log-exercise', 'wa-h-tab--active': activeTab === 'log-exercise' }"
                   :aria-selected="activeTab === 'log-exercise'"
                   role="tab"
                   @click="activeTab = 'log-exercise'"
@@ -1226,8 +1295,8 @@ const clearFilters = () => {
                 </button>
                 <button
                   type="button"
-                  class="ex-tab"
-                  :class="{ 'ex-tab--active': activeTab === 'favorite-exercises' }"
+                  class="ex-tab wa-h-tab"
+                  :class="{ 'ex-tab--active': activeTab === 'favorite-exercises', 'wa-h-tab--active': activeTab === 'favorite-exercises' }"
                   :aria-selected="activeTab === 'favorite-exercises'"
                   role="tab"
                   @click="activeTab = 'favorite-exercises'; loadFavoriteExercises();"
@@ -1243,75 +1312,89 @@ const clearFilters = () => {
             <div v-if="activeTab === 'search-exercises'">
                 <!--Search Excerises CONTAINER -->
             <div class="container container-block">
-                <div class="panel search-filter-card">
-                  <!-- Mobile-only accordion toggle -->
-                  <button class="filter-accordion-toggle" @click="filtersOpen = !filtersOpen" :aria-expanded="filtersOpen">
-                    <span><i class="fa-solid fa-sliders me-2"></i>Filters</span>
-                    <i :class="filtersOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-                  </button>
-                  <!--Start of panel-->
-                  <div class="panel-header search-filter-head">
-                    <h4><i class="fa-solid fa-magnifying-glass me-2"></i>Search Exercises</h4>
-                  </div>
-                  <!--end of panel header-->
-                  <div class="panel-body search-filter-body filter-body-animated" :class="{ 'filters-mobile-hidden': !filtersOpen }">
+                <div class="panel search-filter-card exercise-database-toolbar search-only-toolbar">
+                  <div class="panel-body search-filter-body">
                       <div v-if="exercisesLoadError" class="alert alert-warning">
                         {{ exercisesLoadError }}
                       </div>
-                      <div class="search-filter-grid">
-                        <div class="search-filter-field full-width">
-                          <label class="form-label">Search</label>
+                      <div class="search-compact-row">
+                        <div class="search-filter-input-wrap search-filter-input-wrap--search-only">
+                          <i class="fa-solid fa-magnifying-glass search-filter-input-icon" aria-hidden="true"></i>
                           <input v-model="searchExercise" type="text" class="form-control" placeholder="Search exercise by name" />
                         </div>
-
-                        <div class="search-filter-field">
-                          <label class="form-label">View</label>
-                          <select v-model="exerciseView" class="form-select">
-                            <option value="all">All Exercises</option>
-                            <option value="mine">My Exercises</option>
-                            <option value="favorites">Favorite Exercises</option>
-                          </select>
-                        </div>
-
-                        <div class="search-filter-field">
-                          <label class="form-label">Workout Type</label>
-                          <select v-model="workoutType" class="form-select">
-                            <option value="All">All</option>
-                            <option value="Strength">Strength</option>
-                            <option value="Cardio">Cardio</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-
-                        <div class="search-filter-field">
-                          <label class="form-label">Muscle Group</label>
-                          <select v-model="selectedMuscleGroup" class="form-select">
-                            <option v-for="group in muscleGroups" :key="group" :value="group">
-                              {{ group }}
-                            </option>
-                          </select>
-                        </div>
-
-                        <div class="search-filter-field">
-                          <label class="form-label">Equipment</label>
-                          <select v-model="selectedEquipment" class="form-select">
-                            <option v-for="equip in equipmentList" :key="equip" :value="equip">
-                              {{ equip }}
-                            </option>
-                          </select>
-                        </div>
                       </div>
-
-                      <div class="search-filter-actions">
-                        <button class="btn btn-success add-exercise-centered" @click="showAddForm = !showAddForm">
-                          {{ showAddForm ? 'Cancel' : 'âž• Add New Exercise' }}
-                        </button>
-                        <button class="btn btn-outline-secondary clear-filters-btn" @click="clearFilters" title="Reset filters">Clear Filters</button>
-                      </div>
-
-                      <div class="search-filter-divider"></div>
                   </div>
                 </div>
+
+                <div class="panel search-filter-card exercise-database-toolbar filters-toolbar">
+                  <div class="panel-body search-filter-body">
+                      <button class="filter-accordion-toggle" @click="filtersOpen = !filtersOpen" :aria-expanded="filtersOpen">
+                        <span class="filter-toggle-label"><i class="fa-solid fa-sliders filter-toggle-main-icon" aria-hidden="true"></i><span>{{ filtersOpen ? 'Hide Filters' : 'Show Filters' }}</span></span>
+                      </button>
+
+                      <div class="filter-body-animated" :class="{ 'filters-mobile-hidden': !filtersOpen }">
+                      <div class="search-filter-grid">
+                        <div class="search-filter-field search-filter-field--select">
+                          <label class="form-label">View</label>
+                          <div class="search-filter-select-wrap">
+                            <select v-model="exerciseView" class="form-select">
+                              <option value="all">All Exercises</option>
+                              <option value="mine">My Exercises</option>
+                              <option value="favorites">Favorite Exercises</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down search-filter-select-icon" aria-hidden="true"></i>
+                          </div>
+                        </div>
+
+                        <div class="search-filter-field search-filter-field--select">
+                          <label class="form-label">Exercise Type / Category</label>
+                          <div class="search-filter-select-wrap">
+                            <select v-model="workoutType" class="form-select">
+                              <option value="All">All</option>
+                              <option value="Strength">Strength</option>
+                              <option value="Cardio">Cardio</option>
+                              <option value="Other">Other</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down search-filter-select-icon" aria-hidden="true"></i>
+                          </div>
+                        </div>
+
+                        <div class="search-filter-field search-filter-field--select">
+                          <label class="form-label">Body Area / Muscle Group</label>
+                          <div class="search-filter-select-wrap">
+                            <select v-model="selectedMuscleGroup" class="form-select">
+                              <option v-for="group in muscleGroups" :key="group" :value="group">
+                                {{ group }}
+                              </option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down search-filter-select-icon" aria-hidden="true"></i>
+                          </div>
+                        </div>
+
+                        <div class="search-filter-field search-filter-field--select">
+                          <label class="form-label">Equipment</label>
+                          <div class="search-filter-select-wrap">
+                            <select v-model="selectedEquipment" class="form-select">
+                              <option v-for="equip in equipmentList" :key="equip" :value="equip">
+                                {{ equip }}
+                              </option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down search-filter-select-icon" aria-hidden="true"></i>
+                          </div>
+                        </div>
+                      </div>
+
+                        <div class="search-filter-actions">
+                          <button class="btn btn-outline-secondary clear-filters-btn" @click="clearFilters" title="Reset filters">
+                            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                            <span>Clear Filters</span>
+                          </button>
+                        </div>
+                      <div class="search-filter-divider"></div>
+                      </div>
+                  </div>
+                </div>
+
                 <!--End of Panel-->
 
 
@@ -1322,8 +1405,8 @@ const clearFilters = () => {
                 <div class="panel exercise-results-panel">
 
                     <!--edit Excerise-->
-                    <div class="row g-3 mt-3">
-                        <div v-if="showEditForm" id="editExerciseForm" class="panel edit-exercise-panel col-12">
+                    <div v-if="showEditForm" class="row g-3 mt-3">
+                      <div id="editExerciseForm" class="panel edit-exercise-panel col-12">
                             <div class="panel-header">
                               <h4>Edit Exercise</h4>
                             </div>
@@ -1452,39 +1535,39 @@ const clearFilters = () => {
                     <!-- Edit Excerise-->
                 <!--add Excerise-->
             
-                    <div class="row g-3 mt-3">
+                      <div v-if="showAddForm" class="row g-3 mt-3">
 
-                       <div v-if="showAddForm" class="panel mt-2">
+                        <div id="customExerciseForm" class="panel mt-2 custom-exercise-form-panel">
   <div class="panel-header">
-    <h4>Add New Exercise</h4>
+    <h4>{{ creatingGlobalExercise ? 'Add Global Exercise' : 'Add Custom Exercise' }}</h4>
   </div>
   <div class="panel-body row g-3">
-    <div class="col-md-12">
+    <div class="col-md-12 custom-exercise-field-row">
       <div v-if="addFormError" class="alert alert-danger mb-2">{{ addFormError }}</div>
       <label class="form-label">Exercise Name <span style="color:red">*</span></label>
       <input v-model="newExercise.ExerciseTitle" class="form-control" required />
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-12 custom-exercise-field-row">
       <label class="form-label">Workout Type <span style="color:red">*</span></label>
       <select v-model="newExercise.WorkoutType" class="form-select" required>
         <option v-for="type in workoutTypeOptions" :key="type" :value="type">{{ type }}</option>
       </select>
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-12 custom-exercise-field-row">
       <label class="form-label">Recording Type</label>
       <select v-model="newExercise.RecordingType" class="form-select">
         <option v-for="type in recordingTypeOptions" :key="type" :value="type">{{ type }}</option>
       </select>
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-12 custom-exercise-field-row">
       <label class="form-label">Equipment</label>
       <input v-model="newExercise.Equipment" class="form-control" />
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-12 custom-exercise-field-row">
       <label class="form-label">Muscle Group <span style="color:red">*</span></label>
       <select v-model="newExercise.MuscleGroup" class="form-select" required>
         <option v-for="group in muscleGroups" :key="group" :value="group">{{ group }}</option>
@@ -1492,7 +1575,7 @@ const clearFilters = () => {
     </div>
 
     <!-- Add this inside your Add Exercise form component -->
-<div class="col-md-12">
+<div class="col-md-12 custom-exercise-upload-section">
   <h6>Upload Images (max 2).</h6>
   <label class="form-label">Only image files are allowed (jpeg, jpg, png, gif, webp)</label>
   <input 
@@ -1503,13 +1586,13 @@ const clearFilters = () => {
     class="form-control"
     :disabled="imagePreviews.length + existingImages.length >= 2"
   />
-  <div class="mt-2 d-flex gap-2">
-    <div v-for="(img, index) in imagePreviews" :key="'new-' + index" class="mb-2 position-relative">
-      <img :src="img" style="max-width: 200px; border: 1px solid #ccc; border-radius: 12px;" />
+  <div class="mt-2 d-flex gap-2 custom-exercise-image-previews">
+    <div v-for="(img, index) in imagePreviews" :key="'new-' + index" class="mb-2 position-relative custom-exercise-image-preview">
+      <img :src="img" class="custom-exercise-preview-image" />
       <span @click="removeNewImage(index)" style="position:absolute;top:0;right:0;color:red;cursor:pointer;font-size:3em;">&times;</span>
     </div>
-    <div v-for="(img, index) in existingImages" :key="'exist-' + index" class="mb-2 position-relative">
-      <img :src="getExerciseImage({ ExerciseID: newExercise.ExerciseID, PrimaryImage: img, ImageGallery: [img] })" style="max-width: 200px; border: 1px solid #ccc; border-radius: 12px;" />
+    <div v-for="(img, index) in existingImages" :key="'exist-' + index" class="mb-2 position-relative custom-exercise-image-preview">
+      <img :src="getExerciseImage({ ExerciseID: newExercise.ExerciseID, PrimaryImage: img, ImageGallery: [img] })" class="custom-exercise-preview-image" />
       <span @click="removeExistingImage(img)" style="position:absolute;top:0;right:0;color:red;cursor:pointer;font-size:3em;">&times;</span>
       <div class="small text-center">{{ img.split('/').pop() }}</div>
     </div>
@@ -1525,21 +1608,20 @@ const clearFilters = () => {
 
 
 
-    <div class="col-md-12">
+    <div class="col-md-12 custom-exercise-field-row custom-exercise-field-row--multiline">
       <label class="form-label">Instructions</label>
       <textarea v-model="newExercise.Instructions" class="form-control instructions" rows="3" />
     </div>
 
-    <div class="col-md-12" v-if="isAdminUser">
-      <div class="form-check mt-2">
-        <input id="add-global-toggle" v-model="newExercise.CreateAsGlobalExercise" class="form-check-input" type="checkbox" />
-        <label for="add-global-toggle" class="form-check-label">Create as Global Exercise</label>
-      </div>
+    <div class="col-md-12">
+      <p class="mb-0" data-testid="exercise-creation-scope">
+        {{ creatingGlobalExercise ? 'This exercise will be available as a Global Exercise.' : 'This exercise will be saved to My Custom Exercises.' }}
+      </p>
     </div>
 
-    <div class="col-12 mt-3">
-      <button class="btn btn-primary" @click="AddWorkout">Add Exercise</button>
-      <button class="btn btn-outline-secondary ms-2" @click="showAddForm = false">Cancel</button>
+    <div class="col-12 mt-3 custom-exercise-form-actions">
+      <button class="btn btn-primary custom-exercise-create-button" @click="AddWorkout">Add Exercise</button>
+      <button class="btn btn-outline-secondary ms-2 custom-exercise-cancel-button" @click="closeAddExercise">Cancel</button>
     </div>
   </div>
 </div>
@@ -1554,10 +1636,51 @@ const clearFilters = () => {
                       <div class="row g-3 mt-2">
                         <div class="results-header-row">
                           <span class="results-title">Exercise Results</span>
-                          <span class="results-count">{{ filteredExercises.length }} items</span>
+                          <div class="results-header-actions">
+                            <div class="results-display-toggle" role="group" aria-label="Exercise results display mode">
+                              <button
+                                type="button"
+                                class="results-display-btn"
+                                :class="{ 'results-display-btn--active': resultsDisplayMode === 'list' }"
+                                @click="resultsDisplayMode = 'list'"
+                                :aria-pressed="resultsDisplayMode === 'list'"
+                                title="List view"
+                              >
+                                <i class="fa-solid fa-list" aria-hidden="true"></i>
+                                <span>List</span>
+                              </button>
+                              <button
+                                type="button"
+                                class="results-display-btn"
+                                :class="{ 'results-display-btn--active': resultsDisplayMode === 'grid' }"
+                                @click="resultsDisplayMode = 'grid'"
+                                :aria-pressed="resultsDisplayMode === 'grid'"
+                                title="Grid view"
+                              >
+                                <i class="fa-solid fa-table-cells" aria-hidden="true"></i>
+                                <span>Grid</span>
+                              </button>
+                            </div>
+                            <label class="rows-per-page-control" for="rowsPerPageSelect">
+                              <span class="rows-per-page-label">Rows per page:</span>
+                              <select
+                                id="rowsPerPageSelect"
+                                v-model.number="itemsPerPage"
+                                class="form-select rows-per-page-select"
+                                @change="onRowsPerPageChange"
+                              >
+                                <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
+                              </select>
+                            </label>
+                            <span class="results-count">{{ searchResultTotal }} items</span>
+                            <button v-if="isAdminUser" class="btn btn-primary exercise-toolbar-add" @click="openAddExercise({ global: true })">
+                              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                              <span>Add Exercise</span>
+                            </button>
+                          </div>
                         </div>
 
-                        <div class="exercise-list">
+                        <div class="exercise-list" :class="{ 'exercise-list--grid': resultsDisplayMode === 'grid' }">
                             <div class="exercise-row" v-for="ex in pagedExercises" :key="ex.ExerciseID">
                               <div class="exercise-img">
                                   <img
@@ -1584,7 +1707,7 @@ const clearFilters = () => {
                                       <i v-if="isFavoriteExercise(ex.ExerciseID)" class="fa-solid fa-heart"></i>
                                       {{ isFavoriteExercise(ex.ExerciseID) ? 'Unfav' : 'Fav' }}
                                     </button>
-                                    <button v-if="Number(ex.CanEdit || 0) === 1 || isAdminUser" class="btn btn-sm btn-outline-secondary" @click="startEditing(ex)">
+                                    <button v-if="Number(ex.CanEdit || 0) === 1 || isAdminUser" class="btn btn-sm btn-edit-exercise" @click="startEditing(ex)">
                                       Edit Exercise
                                     </button>
                                   </div>
@@ -1593,9 +1716,16 @@ const clearFilters = () => {
 
                             <div class="pagination-row">
                               <button class="btn btn-outline-secondary pagination-btn" @click="prevPage" :disabled="currentPage === 1">Prev</button>
-                              <span class="pagination-info">Page {{ currentPage }} / {{ Math.ceil(filteredExercises.length / itemsPerPage) }}</span>
+                                <span class="pagination-info">Page {{ currentPage }} / {{ searchTotalPages }}</span>
                               <button class="btn btn-outline-dark pagination-btn" @click="nextPage"
-                                  :disabled="currentPage * itemsPerPage >= filteredExercises.length">Next</button>
+                                  :disabled="currentPage >= searchTotalPages">Next</button>
+                            </div>
+
+                            <div class="results-bottom-actions">
+                              <button v-if="isAdminUser" class="btn btn-primary exercise-toolbar-add" @click="openAddExercise({ global: true })">
+                                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                                <span>Add Exercise</span>
+                              </button>
                             </div>
                         </div>
                       </div>
@@ -1617,9 +1747,9 @@ const clearFilters = () => {
           <!-- /search-exercises tab -->
 
           <!-- Favorite Exercises Section -->
-  <div v-if="activeTab === 'favorite-exercises'">
+  <div v-if="activeTab === 'favorite-exercises'" class="favorites-section">
     <div class="container container-block">
-      <div class="panel search-filter-card">
+      <div class="panel search-filter-card favorites-panel">
         <div class="panel-header search-filter-head">
           <h3 class="m-0">Favorite Exercises</h3>
         </div>
@@ -1648,9 +1778,9 @@ const clearFilters = () => {
           </div>
 
           <!-- Favorite Exercises List -->
-          <div v-else class="row">
-            <div v-for="ex in favoriteExercises" :key="ex.ExerciseID" class="col-sm-6 col-lg-4 col-xl-3 mb-4">
-              <div class="exercise-card">
+          <div v-else class="row favorites-grid">
+            <div v-for="ex in favoriteExercises" :key="ex.ExerciseID" class="col-sm-6 col-lg-4 col-xl-3 mb-4 favorite-exercise-item">
+              <div class="exercise-card favorite-exercise-card">
                 <div class="exercise-image">
                   <img
                     :src="getExerciseImage(ex)"
@@ -1660,17 +1790,17 @@ const clearFilters = () => {
                     @error="$event.target.src = DEFAULT_EXERCISE_IMAGE"
                   />
                 </div>
-                <div class="exercise-content">
+                <div class="exercise-content favorite-exercise-content">
                   <h5 class="exercise-title">{{ ex.ExerciseTitle }}</h5>
-                  <div class="exercise-meta">
-                    <span class="badge bg-primary me-1">{{ ex.WorkoutType }}</span>
-                    <span class="badge bg-info me-1">{{ ex.MuscleGroup }}</span>
-                    <span class="badge bg-secondary">{{ ex.Equipment }}</span>
+                  <div class="exercise-meta favorite-exercise-badges">
+                    <span class="badge favorite-exercise-badge favorite-exercise-badge--type">{{ ex.WorkoutType }}</span>
+                    <span class="badge favorite-exercise-badge favorite-exercise-badge--muscle">{{ ex.MuscleGroup }}</span>
+                    <span class="badge favorite-exercise-badge favorite-exercise-badge--equipment">{{ ex.Equipment }}</span>
                   </div>
                 </div>
-                <div class="exercise-actions">
+                <div class="exercise-actions favorite-exercise-action">
                   <button
-                    class="btn btn-sm btn-fav btn-fav--active"
+                    class="btn btn-sm btn-fav btn-fav--active favorite-exercise-toggle"
                     @click="toggleFavoriteExercise(ex)"
                   >
                     <i class="fa-solid fa-heart"></i> Unfav
@@ -1689,15 +1819,15 @@ const clearFilters = () => {
 
   <div class="container container-block">
     <div class="panel">
-      <div class="panel-header">
+      <div class="panel-header d-flex justify-content-between align-items-center">
         <h4>My Custom Exercises</h4>
+        <button class="btn btn-sm btn-primary custom-exercise-create-button" @click="openAddExercise({ global: false })">+ Create Exercise</button>
       </div>
       <div class="panel-body">
         <div v-if="customExercisesLoadError" class="alert alert-warning">{{ customExercisesLoadError }}</div>
         <div v-else-if="myCustomExercises.length === 0" class="text-center py-4">
           <p class="mb-2">No custom exercises created yet.</p>
           <p class="text-muted mb-3">Create your first custom exercise to personalize your workouts.</p>
-          <button class="btn btn-success" @click="activeTab = 'search-exercises'; showAddForm = true">+ Create Exercise</button>
         </div>
         <div v-else class="exercise-list">
           <div class="exercise-row" v-for="myEx in myCustomExercises" :key="`mine-${myEx.ExerciseID}`">
@@ -2089,11 +2219,142 @@ Please Select an excerise
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  background: #0b1320;
+}
+
+.custom-exercise-create-button {
+  background: var(--wa-action-blue, #2f6bff) !important;
+  border-color: var(--wa-action-blue, #2f6bff) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.custom-exercise-create-button:hover,
+.custom-exercise-create-button:focus {
+  background: var(--wa-action-blue-hover, #2459d8) !important;
+  border-color: var(--wa-action-blue-hover, #2459d8) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.custom-exercise-form-panel .panel-body {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  --bs-gutter-x: 16px;
+  --bs-gutter-y: 8px;
+}
+
+.custom-exercise-field-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 34%) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.custom-exercise-field-row > .alert {
+  grid-column: 1 / -1;
+}
+
+.custom-exercise-field-row .form-label {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.custom-exercise-field-row .form-control,
+.custom-exercise-field-row .form-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+}
+
+.custom-exercise-field-row--multiline {
+  align-items: start;
+}
+
+.custom-exercise-field-row--multiline .form-label {
+  padding-top: 10px;
+}
+
+.custom-exercise-field-row--multiline .instructions {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.custom-exercise-upload-section {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.custom-exercise-upload-section h6 {
+  margin: 0 0 2px;
+}
+
+.custom-exercise-upload-section .form-label {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 5px;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.custom-exercise-upload-section input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.custom-exercise-image-previews {
+  flex-wrap: wrap;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.custom-exercise-image-preview {
+  width: min(150px, 100%);
+  max-width: 100%;
+}
+
+.custom-exercise-preview-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.custom-exercise-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--wa-panel-bg, #1b2444);
+  border-top: 1px solid var(--wa-border, rgba(145, 160, 200, 0.24));
+}
+
+.custom-exercise-form-actions .btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 6px;
+  margin-left: 0 !important;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .exercises-canvas {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   overflow-x: hidden;
   width: 100%;
   max-width: 100%;
@@ -2120,30 +2381,20 @@ Please Select an excerise
   margin-right: 10px;
 }
 
-.panel {
-  border: 1px solid #e5ecf5;
-  border-radius: 16px;
-  padding: 15px;
-  background: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
-  width: 100%;
-  box-sizing: border-box;
-}
-
 .panel-header h4 {
   margin: 0;
-  color: #0f172a;
+  color: var(--ex-text, #f8fafc);
   font-weight: 800;
 }
 
 .panel-body {
-  color: #334155;
+  color: var(--ex-text-secondary, #a4b0c0);
 }
 
 .exercise-card {
   min-height: 120px;
-  background-color: #fff;
-  border-radius: 12px;
+  background-color: var(--ex-surface-2, #17212d);
+  border-radius: 10px;
 }
 .exercise-card .exercise-image {
   width: 75%;
@@ -2152,7 +2403,7 @@ Please Select an excerise
 .exercise-card .exercise-image img {
   width: 100%;
   height: auto;
-  border-radius: 10px;
+  border-radius: 9px;
   display: block;
 }
 .image-box {
@@ -2161,33 +2412,34 @@ Please Select an excerise
 .exercise-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
 }
 .exercise-row {
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
-  gap: 14px;
-  padding: 10px 12px;
-  border: 1px solid #dbe4ef;
-  background: #ffffff;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  background: #1b2444;
+  border-radius: 8px;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.035);
-  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
 }
 .exercise-row:hover {
   transform: translateY(-1px);
-  border-color: #93c5fd;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  border-color: rgba(145, 160, 200, 0.24);
+  background: #1b2444;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.16);
 }
 .exercise-img img {
   width: 132px;
   height: 132px;
   object-fit: cover;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 .exercise-img {
   width: 132px;
@@ -2196,29 +2448,29 @@ Please Select an excerise
 .exercise-info {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 .exercise-title {
   font-weight: 800;
   font-size: 1rem;
-  color: #0f172a;
-  margin: 0 0 6px 0;
+  color: var(--ex-text, #f8fafc);
+  margin: 0;
   padding: 0;
   border: 0;
 }
 .exercise-meta {
   display: grid;
   gap: 2px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .exercise-meta p {
   margin: 0;
-  color: #64748b;
+  color: var(--ex-text-secondary, #a4b0c0);
   font-size: 0.86rem;
   line-height: 1.35;
 }
 .exercise-meta p span {
-  color: #334155;
+  color: var(--ex-text, #f8fafc);
   font-weight: 800;
   margin-right: 0;
 }
@@ -2236,68 +2488,81 @@ Please Select an excerise
 }
 
 .btn-fav {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #ffffff;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn-fav:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #334155;
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
 }
 .btn-fav--active {
-  background: #fee2e2;
-  border-color: #fecaca;
-  color: #991b1b;
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
 }
 .btn-fav--active .fa-heart {
-  color: #dc2626;
+  color: #ffffff;
 }
 .btn-fav--active:hover {
-  background: #fecaca;
-  border-color: #fca5a5;
-  color: #7f1d1d;
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.btn-edit-exercise {
+  background: var(--wa-action-blue, #2f6bff);
+  border: 1px solid var(--wa-action-blue, #2f6bff);
+  color: #ffffff;
+}
+
+.btn-edit-exercise:hover,
+.btn-edit-exercise:focus-visible {
+  background: var(--wa-action-blue-hover, #2459d8);
+  border-color: var(--wa-action-blue-hover, #2459d8);
+  color: #ffffff;
 }
 
 /* Edit Exercise Panel */
 .edit-exercise-panel {
-  border: 1px solid #dbe4ef;
-  border-radius: 16px;
-  padding: 22px 24px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--ex-border, rgba(120, 145, 175, 0.16));
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--ex-surface-2, #17212d);
+  box-shadow: 0 10px 22px rgba(2, 6, 23, 0.16);
   margin-top: 20px !important;
 }
 .edit-exercise-panel .panel-header {
   padding-bottom: 12px;
   margin-bottom: 16px;
-  border-bottom: 1px dashed #cbd5e1;
+  border-bottom: 1px solid var(--ex-border, rgba(120, 145, 175, 0.16));
 }
 .edit-exercise-panel .panel-header h4 {
   font-size: 1.15rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--ex-text, #f8fafc);
   margin: 0;
 }
 .edit-exercise-panel .form-label {
   font-size: 0.76rem;
   font-weight: 700;
-  color: #64748b;
+  color: var(--ex-text-secondary, #a4b0c0);
   margin-bottom: 5px;
 }
 .edit-exercise-panel .form-control,
 .edit-exercise-panel .form-select {
   min-height: 38px;
-  border: 1px solid #d6dee9;
-  background: #ffffff;
-  color: #334155;
+  border: 1px solid var(--ex-border-strong, rgba(120, 145, 175, 0.24));
+  background: var(--ex-surface-1, #121923);
+  color: var(--ex-text, #f8fafc);
   font-size: 0.9rem;
 }
 .edit-exercise-panel .form-control:focus,
 .edit-exercise-panel .form-select:focus {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  border-color: color-mix(in srgb, var(--ex-accent, #3b82f6) 60%, var(--ex-border-strong) 40%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ex-accent, #3b82f6) 22%, transparent 78%);
 }
 .edit-exercise-panel .instructions {
   min-height: 150px;
@@ -2348,22 +2613,28 @@ textarea {
   width: 100%;
   padding: 14px;
   margin: 0;
-  background: #ffffff;
-  border: 1px solid #e5ecf5;
-  border-radius: 18px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+  background: #1b2444;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.32);
   box-sizing: border-box;
   overflow-x: hidden;
 }
 
+.exercises-page .ex-page-body.app-section-card {
+  background: #1b2444 !important;
+  border-color: rgba(145, 160, 200, 0.24) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12) !important;
+}
+
 .ex-tab-bar {
   display: flex;
-  align-items: stretch;
-  background: #1e293b;
-  border-radius: 14px 14px 0 0;
-  padding: 0 6px;
-  gap: 2px;
-  margin-bottom: 0;
+  padding: 6px;
+  background: #1b2444;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
 }
 
 .ex-tab {
@@ -2372,38 +2643,51 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: #1b2444;
   border: none;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--ex-text-secondary, #a4b0c0);
   font-size: 0.92rem;
   font-weight: 600;
-  padding: 15px 20px 14px;
+  padding: 10px 14px;
   cursor: pointer;
   transition: color 0.2s ease, background-color 0.2s ease;
   white-space: nowrap;
+  border-radius: 3px;
 }
-
-.ex-tab::after {
-  content: "";
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: -1px;
-  height: 3px;
-  border-radius: 999px;
-  background: #f97316;
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform 0.22s ease;
-  z-index: 2;
+/* design-system.css applies `button { border-radius: 999px !important }` site-wide
+   (src/styles/design-system.css). Override it here using the same technique as
+   WorkoutBuilder's `.builder-tabs .builder-tab` so tabs stay rectangular, not pill-shaped. */
+.ex-tab-bar .ex-tab {
+  border-radius: 3px !important;
 }
 .ex-tab:hover { color: rgba(255, 255, 255, 0.92); }
 .ex-tab--active {
   color: #ffffff;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.06);
+  background: #1d4f9f;
+  box-shadow: inset 0 -2px 0 0 rgba(200, 221, 255, 0.95), 0 0 0 1px rgba(196, 220, 255, 0.28);
 }
-.ex-tab--active::after { transform: scaleX(1); }
+.exercises-page .ex-tab--active,
+.exercises-page .ex-tab--active i,
+.exercises-page .ex-tab--active span {
+  color: #ffffff;
+}
+
+.exercises-page .ex-tab--active:hover,
+.exercises-page .ex-tab--active:focus,
+.exercises-page .ex-tab--active:focus-visible {
+  background: #1d4f9f;
+  color: #ffffff;
+  box-shadow: inset 0 -2px 0 0 rgba(200, 221, 255, 0.95), 0 0 0 1px rgba(196, 220, 255, 0.28);
+}
+.ex-tab:focus,
+.ex-tab:focus-visible {
+  outline: none;
+}
+.ex-tab--active:focus,
+.ex-tab--active:focus-visible {
+  box-shadow: inset 0 -2px 0 0 rgba(200, 221, 255, 0.95), 0 0 0 1px rgba(196, 220, 255, 0.28);
+}
 .ex-tab i,
 .ex-tab span { color: inherit; }
 
@@ -2413,10 +2697,11 @@ textarea {
 
 /* â”€â”€ Filter card â”€â”€ */
 .search-filter-card {
-  border-radius: 12px;
-  border: 1px solid #dbe4ef;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
   padding: 0;
+  background: #1b2444;
 }
 
 .search-filter-head { display: none; }
@@ -2424,25 +2709,61 @@ textarea {
   margin: 0;
   font-size: 1rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--ex-text, #f8fafc);
 }
 
 .search-filter-body {
-  padding: 8px 14px 8px;
+  padding: 8px 10px;
 }
 
-/* Mobile accordion toggle â€“ hidden on desktop */
+/* Filters accordion toggle */
 .filter-accordion-toggle {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  background: #17213a;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  padding: 7px 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ex-text, #f8fafc);
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 0 0 6px;
+  box-shadow: none !important;
+  outline: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.filter-accordion-toggle:hover,
+.filter-accordion-toggle:focus-visible {
+  background: #1d2b4f;
+  border-color: rgba(145, 160, 200, 0.34);
+  box-shadow: none !important;
+}
+
+.filter-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ex-text, #f8fafc);
+}
+
+.filter-toggle-main-icon {
+  font-size: 0.84rem;
+  color: inherit;
 }
 
 /* Filter body animated collapse (mobile only) */
 .filter-body-animated {
+  max-height: 1600px;
+  opacity: 1;
   overflow: hidden;
   transition: max-height .25s ease, opacity .2s ease;
 }
+
 .filter-body-animated.filters-mobile-hidden {
-  display: block !important;
   max-height: 0 !important;
   opacity: 0;
   padding-top: 0 !important;
@@ -2453,11 +2774,11 @@ textarea {
 /* Inline meta */
 .exercise-meta-inline {
   margin: 0;
-  color: #64748b;
+  color: var(--ex-text-secondary, #a4b0c0);
   font-size: 0.86rem;
   line-height: 1.35;
 }
-.meta-dot { color: #cbd5e1; }
+.meta-dot { color: var(--ex-text-muted, #738196); }
 
 /* Pagination row */
 .pagination-row {
@@ -2468,6 +2789,33 @@ textarea {
   margin-top: 16px;
 }
 .pagination-btn { min-width: 72px; }
+.pagination-row .pagination-btn {
+  border-color: var(--wa-action-blue, #2f6bff) !important;
+  background: var(--wa-action-blue, #2f6bff) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.pagination-row .pagination-btn:hover,
+.pagination-row .pagination-btn:focus-visible {
+  border-color: var(--wa-action-blue-hover, #2459d8) !important;
+  background: var(--wa-action-blue-hover, #2459d8) !important;
+  color: #ffffff !important;
+}
+
+.pagination-row .pagination-btn:disabled,
+.pagination-row .pagination-btn.disabled {
+  border-color: rgba(103, 132, 214, 0.45) !important;
+  background: rgba(47, 107, 255, 0.35) !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+  opacity: 0.65;
+}
+
+.results-bottom-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
 .pagination-info {
   font-size: 0.86rem;
   color: #64748b;
@@ -2478,7 +2826,7 @@ textarea {
 .search-filter-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px 10px;
+  gap: 8px 10px;
   align-items: end;
 }
 .search-filter-field.full-width { grid-column: 1 / -1; }
@@ -2486,55 +2834,391 @@ textarea {
   margin-bottom: 2px;
   font-size: 0.76rem;
   font-weight: 700;
-  color: #64748b;
+  color: var(--ex-text-secondary, #a4b0c0);
 }
 .search-filter-field .form-control,
 .search-filter-field .form-select {
-  min-height: 34px;
-  padding: 5px 10px;
+  min-height: 40px;
+  padding: 8px 10px;
   font-size: 0.9rem;
-  border: 1px solid #dbe4ef;
-  background: #f8fafc;
-  color: #334155;
+  border: 1px solid var(--ex-border-strong, rgba(120, 145, 175, 0.24));
+  background: #17213a;
+  color: var(--ex-text, #f8fafc);
+  border-radius: 6px;
 }
 .search-filter-field .form-control:focus,
 .search-filter-field .form-select:focus {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  border-color: color-mix(in srgb, var(--ex-accent, #3b82f6) 60%, var(--ex-border-strong) 40%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ex-accent, #3b82f6) 22%, transparent 78%);
 }
 
 .search-filter-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 4px;
   flex-wrap: wrap;
 }
 .search-filter-divider { display: none; }
+
+.exercise-database-toolbar {
+  overflow: hidden;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 6px;
+  background: #1b2444;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
+}
+
+
+
+.search-only-toolbar .search-filter-body {
+  padding: 8px 10px;
+}
+
+.search-compact-row {
+  display: block;
+}
+
+.search-filter-input-wrap--search-only {
+  position: relative;
+}
+
+.search-filter-input-wrap--search-only .form-control {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  min-height: 40px;
+  padding: 8px 10px 8px 54px;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 6px !important;
+  background-color: #17213a;
+  color: var(--ex-text, #f8fafc);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.search-filter-input-wrap--search-only .form-control::placeholder {
+  color: var(--ex-text-secondary, #a4b0c0);
+}
+
+.filters-toolbar .filter-accordion-toggle {
+  margin-top: 0;
+}
+
+.exercises-page .panel.search-filter-card,
+.exercises-page .panel.exercise-database-toolbar,
+.exercises-page .panel.exercise-results-panel,
+.exercises-page .tab-content .panel {
+  background: #1b2444 !important;
+  border-color: rgba(145, 160, 200, 0.24) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12) !important;
+}
+
+.exercises-page .search-only-toolbar,
+.exercises-page .filters-toolbar {
+  border-radius: 6px !important;
+}
+
+.exercise-database-toolbar .search-filter-body {
+  padding: 8px 10px;
+}
+
+.exercise-database-toolbar .search-filter-primary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.exercise-database-toolbar .search-filter-primary-row .full-width {
+  grid-column: auto;
+}
+
+.exercise-database-toolbar .search-filter-grid {
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.exercise-database-toolbar .search-filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.exercise-database-toolbar .search-filter-field .form-label {
+  margin: 0;
+  color: var(--ex-text, #f8fafc);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.exercise-database-toolbar .search-filter-input-wrap,
+.exercise-database-toolbar .search-filter-select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.exercise-database-toolbar .search-filter-input-icon {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  color: var(--ex-text-muted, #738196);
+  font-size: 0.82rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.exercise-database-toolbar .search-filter-field--search .form-control {
+  padding-left: 54px !important;
+}
+
+.exercise-database-toolbar .search-filter-select-wrap .form-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 34px;
+  background-image: none;
+}
+
+.exercise-database-toolbar .search-filter-select-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ex-text-muted, #738196);
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.exercise-database-toolbar .search-filter-field .form-control,
+.exercise-database-toolbar .search-filter-field .form-select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 6px !important;
+  background-color: #17213a;
+  color: var(--ex-text, #f8fafc);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.exercise-database-toolbar .search-filter-field .form-control::placeholder {
+  color: var(--ex-text-secondary, #a4b0c0);
+}
+
+.exercise-database-toolbar .search-filter-field .form-control:focus,
+.exercise-database-toolbar .search-filter-field .form-select:focus {
+  border-color: rgba(145, 160, 200, 0.24);
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.24);
+}
+
+.exercise-database-toolbar .search-filter-actions {
+  flex-wrap: nowrap;
+  margin: 0;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.exercise-database-toolbar .search-filter-actions .btn {
+  min-height: 40px;
+  height: 40px;
+  padding: 8px 14px;
+  border-radius: 6px !important;
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.exercise-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.exercise-page-actions .exercise-toolbar-add,
+.exercise-database-toolbar .exercise-toolbar-add,
+.results-header-actions .exercise-toolbar-add {
+  border-color: var(--wa-action-green, #0d5b55) !important;
+  background: var(--wa-action-green, #0d5b55) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  min-height: 40px;
+  height: 40px;
+  padding: 8px 14px;
+  border-radius: 6px !important;
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.exercise-page-actions .exercise-toolbar-add:hover,
+.exercise-page-actions .exercise-toolbar-add:focus,
+.exercise-database-toolbar .exercise-toolbar-add:hover,
+.exercise-database-toolbar .exercise-toolbar-add:focus,
+.results-header-actions .exercise-toolbar-add:hover,
+.results-header-actions .exercise-toolbar-add:focus {
+  border-color: var(--wa-action-green-hover, #0a4a45) !important;
+  background: var(--wa-action-green-hover, #0a4a45) !important;
+}
+
+.exercise-database-toolbar .clear-filters-btn {
+  border-color: rgba(145, 160, 200, 0.24) !important;
+  background: #17213a !important;
+  color: var(--ex-text, #f8fafc) !important;
+  box-shadow: none !important;
+}
+
+.exercise-page-actions .exercise-toolbar-add,
+.exercise-database-toolbar .exercise-toolbar-add,
+.results-header-actions .exercise-toolbar-add,
+.exercise-database-toolbar .clear-filters-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.exercise-database-toolbar .clear-filters-btn:hover,
+.exercise-database-toolbar .clear-filters-btn:focus {
+  border-color: color-mix(in srgb, var(--ex-accent, #3b82f6) 40%, var(--ex-border-strong) 60%) !important;
+  background: #22325a !important;
+  color: var(--ex-text, #f8fafc) !important;
+}
 
 .results-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid #e7edf5;
+  border-top: 1px solid rgba(145, 160, 200, 0.24);
   padding-top: 8px;
   margin-top: 0;
   margin-bottom: 8px;
 }
+
+.results-header-actions {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.results-display-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(145, 160, 200, 0.32);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #17213a;
+}
+
+.results-display-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  background: #17213a;
+  color: var(--ex-text-secondary, #a4b0c0);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  position: relative;
+}
+
+.results-display-btn + .results-display-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: rgba(145, 160, 200, 0.28);
+}
+
+.results-display-btn:hover,
+.results-display-btn:focus-visible {
+  background: #1f2d52;
+  color: var(--ex-text, #f8fafc);
+}
+
+.results-display-btn--active {
+  background: #2b4f9a;
+  color: #ffffff;
+}
+
+.rows-per-page-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.rows-per-page-label {
+  font-size: 0.82rem;
+  color: var(--ex-text-secondary, #a4b0c0);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rows-per-page-select {
+  width: 76px;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 24px 4px 8px;
+  border-radius: 6px !important;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.exercise-list--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.exercise-list--grid .exercise-row {
+  height: 100%;
+}
+
+.exercise-list--grid .pagination-row {
+  grid-column: 1 / -1;
+}
+
+.exercise-list--grid .results-bottom-actions {
+  grid-column: 1 / -1;
+}
+
 .results-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #334155;
+  color: var(--ex-text, #f8fafc);
 }
 .results-count {
   font-size: 0.84rem;
-  color: #64748b;
+  color: var(--ex-text-secondary, #a4b0c0);
+  line-height: 1.2;
 }
 
 .tab-content {
-  background: #ffffff;
-  border: 1px solid #dbe4ef;
-  border-top: none;
+  background: transparent;
+  border: 0;
   border-radius: 0 0 14px 14px;
   margin-top: 0;
   padding: 0;
@@ -2548,9 +3232,21 @@ textarea {
 .tab-content .panel {
   margin-top: 0;
   border-top: 0;
-  border-radius: 0 0 14px 14px;
+  border-radius: 8px;
+  background: #1b2444;
+  border-color: rgba(145, 160, 200, 0.24);
 }
 .exercise-results-panel { padding-top: 0; }
+
+.panel {
+  border: 1px solid rgba(145, 160, 200, 0.24);
+  border-radius: 10px;
+  padding: 15px;
+  background: #1b2444;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
+  width: 100%;
+  box-sizing: border-box;
+}
 
 /* Workout log styles */
 .list-group-item.d-flex.align-items-center > .flex-grow-1 > div.row > .col {
@@ -2592,15 +3288,15 @@ textarea {
 
 /* -- 0.84.39 Exercise Database dark-theme normalization (scoped) ---------- */
 .exercises-page {
-  --ex-surface-1: var(--wa-shell-surface, #121923);
-  --ex-surface-2: var(--wa-shell-surface-elevated, #17212d);
-  --ex-surface-3: var(--wa-shell-surface-soft, #1d2a38);
+  --ex-surface-1: var(--wa-shell-surface, #1b2444);
+  --ex-surface-2: var(--wa-shell-surface-elevated, #17213a);
+  --ex-surface-3: var(--wa-shell-surface-soft, #22325a);
   --ex-border: var(--wa-shell-border, rgba(120, 145, 175, 0.16));
   --ex-border-strong: var(--wa-shell-border-strong, rgba(120, 145, 175, 0.24));
   --ex-text: var(--wa-shell-text, #f8fafc);
   --ex-text-secondary: var(--wa-shell-text-secondary, #a4b0c0);
   --ex-text-muted: var(--wa-shell-text-muted, #738196);
-  --ex-accent: var(--wa-shell-accent, var(--main-color, #3b82f6));
+  --ex-accent: var(--wa-shell-accent, #1d4f9f);
 }
 
 .exercises-page .builder-hero.ff-page-header.app-header-gradient {
@@ -2609,17 +3305,18 @@ textarea {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
-.exercises-page .ex-page-body,
-.exercises-page .tab-content,
-.exercises-page .panel,
-.exercises-page .search-filter-card,
-.exercises-page .exercise-row,
+/* .panel already supplies background/border/radius/shadow to exercise-results-panel,
+   favorites-panel, edit-exercise-panel and custom-exercise-form-panel (all carry the
+   .panel class). .search-filter-card and .exercise-database-toolbar set their own
+   background/border/radius directly below, so no page-wide !important override is
+   needed here (that override was forcing 14px radius over the intended 8px, and
+   forcing a muted grey background onto the active tab - both removed). */
+
 .exercises-page .exercise-card,
 .exercises-page .edit-exercise-panel,
-.exercises-page .list-group-item,
-.exercises-page .filter-accordion-toggle {
-  background: var(--ex-surface-1);
-  border-color: var(--ex-border);
+.exercises-page .list-group-item {
+  background: #1b2444;
+  border-color: rgba(145, 160, 200, 0.24);
   color: var(--ex-text);
 }
 
@@ -2630,9 +3327,9 @@ textarea {
 .exercises-page .edit-exercise-panel .form-control,
 .exercises-page .edit-exercise-panel .form-select,
 .exercises-page .filter-accordion-toggle,
-.exercises-page .ex-tab--active,
-.exercises-page .btn-fav {
-  background: var(--ex-surface-2);
+.exercises-page .btn-fav,
+.exercises-page .btn-edit-exercise {
+  background: #17213a;
   border-color: var(--ex-border-strong);
 }
 
@@ -2641,8 +3338,7 @@ textarea {
 .exercises-page .results-title,
 .exercises-page .pagination-info,
 .exercises-page .logged-exercise-title,
-.exercises-page .workout-log-summary,
-.exercises-page .ex-tab--active {
+.exercises-page .workout-log-summary {
   color: var(--ex-text);
 }
 
@@ -2664,18 +3360,9 @@ textarea {
   color: var(--ex-text-muted);
 }
 
-.exercises-page .ex-tab-bar {
-  background: var(--ex-surface-2);
-  border-bottom: 1px solid var(--ex-border);
-}
-
 .exercises-page .ex-tab:hover {
   color: var(--ex-text);
   background: var(--ex-surface-3);
-}
-
-.exercises-page .ex-tab::after {
-  background: var(--ex-accent);
 }
 
 .exercises-page .search-filter-field .form-control,
@@ -2692,6 +3379,14 @@ textarea {
   color: var(--ex-text-muted);
 }
 
+.exercises-page .exercise-database-toolbar .search-filter-field .form-label {
+  color: var(--ex-text, #f8fafc);
+}
+
+.exercises-page .exercise-database-toolbar .search-filter-field .form-control::placeholder {
+  color: var(--ex-text-secondary, #a4b0c0);
+}
+
 .exercises-page .search-filter-field .form-control:focus,
 .exercises-page .search-filter-field .form-select:focus,
 .exercises-page .edit-exercise-panel .form-control:focus,
@@ -2701,18 +3396,34 @@ textarea {
 }
 
 .exercises-page .btn-fav {
-  color: var(--ex-text-secondary);
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
 }
 
 .exercises-page .btn-fav:hover {
-  background: var(--ex-surface-3);
-  color: var(--ex-text);
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
 }
 
 .exercises-page .btn-fav--active {
-  background: color-mix(in srgb, #dc2626 20%, var(--ex-surface-2) 80%);
-  border-color: color-mix(in srgb, #dc2626 40%, var(--ex-border) 60%);
-  color: #fecaca;
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.exercises-page .btn-edit-exercise {
+  background: var(--wa-action-blue, #2f6bff);
+  border-color: var(--wa-action-blue, #2f6bff);
+  color: #ffffff;
+}
+
+.exercises-page .btn-edit-exercise:hover,
+.exercises-page .btn-edit-exercise:focus-visible {
+  background: var(--wa-action-blue-hover, #2459d8);
+  border-color: var(--wa-action-blue-hover, #2459d8);
+  color: #ffffff;
 }
 
 .exercises-page .list-group-item,
@@ -2721,7 +3432,7 @@ textarea {
 .exercises-page .tab-content,
 .exercises-page .tab-content .panel,
 .exercises-page .edit-exercise-panel .panel-header {
-  border-color: var(--ex-border);
+  border-color: rgba(145, 160, 200, 0.24);
 }
 
 .exercises-page .summary-img,
@@ -2757,6 +3468,24 @@ textarea {
    RESPONSIVE â€“ 991px
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 991px) {
+  .results-header-actions {
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .results-display-toggle {
+    margin-left: auto;
+  }
+
+  .rows-per-page-control {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .exercise-list--grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .search-filter-grid {
     grid-template-columns: 1fr;
   }
@@ -2772,7 +3501,7 @@ textarea {
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding: 16px;
+    padding: 14px 16px;
     gap: 16px;
     min-height: 150px;
   }
@@ -2780,7 +3509,6 @@ textarea {
     width: 120px;
     height: 120px;
     flex-shrink: 0;
-    margin: 0;
   }
   .exercise-img img {
     width: 120px;
@@ -2851,6 +3579,10 @@ textarea {
    RESPONSIVE - 768px (Tablet / large phone)
 ───────────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  .exercise-database-toolbar .search-filter-primary-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   /* - Hero banner - */
   :deep(.builder-hero),
   .builder-hero {
@@ -2884,45 +3616,27 @@ textarea {
     height: auto;
   }
 
-  /* - Tab bar: scrollable, compact - */
-  .ex-tab-bar {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-    border-radius: 10px 10px 0 0;
-    -webkit-overflow-scrolling: touch;
-    padding: 0 2px;
-    gap: 1px;
-  }
-  .ex-tab-bar::-webkit-scrollbar { display: none; }
-  .ex-tab {
-    flex: 0 0 auto;
-    min-width: 100px;
-    max-width: 120px;
-    height: 40px;
-    padding: 0 10px;
-    font-size: 0.85rem;
-  }
+  /* Tab bar layout/colors on mobile are owned by the ".exercises-page .ex-tab-bar"
+     / ".exercises-page .ex-tab" rules in the mobile hierarchy block further down. */
   .tab-label-full  { display: none; }
   .tab-label-short { display: inline; }
 
-  /* - Accordion toggle visible on mobile - */
+  /* - Accordion toggle mobile style - */
   .filter-accordion-toggle {
-    display: flex;
     align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    background: #f8fafc;
-    border: none;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 12px 14px;
+    justify-content: center;
+    width: auto;
+    background: #17213a;
+    border: 1px solid rgba(145, 160, 200, 0.24);
+    padding: 7px 12px;
     font-size: 0.92rem;
     font-weight: 700;
-    color: #334155;
+    color: var(--ex-text-secondary, #a4b0c0);
     cursor: pointer;
-    border-radius: 12px 12px 0 0;
+    border-radius: 4px !important;
   }
-  .filter-accordion-toggle i { font-size: 0.85rem; color: #64748b; }
+  .filter-toggle-main-icon { color: #60a5fa; }
+  .filter-accordion-toggle i { font-size: 0.78rem; color: var(--ex-text-muted, #738196); }
 
   /* - Filter grid: 1-col on mobile - */
   .search-filter-grid {
@@ -2934,43 +3648,49 @@ textarea {
   .search-filter-actions {
     flex-direction: column;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 4px;
   }
   .search-filter-actions .btn {
     width: 100% !important;
-    min-height: 48px !important;
-    font-size: 0.95rem;
+    min-height: 38px !important;
+    font-size: 0.88rem;
   }
 
   .search-filter-body {
-    padding: 10px 12px 10px;
+    padding: 8px 10px;
   }
 
-  /* - Compact results header - */
-  .results-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 8px;
-    padding-bottom: 8px;
-    margin-top: 0;
-    margin-bottom: 10px;
-    border-top: 1px solid #e7edf5;
+  .exercise-database-toolbar .search-filter-field .form-control,
+  .exercise-database-toolbar .search-filter-field .form-select,
+  .search-filter-actions .btn {
+    min-height: 40px !important;
+    height: 40px !important;
+    border-radius: 6px !important;
   }
-  .results-title {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: #334155;
+
+  .exercise-database-toolbar .search-filter-field--search .form-control {
+    padding-left: 54px !important;
   }
-  .results-count {
-    font-size: 0.82rem;
-    color: #64748b;
-    font-weight: 600;
+
+  .exercise-database-toolbar .search-filter-select-wrap .form-select {
+    padding-right: 34px !important;
   }
+
+  .exercise-database-toolbar .search-filter-input-icon,
+  .exercise-database-toolbar .search-filter-select-icon {
+    font-size: 0.74rem;
+  }
+
+  /* Results header colors/spacing on mobile are owned by the
+     ".exercises-page .results-header-row" rule in the mobile hierarchy block further down. */
 
   /* - Exercise list gap - */
   .exercise-list {
     gap: 10px;
+  }
+
+  .exercise-list--grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* - Compact exercise card - */
@@ -2978,7 +3698,7 @@ textarea {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    padding: 12px;
+    padding: 10px;
     gap: 10px;
     min-height: auto;
   }
@@ -3083,6 +3803,289 @@ textarea {
   .exercise-card .exercise-image img { width: 64px; height: 64px; border-radius: 8px; }
   .exercise-row { padding: 10px; gap: 8px; }
   .exercise-actions .btn { height: 32px; min-height: 32px; font-size: 0.75rem; padding: 3px 8px; }
+}
+
+/* Workout Builder-inspired hierarchy for the Exercise Database mobile view. */
+@media (max-width: 768px) {
+  .exercises-page .ex-page-body {
+    padding: 8px !important;
+    border: 1px solid rgba(145, 160, 200, 0.24) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 10px 26px rgba(2, 6, 23, 0.32) !important;
+  }
+
+  .exercises-page .ex-tab-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+    padding: 4px !important;
+    overflow: hidden;
+    background: #1b2444;
+    border: 1px solid rgba(145, 160, 200, 0.24);
+    border-radius: 10px 10px 0 0 !important;
+  }
+
+  .exercises-page .ex-tab {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 5px !important;
+    gap: 4px;
+    border-radius: 3px !important;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 1;
+    box-shadow: none;
+  }
+
+  .exercises-page .ex-tab--active {
+    background: #1d4f9f !important;
+    color: #ffffff !important;
+    filter: none;
+    transform: none;
+    box-shadow: inset 0 -2px 0 0 rgba(200, 221, 255, 0.95), 0 0 0 1px rgba(196, 220, 255, 0.28);
+  }
+
+  .exercises-page .ex-tab i {
+    display: inline-block;
+    margin-right: 2px !important;
+    color: #ffffff !important;
+    font-size: 0.7rem;
+  }
+
+  .exercises-page .tab-content {
+    border-color: rgba(145, 160, 200, 0.24) !important;
+    border-radius: 0 0 10px 10px !important;
+  }
+
+  .exercises-page .tab-content .container.container-block {
+    padding: 6px !important;
+  }
+
+  .exercises-page .tab-content .panel {
+    border: 1px solid rgba(145, 160, 200, 0.24) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12) !important;
+  }
+
+  .exercises-page .tab-content .panel-header {
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 10px;
+    background: #1b2444 !important;
+    background-image: none !important;
+    border: 1px solid rgba(145, 160, 200, 0.24);
+    border-left: 3px solid #1d4f9f;
+    border-radius: 10px 10px 4px 4px;
+  }
+
+  .exercises-page .tab-content .panel-header.d-flex.justify-content-between {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .exercises-page .tab-content .panel-header.d-flex.justify-content-between h4 {
+    min-width: 0;
+    font-size: 0.82rem;
+  }
+
+  .exercises-page .tab-content .panel-header h4 {
+    color: #ffffff !important;
+    font-size: 0.9rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .exercises-page .tab-content .panel-header .btn {
+    min-height: 34px !important;
+    padding: 5px 6px !important;
+    border-radius: 6px !important;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  .exercises-page .results-header-row {
+    min-height: 38px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    background: #173a70;
+    border: 1px solid rgba(96, 165, 250, 0.34);
+    border-left: 3px solid #60a5fa;
+    border-radius: 7px;
+  }
+
+  .exercises-page .results-title {
+    color: #ffffff !important;
+    font-size: 0.88rem;
+    font-weight: 800;
+  }
+
+  .exercises-page .results-count {
+    color: #c8ddff !important;
+    font-size: 0.76rem;
+  }
+
+  .exercises-page .panel-body {
+    padding: 10px !important;
+  }
+
+  .exercises-page .panel-body .py-4 {
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .exercises-page .exercise-row,
+  .exercises-page .exercise-card,
+  .exercises-page .list-group-item {
+    border-radius: 8px !important;
+    border-color: rgba(145, 160, 200, 0.24) !important;
+  }
+
+  .exercises-page .tab-content .favorites-panel {
+    overflow: hidden;
+    background: #1b2444 !important;
+    background-image: none !important;
+    border-color: rgba(145, 160, 200, 0.24) !important;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12) !important;
+  }
+
+  .exercises-page .favorites-panel > .panel-body {
+    background: #1b2444 !important;
+  }
+
+  .exercises-page .favorites-grid {
+    --bs-gutter-x: 0;
+    --bs-gutter-y: 0;
+    margin: 0;
+  }
+
+  .exercises-page .favorite-exercise-item {
+    width: 100%;
+    margin-bottom: 8px !important;
+    padding: 0;
+  }
+
+  .exercises-page .favorite-exercise-item:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  .exercises-page .favorite-exercise-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 9px;
+    align-items: center;
+    min-height: 78px;
+    padding: 9px !important;
+    overflow: hidden;
+    background: #1b2444 !important;
+    background-image: none !important;
+    border: 1px solid rgba(145, 160, 200, 0.24) !important;
+    border-radius: 7px !important;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12) !important;
+  }
+
+  .exercises-page .favorite-exercise-card .exercise-image,
+  .exercises-page .favorite-exercise-card .exercise-image img {
+    width: 60px;
+    height: 60px;
+    margin: 0;
+    border-radius: 6px;
+  }
+
+  .exercises-page .favorite-exercise-card .exercise-image img {
+    object-fit: cover;
+    border: 1px solid rgba(145, 160, 200, 0.24);
+  }
+
+  .exercises-page .favorite-exercise-content {
+    align-self: stretch;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    padding-right: 54px;
+  }
+
+  .exercises-page .favorite-exercise-content .exercise-title {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .exercises-page .favorite-exercise-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+  }
+
+  .exercises-page .favorite-exercise-badge {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    max-width: 100%;
+    min-height: 18px;
+    padding: 3px 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: normal;
+  }
+
+  .exercises-page .favorite-exercise-badge--type {
+    color: #c8ddff;
+    background: rgba(37, 99, 235, 0.2) !important;
+    border-color: rgba(96, 165, 250, 0.32);
+  }
+
+  .exercises-page .favorite-exercise-badge--muscle {
+    color: #bff7ed;
+    background: rgba(13, 148, 136, 0.2) !important;
+    border-color: rgba(45, 212, 191, 0.3);
+  }
+
+  .exercises-page .favorite-exercise-badge--equipment {
+    color: #d8dee9;
+    background: rgba(100, 116, 139, 0.24) !important;
+    border-color: rgba(148, 163, 184, 0.26);
+  }
+
+  .exercises-page .favorite-exercise-action {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    margin: 0;
+  }
+
+  .exercises-page .favorite-exercise-toggle {
+    width: auto !important;
+    min-width: 56px;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 4px 7px !important;
+    border-radius: 6px !important;
+    color: #e2e8f0 !important;
+    background: #17213a !important;
+    border-color: rgba(148, 163, 184, 0.32) !important;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
+  .exercises-page .favorite-exercise-toggle .fa-heart {
+    color: #ef476f !important;
+  }
 }
 </style>
 

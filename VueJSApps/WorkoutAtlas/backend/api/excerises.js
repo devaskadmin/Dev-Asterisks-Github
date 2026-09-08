@@ -207,6 +207,99 @@ const fetchExercisesForView = async ({ view = 'all', userId, isAdmin = false }) 
   return mapExerciseRowsWithUserFlags(rows, userId, isAdmin);
 };
 
+const fetchExercisePage = async ({
+  view = 'all',
+  userId,
+  isAdmin = false,
+  search = '',
+  workoutType = '',
+  muscleGroup = '',
+  equipment = '',
+  page = 1,
+  pageSize = 5,
+}) => {
+  const normalizedView = String(view || 'all').trim().toLowerCase();
+  const normalizedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+  const normalizedPageSize = Math.min(100, Math.max(1, Number.parseInt(pageSize, 10) || 5));
+  const where = [];
+  const params = [userId];
+
+  if (!isAdmin) {
+    where.push('(COALESCE(e.IsGlobalExercise, 1) = 1 OR e.CreatedByUserID = ?)');
+    params.push(userId);
+  }
+
+  if (normalizedView === 'mine' || normalizedView === 'my') {
+    where.push('e.CreatedByUserID = ?');
+    params.push(userId);
+  } else if (normalizedView === 'favorites' || normalizedView === 'favourites') {
+    where.push('ufe.user_id IS NOT NULL');
+  }
+
+  const addTextFilter = (column, value, partial = false) => {
+    const normalizedValue = String(value || '').trim().toLowerCase();
+    if (!normalizedValue || normalizedValue === 'all') return;
+    where.push(`LOWER(COALESCE(${column}, '')) ${partial ? 'LIKE' : '='} ?`);
+    params.push(partial ? `%${normalizedValue}%` : normalizedValue);
+  };
+
+  addTextFilter('e.ExerciseTitle', search, true);
+  addTextFilter('e.WorkoutType', workoutType);
+  addTextFilter('e.MuscleGroup', muscleGroup);
+  addTextFilter('e.Equipment', equipment);
+
+  const fromSql = `
+    FROM exercises e
+    LEFT JOIN user_favorite_exercises ufe
+      ON ufe.exercise_id = e.ExerciseID
+      AND ufe.user_id = ?
+  `;
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [countRows] = await pool.query(
+    `SELECT COUNT(*) AS total ${fromSql} ${whereSql}`,
+    params
+  );
+  const total = Number(countRows?.[0]?.total || 0);
+  const offset = (normalizedPage - 1) * normalizedPageSize;
+  const [rows] = await pool.query(
+    `SELECT
+       e.*,
+       COALESCE(e.IsGlobalExercise, 1) AS IsGlobalExercise,
+       CASE WHEN ufe.user_id IS NULL THEN 0 ELSE 1 END AS IsFavorite
+     ${fromSql}
+     ${whereSql}
+     ORDER BY e.ExerciseTitle ASC
+     LIMIT ? OFFSET ?`,
+    [...params, normalizedPageSize, offset]
+  );
+
+  const optionWhere = where.filter((clause) => !clause.startsWith('LOWER(COALESCE'));
+  const optionParamCount = 1 + optionWhere.reduce((count, clause) => count + (clause.includes('?') ? 1 : 0), 0);
+  const optionParams = params.slice(0, optionParamCount);
+  const optionWhereSql = optionWhere.length ? `WHERE ${optionWhere.join(' AND ')}` : '';
+  const [optionRows] = await pool.query(
+    `SELECT DISTINCT e.WorkoutType, e.MuscleGroup, e.Equipment
+     ${fromSql}
+     ${optionWhereSql}`,
+    optionParams
+  );
+  const uniqueSorted = (key) => [...new Set(optionRows.map((row) => row[key]).filter(Boolean))]
+    .sort((left, right) => String(left).localeCompare(String(right)));
+
+  return {
+    items: mapExerciseRowsWithUserFlags(rows, userId, isAdmin),
+    total,
+    page: normalizedPage,
+    pageSize: normalizedPageSize,
+    totalPages: Math.ceil(total / normalizedPageSize),
+    filters: {
+      workoutTypes: uniqueSorted('WorkoutType'),
+      muscleGroups: uniqueSorted('MuscleGroup'),
+      equipment: uniqueSorted('Equipment'),
+    },
+  };
+};
+
 const normalizeFallbackExercises = (rawList = []) => {
   if (!Array.isArray(rawList)) return [];
 
@@ -538,6 +631,21 @@ router.get('/exercises', async (req, res) => {
     if (!currentUserId) return;
     await ensureExerciseSchema();
     const adminUser = isAdminUser(req);
+
+    if (req.query?.paginated === '1') {
+      const result = await fetchExercisePage({
+        view: req.query?.view || 'all',
+        userId: currentUserId,
+        isAdmin: adminUser,
+        search: req.query?.search,
+        workoutType: req.query?.workoutType,
+        muscleGroup: req.query?.muscleGroup,
+        equipment: req.query?.equipment,
+        page: req.query?.page,
+        pageSize: req.query?.pageSize,
+      });
+      return res.status(200).json(result);
+    }
 
     const rows = await fetchExercisesForView({ view: req.query?.view || 'all', userId: currentUserId, isAdmin: adminUser });
     if (Array.isArray(rows) && rows.length > 0) {

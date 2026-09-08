@@ -476,17 +476,17 @@ onUnmounted(() => {
         </div>
 
         <!-- Tab bar -->
-        <nav class="wd-tabs" role="tablist">
+        <nav class="wd-tabs wa-h-tabs wa-h-tabs--tricolor" role="tablist">
           <button
             type="button" role="tab"
-            :class="['wd-tab', activeTab === 'overview' ? 'wd-tab--active' : '']"
+            :class="['wd-tab', 'wa-h-tab', activeTab === 'overview' ? 'wd-tab--active wa-h-tab--active' : '']"
             @click="activeTab = 'overview'"
           >
             <i class="fa-solid fa-list-ul"></i> Overview
           </button>
           <button
             type="button" role="tab"
-            :class="['wd-tab', activeTab === 'dayDetails' ? 'wd-tab--active' : '', !selectedDay ? 'wd-tab--disabled' : '']"
+            :class="['wd-tab', 'wa-h-tab', activeTab === 'dayDetails' ? 'wd-tab--active wa-h-tab--active' : '', !selectedDay ? 'wd-tab--disabled' : '']"
             :disabled="!selectedDay"
             @click="selectedDay && (activeTab = 'dayDetails')"
           >
@@ -703,21 +703,18 @@ onUnmounted(() => {
 
 /* Tabs */
 .wd-tabs {
-  display: flex; gap: 4px;
-  border-bottom: 2px solid var(--border-color, #e5e7eb);
+  display: flex;
+  gap: 4px;
   margin-bottom: 20px;
 }
 .wd-tab {
-  background: none; border: none;
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  border: 1px solid transparent;
   padding: 10px 18px; font-size: 0.88rem; font-weight: 700;
-  cursor: pointer; color: var(--text-color-secondary, #6b7280);
+  cursor: pointer;
   display: flex; align-items: center; gap: 7px;
-  transition: color 0.15s, border-color 0.15s;
-  border-radius: 8px 8px 0 0;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 3px;
 }
-.wd-tab:hover         { color: #2563eb; }
-.wd-tab--active       { color: #2563eb; border-bottom-color: #2563eb; }
 .wd-tab--disabled     { opacity: 0.4; cursor: not-allowed; }
 .wd-tab-badge {
   background: #dbeafe; color: #1d4ed8;

@@ -2,7 +2,7 @@
  * Create-UserMediaFolders.js
  * FlexFit v0.83.11 — User Media Lifecycle Management
  *
- * One-time backfill script: creates AWS-S3-CONTENT/USERS/{UserID}/ folder
+ * One-time backfill script: creates workoutatlas-s3-data/USERS/{UserID}/ folder
  * structure for all existing users.
  *
  * Usage:

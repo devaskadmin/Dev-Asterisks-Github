@@ -655,31 +655,33 @@ const demoLogin = async (role) => {
           >
         </label>
 
-        <label class="wa-input login-input" for="wa-password-input">
-          <span class="wa-input__icon" aria-hidden="true">
-            <i class="fa-regular fa-lock"></i>
-          </span>
-          <input
-            id="wa-password-input"
-            v-model="password"
-            :type="[isPasswordShow ? 'text' : 'password']"
-            placeholder="Password"
-            autocomplete="current-password"
-            autocapitalize="none"
-            spellcheck="false"
-            required
-            aria-label="Password"
-          >
-          <button
-            type="button"
-            class="wa-input__toggle"
-            @click="isPasswordShow = !isPasswordShow"
-            :aria-label="isPasswordShow ? 'Hide password' : 'Show password'"
-            :aria-pressed="isPasswordShow ? 'true' : 'false'"
-          >
-            <i class="fa-duotone" :class="[isPasswordShow ? 'fa-eye-slash' : 'fa-eye']"></i>
-          </button>
-        </label>
+        <div class="wa-password-group login-password-group">
+          <label class="wa-input login-input wa-input--password" for="wa-password-input">
+            <span class="wa-input__icon" aria-hidden="true">
+              <i class="fa-regular fa-lock"></i>
+            </span>
+            <input
+              id="wa-password-input"
+              v-model="password"
+              :type="[isPasswordShow ? 'text' : 'password']"
+              placeholder="Password"
+              autocomplete="current-password"
+              autocapitalize="none"
+              spellcheck="false"
+              required
+              aria-label="Password"
+            >
+            <button
+              type="button"
+              class="wa-input__toggle"
+              @click="isPasswordShow = !isPasswordShow"
+              :aria-label="isPasswordShow ? 'Hide password' : 'Show password'"
+              :aria-pressed="isPasswordShow ? 'true' : 'false'"
+            >
+              <i class="fa-duotone" :class="[isPasswordShow ? 'fa-eye-slash' : 'fa-eye']"></i>
+            </button>
+          </label>
+        </div>
 
         <div class="wa-row wa-row--between login-options-row">
           <label class="wa-remember" for="loginCheckbox">
@@ -973,6 +975,16 @@ const demoLogin = async (role) => {
   margin-bottom: 6px;
 }
 
+.wa-brand,
+.wa-welcome,
+.wa-demo-grid,
+.wa-social,
+.wa-signup,
+.wa-version {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .wa-welcome h1 {
   margin: 0;
   color: var(--wa-text);
@@ -993,6 +1005,13 @@ const demoLogin = async (role) => {
   width: 100%;
 }
 
+.wa-form > .wa-input,
+.wa-form > .wa-password-group,
+.wa-form > .login-options-row,
+.wa-form > .login-submit {
+  width: 100%;
+}
+
 .wa-input {
   width: 100%;
   box-sizing: border-box;
@@ -1005,6 +1024,16 @@ const demoLogin = async (role) => {
   background: #252E48;
   overflow: hidden;
   transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.wa-password-group {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.wa-input--password {
+  grid-template-columns: 40px 1fr 42px;
 }
 
 .wa-input:focus-within {
@@ -1073,6 +1102,7 @@ const demoLogin = async (role) => {
   box-shadow: none !important;
   outline: none !important;
   transition: color 150ms ease;
+  align-self: stretch;
 }
 
 .wa-input__toggle:hover {
@@ -1090,6 +1120,13 @@ const demoLogin = async (role) => {
   outline: none !important;
 }
 
+.wa-input__toggle--row:focus,
+.wa-input__toggle--row:focus-visible,
+.wa-input__toggle--row:active {
+  border: 1px solid rgba(145, 160, 200, 0.3) !important;
+  background: rgba(37, 46, 72, 0.55) !important;
+}
+
 .wa-input__toggle:focus-visible {
   outline: 2px solid rgba(96, 165, 250, 0.95);
   outline-offset: -2px;
@@ -1105,6 +1142,10 @@ const demoLogin = async (role) => {
   justify-content: space-between;
   margin-top: 0;
   margin-bottom: 0;
+}
+
+.login-options-row {
+  width: 100%;
 }
 
 .wa-remember {
@@ -1244,10 +1285,12 @@ const demoLogin = async (role) => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 8px;
+  justify-items: center;
 }
 
 .wa-demo-btn {
   min-height: 44px;
+  width: 100%;
   border-radius: 0;
   border: 1px solid transparent;
   background: transparent;
@@ -1466,6 +1509,10 @@ const demoLogin = async (role) => {
     min-height: 46px;
     border-radius: 12px;
     grid-template-columns: 38px 1fr auto;
+  }
+
+  .wa-input--password {
+    grid-template-columns: 38px 1fr 40px;
   }
 
   .wa-input .wa-input__icon,

@@ -213,6 +213,7 @@ const avatarRoutes          = require('./src/routes/avatar.js');
 const toolsRoutes           = require('./api/tools.js');
 const mediaRoutes           = require('./api/media.js');
 const aiGatewayRoutes       = require('./api/ai-gateway.js');
+const nutritionRoutes       = require('./api/nutrition.js');
 
 // Import routes
 app.use('/api', require('./api/auth.js'));
@@ -230,6 +231,7 @@ app.use('/api', toolsRoutes); // 🧰 v0.83.5 Tools diagnostics
 app.use('/api', mediaRoutes); // 🖼️ v0.83.7 media resolver
 app.use('/api', aiGatewayRoutes); // 🤖 WorkoutAtlas AI gateway proxy
 app.use('/api', require('./api/goals.js')); // 🎯 v0.85.40.2 Goals System
+app.use('/api', nutritionRoutes); // 🥗 v0.85.AI.2.1 local nutrition image upload foundation
 
 // Lightweight health route for local/API reachability checks.
 app.get('/api/health', (_req, res) => {

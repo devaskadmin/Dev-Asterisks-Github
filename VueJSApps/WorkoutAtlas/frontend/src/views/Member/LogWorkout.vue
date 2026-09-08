@@ -2,6 +2,7 @@
 import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ExerciseSessionCard from '@/components/workout-session/ExerciseSessionCard.vue';
+import ExercisePickerModal from '@/components/workout-builder/ExercisePickerModal.vue';
 import { API_BASE } from '@/config/env';
 import { useWorkoutSessionDraft } from '@/composable/useWorkoutSessionDraft';
 
@@ -60,6 +61,11 @@ const saveMessage      = ref('');
 const saveError        = ref('');
 const conflictMessage  = ref('');
 const workoutTimerNowMs = ref(Date.now());
+const addExercisePickerOpen = ref(false);
+const exerciseLibraryLoading = ref(false);
+const exerciseLibrary = ref([]);
+const exerciseAddLoading = ref(false);
+const sessionUserId = ref(null);
 
 let workoutTimerIntervalId = null;
 
@@ -1088,6 +1094,129 @@ const openBuildMyOwnWorkout = () => {
   openInBuilder('');
 };
 
+const loadSessionUserId = async () => {
+  try {
+    const response = await fetch(`${API_BASE}/api/session`, { credentials: 'include' });
+    if (!response.ok) {
+      sessionUserId.value = null;
+      return;
+    }
+    const data = await response.json().catch(() => ({}));
+    sessionUserId.value = Number(data?.user?.id || 0) || null;
+  } catch (_) {
+    sessionUserId.value = null;
+  }
+};
+
+const loadExerciseLibrary = async () => {
+  exerciseLibraryLoading.value = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/get-exercises`, { credentials: 'include' });
+    const data = await response.json().catch(() => []);
+    exerciseLibrary.value = Array.isArray(data) ? data : [];
+  } catch (_) {
+    exerciseLibrary.value = [];
+  } finally {
+    exerciseLibraryLoading.value = false;
+  }
+};
+
+const openAddExercisePicker = async () => {
+  if (!hasActiveWorkout.value || isPreviewMode.value || saving.value || exerciseAddLoading.value) {
+    return;
+  }
+
+  if (!activeSession.value?.id) {
+    saveError.value = 'No active in-progress workout found.';
+    return;
+  }
+
+  saveError.value = '';
+
+  if (!exerciseLibrary.value.length && !exerciseLibraryLoading.value) {
+    await loadExerciseLibrary();
+  }
+
+  if (!exerciseLibrary.value.length) {
+    saveError.value = 'Unable to load Exercise Database right now.';
+    return;
+  }
+
+  addExercisePickerOpen.value = true;
+};
+
+const closeAddExercisePicker = () => {
+  if (exerciseAddLoading.value) return;
+  addExercisePickerOpen.value = false;
+};
+
+const addExerciseToActiveWorkout = async (pickedExercises) => {
+  const selectedItems = Array.isArray(pickedExercises) ? pickedExercises : [pickedExercises];
+  const validExerciseIds = selectedItems
+    .map((item) => Number(item?.ExerciseID || item?.exerciseId || 0))
+    .filter((id) => id > 0);
+
+  if (!validExerciseIds.length) {
+    return;
+  }
+
+  if (!hasActiveWorkout.value || !activeSession.value?.id) {
+    saveError.value = 'No active in-progress workout found.';
+    return;
+  }
+
+  exerciseAddLoading.value = true;
+  saveError.value = '';
+  saveMessage.value = '';
+
+  let addedCount = 0;
+
+  try {
+    for (const exerciseId of validExerciseIds) {
+      const response = await fetch(`${API_BASE}/api/workout-sessions/active/add-exercise`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ exerciseId }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to add exercise to active workout.');
+      }
+
+      const addedExercise = payload?.exercise;
+      if (!addedExercise) {
+        continue;
+      }
+
+      if (expandedPlanData.value && Array.isArray(expandedPlanData.value.exercises)) {
+        expandedPlanData.value.exercises = [...expandedPlanData.value.exercises, addedExercise];
+      }
+
+      const sessionExercise = {
+        ...addedExercise,
+        sessionSets: buildInitialSets(addedExercise),
+      };
+      const latestHistory = await getLatestExerciseHistory(sessionExercise.exerciseId);
+      applyLatestHistoryPrefill(sessionExercise, latestHistory);
+
+      sessionExercises.value = [...sessionExercises.value, sessionExercise];
+      addedCount += 1;
+    }
+
+    if (addedCount > 0) {
+      saveMessage.value = `${addedCount} exercise${addedCount === 1 ? '' : 's'} added to ${selectedDay.value}.`;
+      addExercisePickerOpen.value = false;
+      queueWorkoutDraftSave(true);
+    }
+  } catch (err) {
+    saveError.value = err?.message || 'Failed to add exercise to active workout.';
+  } finally {
+    exerciseAddLoading.value = false;
+  }
+};
+
 const removePlanFromUi = (planId) => {
   const pid = String(planId || '').trim();
   if (!pid) {
@@ -1318,12 +1447,14 @@ const saveHistoryWorkout = async (session) => {
 /* ─── Lifecycle ──────────────────────────────────────────────────────────── */
 onMounted(async () => {
   document.body.classList.add(WORKOUT_LOG_ACTIVE_BODY_CLASS);
+  await loadSessionUserId();
   await loadWorkoutLists();
   await checkActiveSession();
   await openRequestedPlanFromQuery();
 });
 
 onActivated(async () => {
+  await loadSessionUserId();
   await loadWorkoutLists();
   await checkActiveSession();
   await openRequestedPlanFromQuery();
@@ -1407,17 +1538,17 @@ onUnmounted(() => {
       </section>
 
       <!-- ── Tab bar ─────────────────────────────────────────────────────── -->
-      <nav class="wl-tabs" role="tablist">
+      <nav class="wl-tabs wa-h-tabs wa-h-tabs--tricolor" role="tablist">
         <button
           type="button" role="tab"
-          :class="['wl-tab', activeTab === 'overview' ? 'wl-tab--active' : '']"
+          :class="['wl-tab', 'wa-h-tab', activeTab === 'overview' ? 'wl-tab--active wa-h-tab--active' : '']"
           @click="activeTab = 'overview'"
         >
           <i class="fa-solid fa-list-ul"></i> Overview
         </button>
         <button
           type="button" role="tab"
-          :class="['wl-tab', activeTab === 'dayDetails' ? 'wl-tab--active' : '', (!selectedDay || !hasWorkoutPlans) ? 'wl-tab--disabled' : '']"
+          :class="['wl-tab', 'wa-h-tab', activeTab === 'dayDetails' ? 'wl-tab--active wa-h-tab--active' : '', (!selectedDay || !hasWorkoutPlans) ? 'wl-tab--disabled' : '']"
           :disabled="!selectedDay || !hasWorkoutPlans"
           @click="selectedDay && hasWorkoutPlans && (activeTab = 'dayDetails')"
         >
@@ -1426,7 +1557,7 @@ onUnmounted(() => {
         </button>
         <button
           type="button" role="tab"
-          :class="['wl-tab', activeTab === 'workoutHistory' ? 'wl-tab--active' : '']"
+          :class="['wl-tab', 'wa-h-tab', activeTab === 'workoutHistory' ? 'wl-tab--active wa-h-tab--active' : '']"
           @click="openHistoryTab"
         >
           <i class="fa-solid fa-clock-rotate-left"></i> Workout History
@@ -1960,15 +2091,29 @@ onUnmounted(() => {
     </div>
 
     <!-- ── Sticky bottom bar (Day Details only) ───────────────────────────── -->
-    <div v-if="activeTab === 'dayDetails' && selectedDay && dayExercises.length > 0 && !isPreviewMode" class="wl-bottom-bar">
+    <div v-if="activeTab === 'dayDetails' && selectedDay && dayExercises.length > 0 && hasActiveWorkout && activeSession && !isPreviewMode" class="wl-bottom-bar">
       <div class="wl-bottom-bar__inner">
         <span class="wl-bottom-bar__label">{{ totalCompleted }} / {{ totalSets }} sets done</span>
-        <button type="button" class="wl-btn-complete" :disabled="saving" @click="completeWorkout">
-          <i class="fa-solid fa-flag-checkered"></i>
-          {{ saving ? 'Saving…' : 'Complete & End Workout' }}
-        </button>
+        <div class="wl-bottom-bar__actions">
+          <button type="button" class="wl-btn-add-exercise" :disabled="saving || exerciseLibraryLoading || exerciseAddLoading" @click="openAddExercisePicker">
+            <i v-if="exerciseLibraryLoading || exerciseAddLoading" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-else class="fa-solid fa-dumbbell"></i>
+            <span>{{ exerciseAddLoading ? 'Adding…' : 'Add Exercise' }}</span>
+          </button>
+          <button type="button" class="wl-btn-complete" :disabled="saving" @click="completeWorkout">
+            <i class="fa-solid fa-flag-checkered"></i>
+            {{ saving ? 'Saving…' : 'Complete & End Workout' }}
+          </button>
+        </div>
       </div>
     </div>
+    <ExercisePickerModal
+      :is-open="addExercisePickerOpen"
+      :exercises="exerciseLibrary"
+      :user-id="sessionUserId"
+      @close="closeAddExercisePicker"
+      @add="addExerciseToActiveWorkout"
+    />
     <!-- ── Delete History Confirmation Modal ────────────────────────────── -->
     <Teleport to="body">
       <div v-if="showDeleteHistoryModal" class="wl-modal-overlay" @click.self="closeDeleteHistoryModal">
@@ -2201,9 +2346,6 @@ onUnmounted(() => {
   display: flex;
   gap: 6px;
   padding: 4px;
-  border: 1px solid var(--border-color, #dbe3ee);
-  border-radius: 12px;
-  background: #e2e8f0;
   margin-bottom: 20px;
   width: 100%;
   max-width: 100%;
@@ -2213,31 +2355,21 @@ onUnmounted(() => {
 .wl-tab {
   flex: 1 1 0;
   min-width: 0;
-  background: #cbd5e1;
-  border: 1px solid #c0ccd9;
+  border: 1px solid transparent;
   margin-bottom: 0;
   padding: 9px 12px;
   font-size: 0.86rem;
   font-weight: 700;
-  cursor: pointer; color: var(--text-color-secondary, #6b7280);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  border-radius: 9px;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 3px;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-}
-.wl-tab:hover {
-  background: #bfcbd9;
-  color: #334155;
-}
-.wl-tab--active {
-  background: #334155;
-  color: #f8fafc;
-  border-color: #475569;
 }
 .wl-tab--disabled {
   opacity: 0.5;
@@ -2528,15 +2660,47 @@ onUnmounted(() => {
 }
 .wl-bottom-bar__label   { font-size: 0.88rem; font-weight: 700; color: var(--text-color, #111827); }
 
+.wl-bottom-bar__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.wl-btn-add-exercise {
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.wl-btn-add-exercise i { color: #fff; }
+.wl-btn-add-exercise:hover:not(:disabled),
+.wl-btn-add-exercise:active:not(:disabled) { background: #1d4ed8; }
+.wl-btn-add-exercise:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .wl-btn-complete {
-  background: #22c55e; border: none; color: #fff;
+  background: #dc2626; border: none; color: #fff;
   border-radius: 10px; padding: 10px 18px;
   font-size: 0.88rem; font-weight: 800; cursor: pointer;
   width: 100%;
   display: flex; align-items: center; justify-content: center; gap: 7px;
   transition: background 0.15s;
 }
-.wl-btn-complete:hover:not(:disabled) { background: #16a34a; }
+.wl-btn-complete i { color: #fff; }
+.wl-btn-complete:hover:not(:disabled),
+.wl-btn-complete:active:not(:disabled) { background: #b91c1c; }
 .wl-btn-complete:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Date input ───────────────────────────────────────────────────────────── */
@@ -2885,12 +3049,20 @@ onUnmounted(() => {
 
 .wl-page .wl-btn--active,
 .wl-page .wl-btn-complete {
-  background: #16a34a;
+  background: #dc2626;
+}
+
+.wl-page .wl-btn-add-exercise {
+  background: #2563eb;
 }
 
 .wl-page .wl-btn--active:hover,
 .wl-page .wl-btn-complete:hover {
-  background: #15803d;
+  background: #b91c1c;
+}
+
+.wl-page .wl-btn-add-exercise:hover {
+  background: #1d4ed8;
 }
 
 .wl-page .wl-btn-resume {
@@ -2983,25 +3155,11 @@ onUnmounted(() => {
 }
 
 .wl-page .wl-tabs {
-  background: color-mix(in srgb, var(--wl-surface-2) 82%, #1f2937 18%);
-  border-color: var(--wl-border);
+  margin-bottom: 20px;
 }
 
 .wl-page .wl-tab {
-  background: color-mix(in srgb, var(--wl-surface-3) 78%, #334155 22%);
-  border-color: color-mix(in srgb, var(--wl-border) 72%, #334155 28%);
-  color: var(--wl-text-secondary);
-}
-
-.wl-page .wl-tab:hover,
-.wl-page .wl-tab--active {
-  color: var(--wl-text);
-}
-
-.wl-page .wl-tab--active {
-  background: color-mix(in srgb, var(--wl-surface-2) 60%, #3b4257 40%);
-  border-color: color-mix(in srgb, var(--wl-accent) 46%, var(--wl-border) 54%);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wl-accent) 24%, transparent 76%);
+  border-radius: 3px;
 }
 
 .wl-page .wl-tab-badge,
@@ -3420,7 +3578,7 @@ onUnmounted(() => {
   .wl-stat-card span   { font-size: 0.56rem; }
   .wl-stat-card strong { font-size: 0.78rem; }
 
-  /* Tabs: short, gray/navy-gray, no glow — Overview | Day Details | Workout History only */
+  /* Tabs stay horizontal and compact on mobile via shared wa-h-tabs styling. */
   .wl-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3428,12 +3586,10 @@ onUnmounted(() => {
     flex-wrap: initial;
     max-width: 100%;
     gap: 1px;
-    border: 1px solid #334155;
     padding: 1px;
     margin-bottom: 6px;
     overflow: hidden;
     border-radius: 9px;
-    background: #1e293b;
   }
   .wl-tab {
     min-width: 0;
@@ -3444,27 +3600,14 @@ onUnmounted(() => {
     margin-bottom: 0;
     justify-content: center;
     text-align: center;
-    background: #242e3d;
-    color: #cbd5e1;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 6px;
     white-space: normal;
     line-height: 1.05;
   }
   .wl-tab i { font-size: 0.62rem; }
-  .wl-tab:hover {
-    background: #334155;
-    color: #f3f4f6;
-  }
-  .wl-tab--active {
-    background: #3b4759;
-    color: #f8fafc !important;
-    box-shadow: none;
-  }
   .wl-tab--disabled {
     opacity: 0.5;
-    background: #1c2531;
-    color: #8b98ab;
   }
   /* Remove the day badge/text from the tab row entirely on mobile */
   .wl-tab-badge { display: none; }
@@ -3844,6 +3987,22 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
+  .wl-btn-add-exercise {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 5px 8px;
+    min-height: 32px;
+    font-size: 0.66rem;
+    border-radius: 9px;
+    gap: 4px;
+    justify-content: center;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 /* ── Small mobile (≤ 640px) — layout stacking only, sizes inherited from 768px ── */
@@ -3858,10 +4017,15 @@ onUnmounted(() => {
     align-items: center;
     gap: 6px;
   }
+  .wl-bottom-bar__actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+    gap: 6px;
+  }
   .wl-history-session__meta { flex-direction: column; gap: 4px; }
   .wl-history-datebar { flex-direction: column; align-items: flex-start; gap: 6px; }
   .wl-day-card__footer { flex-direction: column; }
   .wl-btn-preview, .wl-btn-start, .wl-btn-resume { width: 100%; justify-content: center; }
+  .wl-btn-add-exercise,
   .wl-btn-complete {
     width: 100%;
     min-width: 0;

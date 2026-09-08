@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db.js');
+const { sanitizeText } = require('../utils/sanitize.js');
 
 // ─── Auth guard helper ──────────────────────────────────────────────────────
 const requireAuth = (req, res, next) => {
@@ -169,6 +170,202 @@ router.put('/workout-sessions/:sessionId/draft', requireAuth, async (req, res) =
   } catch (err) {
     console.error('❌ PUT /workout-sessions/:sessionId/draft:', err);
     return res.status(500).json({ error: 'Failed to save workout draft.' });
+  }
+});
+
+// ─── POST /api/workout-sessions/active/add-exercise ────────────────────────
+// Adds an exercise from the existing exercise DB into the authenticated user's
+// active workout day and persists it to the user's workout plan copy.
+router.post('/workout-sessions/active/add-exercise', requireAuth, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const userId = Number(req.session.user.id || 0);
+    const exerciseId = Number(req.body?.exerciseId || 0);
+
+    if (!exerciseId) {
+      return res.status(400).json({ error: 'exerciseId is required.' });
+    }
+
+    const [activeRows] = await connection.query(
+      `SELECT
+         id,
+         source_workout_schedule_id AS workoutPlanId,
+         workout_day_id             AS workoutDayId,
+         workout_day_name           AS workoutDayName,
+         status
+       FROM workout_log_sessions
+       WHERE user_id = ? AND status = 'in_progress'
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!activeRows.length) {
+      return res.status(409).json({ error: 'No active in-progress workout session found.' });
+    }
+
+    const activeSession = activeRows[0] || {};
+    const workoutPlanId = Number(activeSession.workoutPlanId || 0);
+    const activeDayId = activeSession.workoutDayId != null ? Number(activeSession.workoutDayId) : null;
+    const activeDayName = String(activeSession.workoutDayName || '').trim();
+
+    if (!workoutPlanId || !activeDayName) {
+      return res.status(400).json({ error: 'Active workout session is missing plan/day context.' });
+    }
+
+    const [scheduleRows] = await connection.query(
+      `SELECT id, user_id
+       FROM workout_schedules
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [workoutPlanId, userId]
+    );
+
+    if (!scheduleRows.length) {
+      return res.status(404).json({ error: 'Active workout plan not found for this user.' });
+    }
+
+    let groupRow = null;
+    if (activeDayId) {
+      const [rowsById] = await connection.query(
+        `SELECT id, label
+         FROM workout_schedule_groups
+         WHERE id = ? AND workout_schedule_id = ?
+         LIMIT 1`,
+        [activeDayId, workoutPlanId]
+      );
+      groupRow = rowsById[0] || null;
+    }
+
+    if (!groupRow) {
+      const [rowsByLabel] = await connection.query(
+        `SELECT id, label
+         FROM workout_schedule_groups
+         WHERE workout_schedule_id = ? AND LOWER(label) = LOWER(?)
+         ORDER BY sort_order ASC, id ASC
+         LIMIT 1`,
+        [workoutPlanId, activeDayName]
+      );
+      groupRow = rowsByLabel[0] || null;
+    }
+
+    if (!groupRow) {
+      return res.status(400).json({ error: 'Unable to resolve the active workout day for this plan.' });
+    }
+
+    const [exerciseRows] = await connection.query(
+      `SELECT
+         ExerciseID,
+         ExerciseTitle,
+         ImageURL,
+         WorkoutType,
+         MuscleGroup,
+         Equipment
+       FROM exercises
+       WHERE ExerciseID = ?
+       LIMIT 1`,
+      [exerciseId]
+    );
+
+    if (!exerciseRows.length) {
+      return res.status(404).json({ error: 'Exercise not found in Exercise Database.' });
+    }
+
+    const exercise = exerciseRows[0] || {};
+    const normalizedWorkoutType = String(exercise.WorkoutType || '').trim().toLowerCase();
+    const isCardio = normalizedWorkoutType === 'cardio';
+
+    const [sortRows] = await connection.query(
+      `SELECT COALESCE(MAX(sort_order), 0) AS maxSortOrder
+       FROM workout_schedule_exercises
+       WHERE workout_schedule_id = ? AND workout_schedule_group_id = ?`,
+      [workoutPlanId, Number(groupRow.id)]
+    );
+    const nextSortOrder = Number(sortRows?.[0]?.maxSortOrder || 0) + 1;
+
+    await connection.beginTransaction();
+
+    const [insertResult] = await connection.query(
+      `INSERT INTO workout_schedule_exercises
+        (
+          workout_schedule_id,
+          workout_schedule_group_id,
+          exercise_id,
+          exercise_name,
+          exercise_image_url,
+          workout_type,
+          muscle_group,
+          equipment,
+          sort_order,
+          notes,
+          target_sets,
+          target_reps,
+          target_weight,
+          target_duration_minutes,
+          target_rest_seconds
+        )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        workoutPlanId,
+        Number(groupRow.id),
+        Number(exercise.ExerciseID),
+        sanitizeText(exercise.ExerciseTitle || '', 150),
+        sanitizeText(exercise.ImageURL || '', 255),
+        sanitizeText(exercise.WorkoutType || 'Strength', 50),
+        sanitizeText(exercise.MuscleGroup || '', 80),
+        sanitizeText(exercise.Equipment || '', 80),
+        nextSortOrder,
+        '',
+        isCardio ? 1 : 3,
+        isCardio ? 0 : 10,
+        0,
+        isCardio ? 20 : 0,
+        isCardio ? 0 : 60,
+      ]
+    );
+
+    await connection.query(
+      `UPDATE workout_schedules
+       SET updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ?`,
+      [workoutPlanId, userId]
+    );
+
+    await connection.commit();
+
+    const insertedId = Number(insertResult?.insertId || 0);
+
+    return res.status(201).json({
+      message: 'Exercise added to active workout day and saved to your workout plan.',
+      exercise: {
+        id: `wse-${insertedId}`,
+        exerciseId: Number(exercise.ExerciseID),
+        name: String(exercise.ExerciseTitle || '').trim(),
+        image: String(exercise.ImageURL || '').trim(),
+        workoutType: String(exercise.WorkoutType || 'Strength').trim(),
+        muscleGroup: String(exercise.MuscleGroup || '').trim(),
+        equipment: String(exercise.Equipment || '').trim(),
+        sets: isCardio ? 1 : 3,
+        reps: isCardio ? 0 : 10,
+        weight: 0,
+        duration: isCardio ? 20 : 0,
+        distance: 0,
+        restTime: isCardio ? 0 : 60,
+        notes: '',
+        scheduleGroup: String(groupRow.label || activeDayName).trim() || activeDayName,
+        sortOrder: nextSortOrder,
+      },
+    });
+  } catch (err) {
+    try {
+      await connection.rollback();
+    } catch (_) {
+      // ignore rollback errors
+    }
+    console.error('❌ POST /workout-sessions/active/add-exercise:', err);
+    return res.status(500).json({ error: 'Failed to add exercise to active workout.' });
+  } finally {
+    connection.release();
   }
 });
 
