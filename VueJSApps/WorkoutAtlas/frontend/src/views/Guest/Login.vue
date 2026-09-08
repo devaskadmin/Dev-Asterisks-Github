@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { API_BASE } from '@/config/env';
 import { isDemoMode } from '@/config/appConfig';
@@ -23,6 +23,42 @@ const isConnectionLimitError = ref(false);
 const isDbAuthError = ref(false);
 const appVersion = import.meta.env.VITE_APP_VERSION || '0.69.0';
 const isDev = import.meta.env.DEV;
+const googleClientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+const googleButtonHost = ref(null);
+const isGoogleAvailable = ref(false);
+const isGoogleLoading = ref(false);
+
+let googleScriptPromise;
+
+const loadGoogleIdentityScript = () => {
+  if (window.google?.accounts?.id) {
+    return Promise.resolve();
+  }
+
+  if (googleScriptPromise) {
+    return googleScriptPromise;
+  }
+
+  googleScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[data-wa-google-gsi="true"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services script.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.waGoogleGsi = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Identity Services script.'));
+    document.head.appendChild(script);
+  });
+
+  return googleScriptPromise;
+};
 
 const isSafariBrowser = () => {
   const ua = navigator.userAgent || '';
@@ -315,6 +351,156 @@ const goToDashboard = async () => {
   await router.replace({ name: "dashboard_index" });
 };
 
+const completeSuccessfulAuthFlow = async (responseData, fallbackMessage = 'Sign-in failed. Try again.') => {
+  if (responseData?.requiresPasswordReset === true) {
+    devLog('Auth requires password reset');
+    const sessionState = await waitForSessionReady();
+    if (!sessionState?.passed) {
+      const d = sessionState?.diagnostics || {};
+      setLoginError({
+        fallbackMessage: 'Session persistence issue',
+        reason: 'Session persistence issue after successful authentication.',
+        status: sessionState?.status,
+        apiMessage: sessionState?.note || 'Login successful, but session verification failed.',
+        loginSucceeded: true,
+        sessionCookiePersisted: sessionState?.hasSessionCookie,
+        sessionVerificationPassed: false,
+        cookieDetected: d.cookiePresent ?? null,
+        cookieSentBack: d.cookiePresent ?? null,
+        corsPassed: d.diagnostics?.corsResult ?? null,
+        sameSiteValue: d.diagnostics?.sameSiteValue ?? null,
+        secureFlag: d.diagnostics?.secureFlag ?? null,
+        safariDetailed: true,
+      });
+      return false;
+    }
+    await router.replace({ name: 'update_password' });
+    return true;
+  }
+
+  if (!responseData?.user) {
+    setLoginError({
+      fallbackMessage,
+      reason: 'The server rejected this sign-in request.',
+      apiMessage: fallbackMessage,
+      safariDetailed: true,
+    });
+    return false;
+  }
+
+  const sessionState = await waitForSessionReady();
+  if (!sessionState?.passed) {
+    const d = sessionState?.diagnostics || {};
+    setLoginError({
+      fallbackMessage: 'Session persistence issue',
+      reason: 'Session persistence issue after successful authentication.',
+      status: sessionState?.status,
+      apiMessage: sessionState?.note || responseData?.message || 'Authentication succeeded, but session verification failed.',
+      loginSucceeded: true,
+      sessionCookiePersisted: sessionState?.hasSessionCookie,
+      sessionVerificationPassed: false,
+      cookieDetected: d.cookiePresent ?? null,
+      cookieSentBack: d.cookiePresent ?? null,
+      corsPassed: d.diagnostics?.corsResult ?? null,
+      sameSiteValue: d.diagnostics?.sameSiteValue ?? null,
+      secureFlag: d.diagnostics?.secureFlag ?? null,
+      safariDetailed: true,
+    });
+    return false;
+  }
+
+  await fetchUser();
+  await goToDashboard();
+  return true;
+};
+
+const handleGoogleSignInCredential = async (credential) => {
+  const safeCredential = String(credential || '').trim();
+  if (!safeCredential || isSubmitting.value || isGoogleLoading.value) {
+    return;
+  }
+
+  isGoogleLoading.value = true;
+  errorMsg.value = "";
+  loginDiagnostics.value = "";
+  diagnosticsCopied.value = false;
+  showDiagnosticsModal.value = false;
+  isConnectionLimitError.value = false;
+  isDbAuthError.value = false;
+
+  try {
+    const response = await apiClient.post('/api/auth/google', { credential: safeCredential });
+    await completeSuccessfulAuthFlow(response?.data, 'Google sign-in failed. Try again.');
+  } catch (error) {
+    const rawData = error?.response?.data;
+    const apiMessage =
+      (typeof rawData === 'object' && rawData !== null
+        ? (rawData.message || rawData.error || null)
+        : null) ||
+      'Google sign-in failed. Please try again.';
+
+    setLoginError({
+      fallbackMessage: apiMessage,
+      reason: 'Google sign-in request was rejected.',
+      status: error?.response?.status,
+      apiMessage,
+      networkMessage: error?.message,
+      loginSucceeded: false,
+      sessionCookiePersisted: null,
+      sessionVerificationPassed: false,
+      safariDetailed: true,
+    });
+  } finally {
+    isGoogleLoading.value = false;
+  }
+};
+
+const renderGoogleButton = async () => {
+  if (!googleClientId) {
+    isGoogleAvailable.value = false;
+    return;
+  }
+
+  try {
+    await loadGoogleIdentityScript();
+    await nextTick();
+
+    const googleApi = window.google?.accounts?.id;
+    if (!googleApi || !googleButtonHost.value) {
+      isGoogleAvailable.value = false;
+      return;
+    }
+
+    googleApi.initialize({
+      client_id: googleClientId,
+      callback: (response) => {
+        const credential = response?.credential;
+        handleGoogleSignInCredential(credential);
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+
+    googleButtonHost.value.innerHTML = '';
+    googleApi.renderButton(googleButtonHost.value, {
+      theme: 'outline',
+      size: 'large',
+      type: 'standard',
+      text: 'signin_with',
+      shape: 'rectangular',
+      width: 320,
+    });
+
+    isGoogleAvailable.value = true;
+  } catch (_err) {
+    isGoogleAvailable.value = false;
+  }
+};
+
+onMounted(async () => {
+  await renderGoogleButton();
+});
+
 // Login Function
 const login = async () => {
   if (isSubmitting.value) return;
@@ -342,56 +528,8 @@ const login = async () => {
       }
     );
 
-    if (response?.data?.requiresPasswordReset === true) {
-      devLog('Login requires password reset');
-      const sessionState = await waitForSessionReady();
-      if (!sessionState?.passed) {
-        const d = sessionState?.diagnostics || {};
-        setLoginError({
-          fallbackMessage: 'Session persistence issue',
-          reason: 'Session persistence issue after successful authentication.',
-          status: sessionState?.status,
-          apiMessage: sessionState?.note || 'Login successful, but session verification failed.',
-          loginSucceeded: true,
-          sessionCookiePersisted: sessionState?.hasSessionCookie,
-          sessionVerificationPassed: false,
-          cookieDetected: d.cookiePresent ?? null,
-          cookieSentBack: d.cookiePresent ?? null,
-          corsPassed: d.diagnostics?.corsResult ?? null,
-          sameSiteValue: d.diagnostics?.sameSiteValue ?? null,
-          secureFlag: d.diagnostics?.secureFlag ?? null,
-          safariDetailed: true,
-        });
-        return;
-      }
-      await router.replace({ name: 'update_password' });
-      return;
-    }
-
-    if (response?.data?.message === "Login successful") {
-      devLog('Login successful response received');
-      const sessionState = await waitForSessionReady();
-      if (!sessionState?.passed) {
-        const d = sessionState?.diagnostics || {};
-        setLoginError({
-          fallbackMessage: 'Session persistence issue',
-          reason: 'Session persistence issue after successful authentication.',
-          status: sessionState?.status,
-          apiMessage: sessionState?.note || response?.data?.message,
-          loginSucceeded: true,
-          sessionCookiePersisted: sessionState?.hasSessionCookie,
-          sessionVerificationPassed: false,
-          cookieDetected: d.cookiePresent ?? null,
-          cookieSentBack: d.cookiePresent ?? null,
-          corsPassed: d.diagnostics?.corsResult ?? null,
-          sameSiteValue: d.diagnostics?.sameSiteValue ?? null,
-          secureFlag: d.diagnostics?.secureFlag ?? null,
-          safariDetailed: true,
-        });
-        return;
-      }
-      await fetchUser();
-      await goToDashboard();
+    if (response?.data?.requiresPasswordReset === true || response?.data?.user) {
+      await completeSuccessfulAuthFlow(response?.data, 'Login failed. Try again.');
       return;
     }
 
@@ -591,12 +729,23 @@ const demoLogin = async (role) => {
         </template>
       </form>
 
-      <div class="wa-divider login-divider"><span>Or Continue With</span></div>
-      <div class="wa-social social-login-list" aria-label="Social sign in options">
-        <a href="#" class="social-login-button" aria-label="Continue with Facebook"><i class="fa-brands fa-facebook-f"></i></a>
-        <a href="#" class="social-login-button" aria-label="Continue with Twitter"><i class="fa-brands fa-twitter"></i></a>
-        <a href="#" class="social-login-button" aria-label="Continue with Google"><i class="fa-brands fa-google"></i></a>
-        <a href="#" class="social-login-button" aria-label="Continue with Instagram"><i class="fa-brands fa-instagram"></i></a>
+      <div class="wa-divider login-divider"><span>Or</span></div>
+      <div class="wa-social social-login-list" aria-label="Google sign in option">
+        <div
+          v-if="isGoogleAvailable"
+          ref="googleButtonHost"
+          class="wa-google-button-host"
+          aria-label="Sign in with Google"
+        ></div>
+        <button
+          v-else
+          type="button"
+          class="wa-google-unavailable"
+          disabled
+          aria-label="Google sign in unavailable"
+        >
+          Sign in with Google (Configuration Pending)
+        </button>
       </div>
 
       <p class="wa-signup login-footer">
@@ -1157,24 +1306,23 @@ const demoLogin = async (role) => {
   flex-wrap: wrap;
 }
 
-.wa-social a {
-  width: 48px;
-  height: 48px;
-  border-radius: 0;
-  border: 1px solid var(--wa-border);
-  background: rgba(15, 23, 42, 0.62);
-  color: #60a5fa;
-  display: grid;
-  place-items: center;
-  text-decoration: none;
-  font-size: 1.2rem;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+.wa-google-button-host {
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
-.wa-social a:hover {
-  transform: translateY(-1px);
-  background: rgba(37, 99, 235, 0.18);
-  border-color: rgba(96, 165, 250, 0.72);
+.wa-google-unavailable {
+  width: min(100%, 320px);
+  min-height: 42px;
+  border: 1px solid var(--wa-border);
+  background: rgba(15, 23, 42, 0.62);
+  color: var(--wa-text-subtle);
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 0;
+  cursor: not-allowed;
+  opacity: 0.9;
 }
 
 .wa-signup,
@@ -1407,12 +1555,11 @@ const demoLogin = async (role) => {
     margin-bottom: 6px;
   }
 
-  .wa-social a,
-  .social-login-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 0;
-    font-size: 1rem;
+  .wa-google-unavailable {
+    width: 100%;
+    max-width: 320px;
+    min-height: 40px;
+    font-size: 0.82rem;
   }
 
   .wa-signup,
@@ -1517,7 +1664,7 @@ const demoLogin = async (role) => {
   .wa-version,
   .wa-primary-btn,
   .wa-home-btn,
-  .wa-social a,
+  .wa-google-unavailable,
   .wa-demo-btn,
   .wa-secondary-btn {
     animation: none !important;

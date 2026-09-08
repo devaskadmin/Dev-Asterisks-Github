@@ -42,6 +42,10 @@ const EXPECTED = [
   { type: 'column', table: 'exercises',  column: 'IsGlobalExercise' },
   { type: 'column', table: 'users',      column: 'avatarName' },
   { type: 'column', table: 'users',      column: 'avatarPath' },
+  { type: 'column', table: 'users',      column: 'external_auth' },
+  { type: 'column', table: 'users',      column: 'external_auth_provider' },
+  { type: 'column', table: 'users',      column: 'external_auth_subject' },
+  { type: 'column', table: 'users',      column: 'external_auth_linked_at' },
 ];
 
 // ---------------------------------------------------------------------------

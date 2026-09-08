@@ -40,6 +40,7 @@ session cookies to work correctly between the frontend and backend.
 | `DEBUG` | `true` (temporarily) | Enables `🧪` cookie/CORS/session diagnostic logs in the Render log stream. Disable after the auth issue is resolved. |
 | `CORS_ORIGINS` | *(leave empty)* | Comma-separated list of additional allowed origins. `FRONTEND_URL` covers the main case. |
 | `SESSION_COOKIE_SECURE` | *(leave unset)* | Derived automatically from `NODE_ENV=production`. |
+| `GOOGLE_CLIENT_ID` | *(Google OAuth Web Client ID)* | Enables backend verification for `POST /api/auth/google`. If unset, password login is unaffected and Google auth returns a controlled configuration error. |
 
 ---
 

@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const dbConfig = require('../dbConfig');
 const { sanitizeText, parseNumber } = require('../utils/sanitize.js');
 const {
-  isGoogleAuthEnabled,
   verifyGoogleIdToken,
   GoogleTokenVerificationError,
 } = require('../services/googleIdTokenVerificationService');
@@ -91,6 +90,40 @@ const resolveSessionRole = async (userId) => {
   }
 
   return { role: 'user', roleSlug: 'user' };
+};
+
+const saveSessionAsync = (req) => {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+};
+
+const establishAuthenticatedSession = async (req, user, options = {}) => {
+  const mustResetPassword = Boolean(options.mustResetPassword);
+  const roleContext = await resolveSessionRole(user.id);
+  const avatarPath = user.avatarPath || '/images/avatar/default.png';
+  const avatarName = user.avatarName || 'default.png';
+
+  req.session.user = {
+    id: user.id,
+    username: user.username,
+    mustResetPassword,
+    role: roleContext.role,
+    roleSlug: roleContext.roleSlug,
+    avatarPath,
+    avatarName,
+  };
+  req.session.userID = user.id;
+  req.session.username = user.username;
+  req.session.mustResetPassword = mustResetPassword;
+  req.session.cookie.maxAge = THIRTY_DAYS_MS;
+
+  await saveSessionAsync(req);
 };
 
 const hasAllRequiredCharClasses = (value = '') => {
@@ -257,35 +290,177 @@ router.get('/debug/login-diagnostics', (req, res) => {
 // POST /api/auth/google/verify
 // Google-auth foundation endpoint only: verifies ID token cryptographically
 // and claim integrity. No account creation/linking/session issuance occurs here.
-router.post('/auth/google/verify', async (req, res) => {
-  if (!isGoogleAuthEnabled()) {
-    return res.status(404).json({ error: 'Feature not available.' });
-  }
-
+router.post('/auth/google', async (req, res) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const keys = Object.keys(body);
-  if (keys.length !== 1 || !Object.prototype.hasOwnProperty.call(body, 'idToken')) {
-    return res.status(400).json({ error: 'Invalid request.' });
+  const credential = String(body.credential || body.idToken || '').trim();
+
+  if (!credential) {
+    return res.status(400).json({ error: 'Google credential is required.' });
   }
 
+  let googleProfile;
   try {
-    const result = await verifyGoogleIdToken(body.idToken);
-    return res.status(200).json(result);
+    googleProfile = await verifyGoogleIdToken(credential);
   } catch (err) {
     if (err instanceof GoogleTokenVerificationError) {
       if (err.statusCode === 400) {
-        return res.status(400).json({ error: 'Invalid request.' });
+        return res.status(400).json({ error: 'Google credential is required.' });
       }
 
       if (err.statusCode === 503) {
-        return res.status(404).json({ error: 'Feature not available.' });
+        return res.status(503).json({
+          error: 'Google authentication is not configured. Set GOOGLE_CLIENT_ID to enable this endpoint.',
+        });
       }
 
-      return res.status(401).json({ error: 'Token verification failed.' });
+      return res.status(401).json({ error: 'Invalid Google credential.' });
     }
 
-    console.error('❌ Google token verification error:', err?.message || err);
-    return res.status(500).json({ error: 'Token verification failed.' });
+    console.error('❌ Google authentication error:', err?.message || err);
+    return res.status(500).json({ error: 'Google authentication failed.' });
+  }
+
+  const provider = 'google';
+  const externalSubject = googleProfile.sub;
+  const verifiedEmail = String(googleProfile.email || '').trim().toLowerCase();
+  const givenName = sanitizeText(googleProfile.given_name || '', 100) || 'Google';
+  const familyName = sanitizeText(googleProfile.family_name || '', 100) || '';
+
+  try {
+    const [linkedRows] = await pool.query(
+      `SELECT *
+       FROM users
+       WHERE external_auth_provider = ? AND external_auth_subject = ?
+       LIMIT 1`,
+      [provider, externalSubject]
+    );
+
+    if (linkedRows.length > 0) {
+      const linkedUser = linkedRows[0];
+      await establishAuthenticatedSession(req, linkedUser, { mustResetPassword: false });
+
+      return res.json({
+        message: 'Login successful',
+        user: req.session.user,
+        requiresPasswordReset: false,
+      });
+    }
+
+    let emailMatchRows = [];
+    try {
+      const [rows] = await pool.query(
+        'SELECT * FROM users WHERE username = ? OR Email = ? LIMIT 1',
+        [verifiedEmail, verifiedEmail]
+      );
+      emailMatchRows = rows;
+    } catch (findErr) {
+      if (findErr?.code === 'ER_BAD_FIELD_ERROR') {
+        const [rows] = await pool.query(
+          'SELECT * FROM users WHERE username = ? LIMIT 1',
+          [verifiedEmail]
+        );
+        emailMatchRows = rows;
+      } else {
+        throw findErr;
+      }
+    }
+
+    if (emailMatchRows.length > 0) {
+      const existingUser = emailMatchRows[0];
+
+      try {
+        await pool.query(
+          `UPDATE users
+           SET external_auth = 1,
+               external_auth_provider = ?,
+               external_auth_subject = ?,
+               external_auth_linked_at = NOW()
+           WHERE id = ?`,
+          [provider, externalSubject, existingUser.id]
+        );
+      } catch (updateErr) {
+        if (updateErr?.code === 'ER_DUP_ENTRY') {
+          return res.status(409).json({ error: 'This Google account is already linked to another user.' });
+        }
+        throw updateErr;
+      }
+
+      const [updatedRows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [existingUser.id]);
+      const linkedUser = updatedRows[0] || existingUser;
+      await establishAuthenticatedSession(req, linkedUser, { mustResetPassword: false });
+
+      return res.json({
+        message: 'Login successful',
+        user: req.session.user,
+        requiresPasswordReset: false,
+      });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [tierRows] = await conn.query(
+        'SELECT id, price_monthly FROM membership_tiers WHERE is_active = 1 ORDER BY id LIMIT 1'
+      );
+      const defaultTier = tierRows?.[0];
+      if (!defaultTier) {
+        throw new Error('No active membership tier is configured.');
+      }
+
+      const billingCycle = Number(defaultTier.price_monthly || 0) > 0 ? 'monthly' : 'none';
+
+      const [userResult] = await conn.query(
+        `INSERT INTO users
+         (FirstName, LastName, username, Password, membershipType, avatarName, avatarPath, external_auth, external_auth_provider, external_auth_subject, external_auth_linked_at)
+         VALUES (?, ?, ?, NULL, 'User', 'default.png', '/images/avatar/default.png', 1, ?, ?, NOW())`,
+        [givenName, familyName, verifiedEmail, provider, externalSubject]
+      );
+      const newUserId = userResult.insertId;
+
+      await conn.query(
+        `INSERT INTO user_profiles (user_id, user_role, tier, settings)
+         VALUES (?, 'member', ?, '[]')`,
+        [newUserId, defaultTier.id]
+      );
+
+      await conn.query(
+        `INSERT INTO user_memberships (user_id, tier_id, status, billing_cycle, started_at)
+         VALUES (?, ?, 'active', ?, CURDATE())`,
+        [newUserId, defaultTier.id, billingCycle]
+      );
+
+      await conn.query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by)
+         SELECT ?, id, ? FROM roles WHERE slug = 'member' LIMIT 1`,
+        [newUserId, newUserId]
+      );
+
+      await conn.commit();
+
+      const [newRows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [newUserId]);
+      const newUser = newRows[0];
+      await establishAuthenticatedSession(req, newUser, { mustResetPassword: false });
+
+      return res.status(201).json({
+        message: 'Registration successful',
+        user: req.session.user,
+        requiresPasswordReset: false,
+      });
+    } catch (txErr) {
+      await conn.rollback();
+
+      if (txErr?.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'This Google account is already linked to another user.' });
+      }
+
+      throw txErr;
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error('❌ Google auth route failure:', err?.message || err);
+    return res.status(500).json({ error: 'Google authentication failed.' });
   }
 });
 
@@ -342,7 +517,9 @@ router.post('/login', async (req, res) => {
         // This allows one-time use and keeps room for a future reset-expiry check.
         isMatch = Boolean(resetCode) && String(password) === resetCode;
       } else {
-        isMatch = await bcrypt.compare(password, user.Password);
+        const storedPasswordHash = user.Password ? String(user.Password) : '';
+        // External-auth-only users can legitimately have no password hash.
+        isMatch = storedPasswordHash ? await bcrypt.compare(password, storedPasswordHash) : false;
       }
       
       if (!isMatch) {
@@ -359,83 +536,52 @@ router.post('/login', async (req, res) => {
         );
       }
 
-      const roleContext = await resolveSessionRole(user.id);
-      
-      // Apply default avatar if none exists
-      const avatarPath = user.avatarPath || '/images/avatar/default.png';
-      const avatarName = user.avatarName || 'default.png';
-      
-      req.session.user = {
-        id: user.id,
-        username: user.username,
-        mustResetPassword: isPendingReset,
-        role: roleContext.role,
-        roleSlug: roleContext.roleSlug,
-        avatarPath: avatarPath,
-        avatarName: avatarName,
-      };
-      req.session.userID = user.id;
-      req.session.username = user.username;
-      req.session.mustResetPassword = isPendingReset;
-      // 0.84b3: successful logins persist for 30 days unless explicitly ended.
-      req.session.cookie.maxAge = THIRTY_DAYS_MS;
+      await establishAuthenticatedSession(req, user, { mustResetPassword: isPendingReset });
       console.log('✅ Session user assigned:', req.session.user);
 
-      // Do not return login success before save completes.
-      return req.session.save((saveErr) => {
-        if (saveErr) {
-          console.error('[SESSION SAVE FAILED]', {
-            code: saveErr?.code || 'unknown',
-            message: saveErr?.message || String(saveErr),
-            sessionId: req.sessionID || null,
-          });
-          return res.status(500).json({ error: 'Login succeeded, but session could not be persisted.' });
-        }
+      const setCookieHeader = res.getHeader('Set-Cookie');
+      console.log('SET COOKIE HEADER:', setCookieHeader);
+      console.log({
+        sessionID: req.sessionID,
+        userID: req.session.userID,
+        username: req.session.username,
+        cookie: req.session.cookie,
+      });
 
-        const setCookieHeader = res.getHeader('Set-Cookie');
-        console.log('SET COOKIE HEADER:', setCookieHeader);
-        console.log({
-          sessionID: req.sessionID,
-          userID: req.session.userID,
-          username: req.session.username,
-          cookie: req.session.cookie,
-        });
-
-        if (isDebugEnabled) {
-          console.log('🧪 [auth/login] session persisted:', {
-            sessionId: req.sessionID || null,
-            setCookieHeaderPresent: Boolean(setCookieHeader),
-            cookie: {
-              secure: Boolean(req.session?.cookie?.secure),
-              sameSite: req.session?.cookie?.sameSite || null,
-              httpOnly: Boolean(req.session?.cookie?.httpOnly),
-              maxAge: req.session?.cookie?.maxAge ?? null,
-            },
-          });
-        }
-
-        return res.json({
-          message: isPendingReset ? 'Temporary password accepted. Password reset required.' : 'Login successful',
-          user: req.session.user,
-          requiresPasswordReset: isPendingReset,
-          diagnostics: {
-            success: true,
-            sessionID: req.sessionID,
-            setCookieHeaderPresent: Boolean(setCookieHeader),
-            loginSucceeded: true,
-            sessionVerificationPassed: true,
-            cookieDetected: Boolean(req.headers.cookie),
-            cookieSentBack: true,
-            corsPassed: Boolean(req.headers.origin),
-            cookieConfig: {
-              secure: req.session.cookie.secure,
-              sameSite: req.session.cookie.sameSite,
-              httpOnly: req.session.cookie.httpOnly,
-              path: req.session.cookie.path,
-              expires: req.session.cookie.expires,
-            },
+      if (isDebugEnabled) {
+        console.log('🧪 [auth/login] session persisted:', {
+          sessionId: req.sessionID || null,
+          setCookieHeaderPresent: Boolean(setCookieHeader),
+          cookie: {
+            secure: Boolean(req.session?.cookie?.secure),
+            sameSite: req.session?.cookie?.sameSite || null,
+            httpOnly: Boolean(req.session?.cookie?.httpOnly),
+            maxAge: req.session?.cookie?.maxAge ?? null,
           },
         });
+      }
+
+      return res.json({
+        message: isPendingReset ? 'Temporary password accepted. Password reset required.' : 'Login successful',
+        user: req.session.user,
+        requiresPasswordReset: isPendingReset,
+        diagnostics: {
+          success: true,
+          sessionID: req.sessionID,
+          setCookieHeaderPresent: Boolean(setCookieHeader),
+          loginSucceeded: true,
+          sessionVerificationPassed: true,
+          cookieDetected: Boolean(req.headers.cookie),
+          cookieSentBack: true,
+          corsPassed: Boolean(req.headers.origin),
+          cookieConfig: {
+            secure: req.session.cookie.secure,
+            sameSite: req.session.cookie.sameSite,
+            httpOnly: req.session.cookie.httpOnly,
+            path: req.session.cookie.path,
+            expires: req.session.cookie.expires,
+          },
+        },
       });
       
     } catch (err) {

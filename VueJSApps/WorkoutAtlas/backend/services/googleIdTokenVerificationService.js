@@ -2,20 +2,16 @@ const { OAuth2Client } = require('google-auth-library');
 
 const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
-const toBoolean = (value) => ['true', '1', 'yes'].includes(String(value || '').trim().toLowerCase());
-
 const getAllowedClientIds = () => {
   return [
+    process.env.GOOGLE_CLIENT_ID,
+    // Backward-compatible fallbacks for older env naming.
     process.env.GOOGLE_WEB_CLIENT_ID,
     process.env.GOOGLE_ANDROID_CLIENT_ID,
     process.env.GOOGLE_IOS_CLIENT_ID,
   ]
     .map((value) => String(value || '').trim())
     .filter(Boolean);
-};
-
-const isGoogleAuthEnabled = () => {
-  return toBoolean(process.env.GOOGLE_AUTH_ENABLED);
 };
 
 const oauthClient = new OAuth2Client();
@@ -82,14 +78,26 @@ const verifyGoogleIdToken = async (idToken) => {
     throw new GoogleTokenVerificationError('Token verification failed.', 401);
   }
 
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (!email) {
+    throw new GoogleTokenVerificationError('Token verification failed.', 401);
+  }
+
+  const givenName = String(payload.given_name || '').trim();
+  const familyName = String(payload.family_name || '').trim();
+
   return {
     verified: true,
     provider: 'google',
+    sub: subject,
+    email,
+    email_verified: true,
+    given_name: givenName,
+    family_name: familyName,
   };
 };
 
 module.exports = {
-  isGoogleAuthEnabled,
   verifyGoogleIdToken,
   GoogleTokenVerificationError,
 };
